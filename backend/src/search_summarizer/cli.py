@@ -6,18 +6,22 @@ import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 from groq import Groq
+from dotenv import load_dotenv
 
-# Mock implementation fallback if API key missing
-def mock_summarize(query):
+# Load environment variables from .env file
+load_dotenv()
+
+# Mock implementation fallback if API key missing or error occurs
+def mock_summarize(query, error_message="Chave da API Groq não detectada."):
     return {
-        "resumo": f"Este é um resumo simulado para '{query}' pois a chave da API Groq não foi detectada.",
+        "aviso": f"Resumo simulado para '{query}'. Motivo: {error_message}",
         "detalhes": [
             "A funcionalidade de busca está operando.",
-            "Para ver o resumo real, configure a variável de ambiente GROQ_API_KEY."
+            "Verifique os logs do servidor para mais detalhes sobre o erro."
         ],
         "topicos_relacionados": [
-            {"titulo": "Configuração", "conteudo": "Adicione sua chave no arquivo .env ou no sistema."},
-            {"titulo": "Arquitetura", "conteudo": "Next.js + Python + Groq + DuckDuckGo."}
+            {"titulo": "Configuração", "conteudo": "Adicione sua chave no arquivo .env."},
+            {"titulo": "Status da API", "conteudo": "Verifique se a API da Groq está online ou se sua chave é válida."}
         ]
     }
 
@@ -59,7 +63,7 @@ def scrape_page(url, timeout=5):
 
 def summarize_with_groq(text, query, api_key):
     if not api_key:
-        return mock_summarize(query)
+        return mock_summarize(query, "Chave da API não fornecida.")
 
     try:
         client = Groq(api_key=api_key)
@@ -85,15 +89,25 @@ def summarize_with_groq(text, query, api_key):
                     "content": prompt,
                 }
             ],
-            model="llama-3.2-90b-vision-preview", # Using a fast implementation
+            model="llama-3.3-70b-versatile", # Update to model user mentioned broadly or stick to known working one
             temperature=0.5,
             response_format={"type": "json_object"},
         )
 
         return json.loads(completion.choices[0].message.content)
     except Exception as e:
-        print(f"Erro na API Groq: {e}", file=sys.stderr)
-        return mock_summarize(query)
+        error_msg = str(e)
+        print(f"Erro na API Groq: {error_msg}", file=sys.stderr)
+        
+        # Catch specific errors to give better feedback
+        if "401" in error_msg:
+            return mock_summarize(query, "Chave da API inválida (401).")
+        if "400" in error_msg:
+            return mock_summarize(query, "Requisição inválida (400) - Possível filtro de conteúdo.")
+        if "429" in error_msg:
+            return mock_summarize(query, "Muitas requisições (429). Aguarde um momento.")
+            
+        return mock_summarize(query, f"Erro na API: {error_msg}")
 
 def main():
     parser = argparse.ArgumentParser(description="Search and Summarize CLI")
@@ -133,6 +147,7 @@ def main():
                 aggregated_text += f"Conteúdo extra da Fonte {i+1}: {content}\n"
     
     # 3. Summarize
+    # Check both env variable and user passed env
     groq_api_key = os.environ.get("GROQ_API_KEY")
     
     if args.no_groq:
