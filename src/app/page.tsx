@@ -1,65 +1,158 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState } from 'react';
+import StructuredSummary from '@/components/StructuredSummary';
 
 export default function Home() {
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState('');
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+
+    setLoading(true);
+    setError('');
+    setData(null);
+
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.error || 'Falha na busca');
+      }
+
+      setData(result);
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro ao processar sua busca.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen p-6 md:p-12 lg:p-24 max-w-7xl mx-auto flex flex-col gap-12">
+      {/* Header */}
+      <header className="space-y-6 text-center max-w-2xl mx-auto">
+        <div className="inline-block px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800">
+          <span className="tracking-wide-label text-zinc-400">BUSCADOR RESUMIDO</span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-zinc-500">
+          Resuma em segundos qualquer assunto com DuckDuckGo + Groq.
+        </h1>
+        <p className="text-zinc-400 text-lg md:text-xl leading-relaxed">
+          Uma ferramenta minimalista que navega na web e gera insights estruturados instantaneamente.
+        </p>
+      </header>
+
+      {/* Search Form */}
+      <section className="w-full max-w-3xl mx-auto">
+        <div className="relative group">
+          <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-3xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+          <form
+            onSubmit={handleSearch}
+            className="relative bg-zinc-950 rounded-3xl p-2 md:p-3 border border-zinc-800 flex flex-col md:flex-row gap-2 shadow-2xl"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Sobre o que você quer saber hoje?"
+              className="flex-1 bg-zinc-900/50 hover:bg-zinc-900 focus:bg-zinc-900 rounded-2xl px-6 py-4 text-white placeholder-zinc-500 outline-none transition-colors text-lg"
+              disabled={loading}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <button
+              type="submit"
+              disabled={loading}
+              className={`
+                px-8 py-4 rounded-2xl font-bold tracking-wide uppercase transition-all duration-300
+                ${loading
+                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-emerald-500 to-lime-500 text-black hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:scale-[1.02] active:scale-[0.98]'
+                }
+              `}
+            >
+              {loading ? 'Processando...' : 'Pesquisar'}
+            </button>
+          </form>
         </div>
-      </main>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mt-8 p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-200 text-center">
+            {error}
+          </div>
+        )}
+      </section>
+
+      {/* Results Section */}
+      {data && (
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+
+          {/* Main Summary */}
+          <div className="lg:col-span-2 space-y-8">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-3xl p-6 md:p-8 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-lime-500" />
+
+              <div className="flex items-center gap-4 mb-8">
+                <h2 className="text-2xl font-bold text-white tracking-wide">RESUMO ESTRUTURADO</h2>
+                <div className="h-px flex-1 bg-zinc-800" />
+              </div>
+
+              <StructuredSummary data={data.structured} />
+            </div>
+
+            {/* Raw Output for Debug (Optional, can be removed or hidden) */}
+            {/* <details className="text-xs text-zinc-600">
+                <summary>Raw Output</summary>
+                <pre>{data.rawOutput}</pre>
+             </details> */}
+          </div>
+
+          {/* Sources Sidebar */}
+          <div className="lg:col-span-1">
+            <div className="bg-zinc-950/50 border border-zinc-800 rounded-3xl p-6 sticky top-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white tracking-wide">FONTES</h3>
+                <span className="bg-zinc-900 text-zinc-400 px-2 py-1 rounded text-xs font-mono">
+                  {data.sources?.length || 0} LINKS
+                </span>
+              </div>
+
+              <ul className="space-y-3">
+                {data.sources?.map((source: string, idx: number) => (
+                  <li key={idx}>
+                    <a
+                      href={source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-800 border border-transparent hover:border-emerald-500/30 transition-all group"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 group-hover:animate-pulse" />
+                        <span className="text-xs text-zinc-500 font-mono truncate max-w-full">
+                          {new URL(source).hostname}
+                        </span>
+                      </div>
+                      <p className="text-sm text-zinc-300 truncate group-hover:text-emerald-300 transition-colors">
+                        {source}
+                      </p>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </main>
+      )}
     </div>
   );
 }
