@@ -34,7 +34,7 @@ export async function POST(request: Request) {
         console.log(`Executing: ${cmd}`);
 
         // Business mode needs more time (multiple searches + AI calls)
-        const timeout = businessMode ? 240000 : 30000;
+        const timeout = businessMode ? 180000 : 30000;
         const maxBuffer = businessMode ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
 
         const { stdout, stderr } = await execPromise(cmd, { env, timeout, maxBuffer });

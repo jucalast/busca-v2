@@ -167,34 +167,31 @@ export default function Home() {
           </form>
         </div>
 
-        {/* Loading Progress — 3 Phases */}
+        {/* Loading Progress */}
         {loading && mode === 'business' && (
-          <div className="mt-6 space-y-5 max-w-xl mx-auto">
+          <div className="mt-6 space-y-4">
             <div className="flex items-center justify-center gap-3">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <p className="text-zinc-400 text-sm animate-pulse">{progress}</p>
             </div>
 
-            {/* Phase indicators */}
-            <div className="space-y-3">
+            {/* Animated category indicators */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-2xl mx-auto">
               {[
-                { icon: '🧠', phase: 'Fase 1', name: 'Expansão Semântica', desc: 'Entendendo seu mercado e vocabulário', delay: '0s' },
-                { icon: '🔍', phase: 'Fase 2', name: 'Busca Multi-Dimensional', desc: 'Mercado · Dores · Criativos · Preços', delay: '1s' },
-                { icon: '✨', phase: 'Fase 3', name: 'Síntese Agêntica', desc: 'Persona · Posicionamento · Hooks · Plano', delay: '2s' },
-              ].map((p, i) => (
+                { icon: '📊', name: 'Mercado', delay: '0s' },
+                { icon: '🎯', name: 'Concorrentes', delay: '0.5s' },
+                { icon: '👥', name: 'Compradores', delay: '1s' },
+                { icon: '💰', name: 'Prospecção', delay: '1.5s' },
+                { icon: '📱', name: 'Online', delay: '2s' },
+                { icon: '💎', name: 'Preços', delay: '2.5s' },
+              ].map((cat, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800 animate-pulse"
-                  style={{ animationDelay: p.delay }}
+                  className="flex items-center gap-2 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800 animate-pulse"
+                  style={{ animationDelay: cat.delay }}
                 >
-                  <span className="text-2xl">{p.icon}</span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">{p.phase}</span>
-                      <span className="text-sm text-zinc-300 font-medium">{p.name}</span>
-                    </div>
-                    <p className="text-xs text-zinc-600 mt-0.5">{p.desc}</p>
-                  </div>
+                  <span className="text-lg">{cat.icon}</span>
+                  <span className="text-xs text-zinc-500">{cat.name}</span>
                 </div>
               ))}
             </div>
