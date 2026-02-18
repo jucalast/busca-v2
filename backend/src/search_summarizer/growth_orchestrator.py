@@ -23,6 +23,7 @@ from business_scorer import run_scorer
 from task_generator import run_task_generator
 from task_assistant import run_assistant
 from chat_consultant import run_chat
+import database as db
 
 # Reuse search functions from cli.py
 from cli import search_duckduckgo, scrape_page, call_groq, BUSINESS_CATEGORIES
@@ -272,8 +273,10 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
     queries = profile.get("queries_sugeridas", profile.get("queries", {}))
     categories = profile.get("categorias_relevantes", profile.get("categories", BUSINESS_CATEGORIES))
 
-    if isinstance(categories, list) and len(categories) == 0:
+    # Garantir que sempre temos categorias para buscar
+    if not categories or (isinstance(categories, list) and len(categories) == 0):
         categories = BUSINESS_CATEGORIES
+        print(f"  ⚠️ Nenhuma categoria fornecida, usando categorias padrão: {categories}", file=sys.stderr)
 
     perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
     description = f"{perfil_data.get('nome', '')} - {perfil_data.get('segmento', '')} - {perfil_data.get('modelo_negocio', '')} - {perfil_data.get('localizacao', '')}"
@@ -330,7 +333,11 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Growth Orchestrator")
-    parser.add_argument("--action", required=True, choices=["profile", "analyze", "assist", "chat", "dimension-chat"])
+    parser.add_argument("--action", required=True, choices=[
+        "profile", "analyze", "assist", "chat", "dimension-chat",
+        "list-businesses", "get-business", "create-business", "save-analysis",
+        "register", "login", "logout", "validate-session"
+    ])
     parser.add_argument("--input-file", required=True, help="Path to JSON input file")
     args = parser.parse_args()
 
@@ -354,6 +361,8 @@ def main():
     elif args.action == "analyze":
         profile = input_data.get("profile", {})
         region = input_data.get("region", "br-pt")
+        business_id = input_data.get("business_id")  # Optional: for persistence
+        user_id = input_data.get("user_id", "default_user")
 
         # Step 1: Market search
         print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
@@ -371,12 +380,32 @@ def main():
         task_result = run_task_generator(profile, score_data, market_data)
         print(f"  ✅ Tarefas geradas", file=sys.stderr)
 
+        # Step 4: Persist to database
+        if business_id:
+            print("💾 Salvando análise...", file=sys.stderr)
+            analysis = db.create_analysis(business_id, score_data, task_result.get("taskPlan", {}), market_data)
+            print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
+        else:
+            # Create new business if no business_id provided
+            print("💾 Criando novo negócio...", file=sys.stderr)
+            db.get_or_create_user(user_id)
+            perfil = profile.get("perfil", profile)
+            name = perfil.get("nome", perfil.get("nome_negocio", "Novo Negocio"))
+            business = db.create_business(user_id, name, profile)
+            business_id = business["id"]
+            print(f"  ✅ Negócio criado: {business_id}", file=sys.stderr)
+            
+            analysis = db.create_analysis(business_id, score_data, task_result.get("taskPlan", {}), market_data)
+            print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
+
         # Combine results
         output = {
             "success": True,
             "marketData": market_data,
             "score": score_result.get("score", {}),
             "taskPlan": task_result.get("taskPlan", {}),
+            "business_id": business_id,
+            "analysis_id": analysis.get("id") if 'analysis' in locals() else None
         }
 
         print("--- GROWTH_RESULT ---")
@@ -404,6 +433,141 @@ def main():
 
         print("--- DIMENSION_CHAT_RESULT ---")
         print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ List Businesses Action ━━━
+    elif args.action == "list-businesses":
+        user_id = input_data.get("user_id", "default_user")
+        businesses = db.list_user_businesses(user_id)
+        
+        # Add latest analysis info to each business
+        for biz in businesses:
+            latest = db.get_latest_analysis(biz["id"])
+            if latest:
+                biz["latest_analysis"] = {
+                    "id": latest["id"],
+                    "score_geral": latest["score_geral"],
+                    "classificacao": latest["classificacao"],
+                    "created_at": latest["created_at"]
+                }
+        
+        print("--- LIST_BUSINESSES_RESULT ---")
+        print(json.dumps({"success": True, "businesses": businesses}, ensure_ascii=False, indent=2))
+
+    # ━━━ Get Business Action ━━━
+    elif args.action == "get-business":
+        business_id = input_data.get("business_id")
+        business = db.get_business(business_id)
+        
+        if business:
+            # Get latest analysis
+            latest = db.get_latest_analysis(business_id)
+            if latest:
+                business["latest_analysis"] = latest
+            
+            print("--- GET_BUSINESS_RESULT ---")
+            print(json.dumps({"success": True, "business": business}, ensure_ascii=False, indent=2))
+        else:
+            print("--- GET_BUSINESS_RESULT ---")
+            print(json.dumps({"success": False, "error": "Business not found"}, ensure_ascii=False, indent=2))
+
+    # ━━━ Create Business Action ━━━
+    elif args.action == "create-business":
+        user_id = input_data.get("user_id", "default_user")
+        profile = input_data.get("profile", {})
+        
+        # Ensure user exists
+        db.get_or_create_user(user_id)
+        
+        # Extract business name
+        perfil = profile.get("perfil", profile)
+        name = perfil.get("nome", perfil.get("nome_negocio", "Novo Negocio"))
+        
+        # Create business
+        business = db.create_business(user_id, name, profile)
+        
+        print("--- CREATE_BUSINESS_RESULT ---")
+        print(json.dumps({"success": True, "business": business}, ensure_ascii=False, indent=2))
+
+    # ━━━ Save Analysis Action ━━━
+    elif args.action == "save-analysis":
+        business_id = input_data.get("business_id")
+        score_data = input_data.get("score", {})
+        task_data = input_data.get("taskPlan", {})
+        market_data = input_data.get("marketData", {})
+        
+        analysis = db.create_analysis(business_id, score_data, task_data, market_data)
+        
+        print("--- SAVE_ANALYSIS_RESULT ---")
+        print(json.dumps({"success": True, "analysis": analysis}, ensure_ascii=False, indent=2))
+
+    # ━━━ Register Action ━━━
+    elif args.action == "register":
+        email = input_data.get("email")
+        password = input_data.get("password")
+        name = input_data.get("name")
+        
+        if not email or not password:
+            print("--- REGISTER_RESULT ---")
+            print(json.dumps({"success": False, "error": "Email e senha são obrigatórios"}, ensure_ascii=False, indent=2))
+        else:
+            try:
+                user = db.register_user(email, password, name)
+                # Auto-login after registration
+                login_result = db.login_user(email, password)
+                
+                print("--- REGISTER_RESULT ---")
+                print(json.dumps({"success": True, "user": user, "session": login_result["session"]}, ensure_ascii=False, indent=2))
+            except ValueError as e:
+                print("--- REGISTER_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False, indent=2))
+            except Exception as e:
+                print("--- REGISTER_RESULT ---")
+                print(json.dumps({"success": False, "error": f"Erro ao registrar: {str(e)}"}, ensure_ascii=False, indent=2))
+
+    # ━━━ Login Action ━━━
+    elif args.action == "login":
+        email = input_data.get("email")
+        password = input_data.get("password")
+        
+        if not email or not password:
+            print("--- LOGIN_RESULT ---")
+            print(json.dumps({"success": False, "error": "Email e senha são obrigatórios"}, ensure_ascii=False, indent=2))
+        else:
+            result = db.login_user(email, password)
+            
+            if result:
+                print("--- LOGIN_RESULT ---")
+                print(json.dumps({"success": True, **result}, ensure_ascii=False, indent=2))
+            else:
+                print("--- LOGIN_RESULT ---")
+                print(json.dumps({"success": False, "error": "Email ou senha inválidos"}, ensure_ascii=False, indent=2))
+
+    # ━━━ Logout Action ━━━
+    elif args.action == "logout":
+        token = input_data.get("token")
+        
+        if token:
+            db.delete_session(token)
+        
+        print("--- LOGOUT_RESULT ---")
+        print(json.dumps({"success": True}, ensure_ascii=False, indent=2))
+
+    # ━━━ Validate Session Action ━━━
+    elif args.action == "validate-session":
+        token = input_data.get("token")
+        
+        if not token:
+            print("--- VALIDATE_SESSION_RESULT ---")
+            print(json.dumps({"success": False, "error": "Token não fornecido"}, ensure_ascii=False, indent=2))
+        else:
+            session = db.validate_session(token)
+            
+            if session:
+                print("--- VALIDATE_SESSION_RESULT ---")
+                print(json.dumps({"success": True, "session": session}, ensure_ascii=False, indent=2))
+            else:
+                print("--- VALIDATE_SESSION_RESULT ---")
+                print(json.dumps({"success": False, "error": "Sessão inválida ou expirada"}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

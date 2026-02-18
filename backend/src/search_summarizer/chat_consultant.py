@@ -543,13 +543,20 @@ EXTRAÇÃO: Salve EXATAMENTE o que o usuário escolheu/disse.
 
 EXEMPLOS DE EXTRAÇÃO CORRETA:
 - Usuário: "CASA, MOVEIS PLANEJADOS" → nome_negocio: "CASA", segmento: "moveis planejados"
+- Usuário: "Tenho uma cafeteria chamada Café Aroma" → nome_negocio: "Café Aroma", segmento: "cafeteria"
+- Usuário: "Vendo roupas femininas, meu negócio é Loja X" → nome_negocio: "Loja X", segmento: "roupas femininas"
+- Usuário: "trabalho sozinho há 2 anos" → num_funcionarios: "1" (ou "sozinho")
+- Usuário: "temos 5 pessoas na equipe" → num_funcionarios: "5"
+- Usuário: "posso investir R$ 500 por mês" → capital_disponivel: "R$ 500/mês"
 - Usuário: "B2C" (depois de perguntar modelo) → modelo: "B2C"
 - Usuário: "indaiatuba" → localizacao: "Indaiatuba"
 - Usuário: "vender mais" → dificuldades: "vender mais", objetivos: null (ainda não perguntou)
 
 ATENÇÃO CRÍTICA NO JSON:
 - B2B/B2C/D2C é sempre o campo "modelo", NUNCA "segmento"
-- Segmento é o que a empresa FAZ/VENDE (ex: "móveis", "roupas", "consultoria")
+- Segmento é o que a empresa FAZ/VENDE (ex: "cafeteria", "móveis", "roupas", "consultoria")
+- Frases como "Tenho uma [X]" ou "Trabalho com [Y]" → X ou Y é o segmento
+- "trabalho sozinho" ou "sou só eu" → num_funcionarios: "1" ou "sozinho"
 - Se a primeira mensagem tem vírgula, geralmente é: nome, segmento (ex: "Padaria São João, pães artesanais")
 - NUNCA retorne `null` para campos já coletados - PRESERVE todos os valores já extraídos
 - Se não tem nova informação para um campo, mantenha o valor anterior ou coloque `null` apenas se nunca foi coletado
@@ -1020,8 +1027,9 @@ def run_chat(input_data: dict) -> dict:
     user_wants_finish = any(x in user_message.lower() for x in 
         ["pode gerar", "analisar", "pronto", "terminar", "concluir", "gerar análise", "gerar a análise", "fazer análise", "vamos analisar"])
     
-    # Ready when: all required + at least 4 priority fields OR user explicitly asks
-    ready = user_wants_finish or (required_done and priority_count >= 4)
+    # Ready when: all required + ALL priority fields (7) OR user explicitly asks
+    # Coleta completa garantindo análise rica e detalhada
+    ready = user_wants_finish or (required_done and priority_count >= 7)
 
     # If user explicitly wants to finish, add encouragement
     if user_wants_finish:
@@ -1044,7 +1052,7 @@ def run_chat(input_data: dict) -> dict:
         if not reply.strip().endswith("?"):
             prompt = field_prompts.get(missing_field, f"Me conta sobre {FIELD_LABELS_PT.get(missing_field, missing_field)}?")
             reply += f"\n\n{prompt}"
-    elif required_done and priority_count < 4 and not ready:
+    elif required_done and priority_count < 7 and not ready:
         # Has required but needs more priority fields for richer analysis (only if not already ready)
         next_priority = priority_missing[0] if priority_missing else None
         if next_priority:

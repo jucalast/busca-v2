@@ -50,7 +50,15 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
         const marker = action === 'analyze' ? '--- GROWTH_RESULT ---'
             : action === 'assist' ? '--- ASSIST_RESULT ---'
                 : action === 'dimension-chat' ? '--- DIMENSION_CHAT_RESULT ---'
-                    : null;
+                    : action === 'list-businesses' ? '--- LIST_BUSINESSES_RESULT ---'
+                        : action === 'get-business' ? '--- GET_BUSINESS_RESULT ---'
+                            : action === 'create-business' ? '--- CREATE_BUSINESS_RESULT ---'
+                                : action === 'save-analysis' ? '--- SAVE_ANALYSIS_RESULT ---'
+                                    : action === 'register' ? '--- REGISTER_RESULT ---'
+                                        : action === 'login' ? '--- LOGIN_RESULT ---'
+                                            : action === 'logout' ? '--- LOGOUT_RESULT ---'
+                                                : action === 'validate-session' ? '--- VALIDATE_SESSION_RESULT ---'
+                                                    : null;
 
         if (marker) {
             const markerIdx = stdout.indexOf(marker);
@@ -81,7 +89,7 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { action, onboardingData, task, profile, region, messages, user_message, extracted_profile } = body;
+        const { action, onboardingData, task, profile, region, messages, user_message, extracted_profile, user_id, business_id } = body;
 
         // ━━━ Action: Profile (onboarding → profile) ━━━
         if (action === 'profile') {
@@ -107,6 +115,8 @@ export async function POST(request: Request) {
                 action: 'analyze',
                 profile,
                 region: region || 'br-pt',
+                business_id: business_id || null,
+                user_id: user_id || 'default_user',
             }, 300000);
 
             return NextResponse.json(result);
@@ -151,6 +161,115 @@ export async function POST(request: Request) {
                 messages: dimMessages || [],
                 context: context || {},
             }, 120000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: List Businesses ━━━
+        if (action === 'list-businesses') {
+            const result = await runOrchestrator('list-businesses', {
+                user_id: user_id || 'default_user',
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Get Business ━━━
+        if (action === 'get-business') {
+            if (!business_id) {
+                return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('get-business', {
+                business_id,
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Create Business ━━━
+        if (action === 'create-business') {
+            if (!profile) {
+                return NextResponse.json({ error: 'profile is required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('create-business', {
+                user_id: user_id || 'default_user',
+                profile,
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Save Analysis ━━━
+        if (action === 'save-analysis') {
+            const { score, taskPlan, marketData } = body;
+            if (!business_id || !score || !taskPlan || !marketData) {
+                return NextResponse.json({ error: 'business_id, score, taskPlan, and marketData are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('save-analysis', {
+                business_id,
+                score,
+                taskPlan,
+                marketData,
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Register ━━━
+        if (action === 'register') {
+            const { email, password, name } = body;
+            if (!email || !password) {
+                return NextResponse.json({ error: 'email and password are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('register', {
+                email,
+                password,
+                name: name || null,
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Login ━━━
+        if (action === 'login') {
+            const { email, password } = body;
+            if (!email || !password) {
+                return NextResponse.json({ error: 'email and password are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('login', {
+                email,
+                password,
+            }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Logout ━━━
+        if (action === 'logout') {
+            const { token } = body;
+
+            const result = await runOrchestrator('logout', {
+                token: token || null,
+            }, 10000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Validate Session ━━━
+        if (action === 'validate-session') {
+            const { token } = body;
+            if (!token) {
+                return NextResponse.json({ error: 'token is required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('validate-session', {
+                token,
+            }, 10000);
 
             return NextResponse.json(result);
         }

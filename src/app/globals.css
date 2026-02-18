@@ -1,12 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 @layer base {
   body {
-    @apply bg-black text-zinc-50 antialiased;
+    @apply text-zinc-50 antialiased;
+    background-color: #09090b;
+    font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  }
+  
+  * {
+    font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   }
 }
 

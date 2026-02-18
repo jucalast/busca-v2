@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { FileText, Search, ListChecks, Phone, Calendar, DollarSign, Copy, Check, X, Sparkles, MapPin, Lightbulb, Target, Zap, Bookmark, User, Filter, Mail, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface TaskAssistantProps {
     task: {
@@ -18,13 +19,13 @@ interface TaskAssistantProps {
     onGenerate: (taskId: string) => Promise<any>;
 }
 
-const ASSIST_TYPE_META: Record<string, { icon: string; title: string; color: string }> = {
-    copywriting: { icon: '✍️', title: 'Textos Gerados por IA', color: '#f59e0b' },
-    analise_concorrente: { icon: '🔍', title: 'Análise de Concorrentes', color: '#ef4444' },
-    lista_leads: { icon: '📋', title: 'Lista de Prospecção', color: '#8b5cf6' },
-    script_abordagem: { icon: '📞', title: 'Scripts de Abordagem', color: '#3b82f6' },
-    plano_conteudo: { icon: '📅', title: 'Plano de Conteúdo', color: '#10b981' },
-    precificacao: { icon: '💰', title: 'Simulação de Preços', color: '#ec4899' },
+const ASSIST_TYPE_META: Record<string, { icon: React.ComponentType<any>; title: string; color: string }> = {
+    copywriting: { icon: FileText, title: 'Textos Gerados por IA', color: '#f59e0b' },
+    analise_concorrente: { icon: Search, title: 'Análise de Concorrentes', color: '#ef4444' },
+    lista_leads: { icon: ListChecks, title: 'Lista de Prospecção', color: '#8b5cf6' },
+    script_abordagem: { icon: Phone, title: 'Scripts de Abordagem', color: '#3b82f6' },
+    plano_conteudo: { icon: Calendar, title: 'Plano de Conteúdo', color: '#10b981' },
+    precificacao: { icon: DollarSign, title: 'Simulação de Preços', color: '#ec4899' },
 };
 
 function CopyButton({ text }: { text: string }) {
@@ -51,12 +52,16 @@ function CopyButton({ text }: { text: string }) {
     return (
         <button
             onClick={handleCopy}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${copied
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${copied
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 border border-zinc-700'
                 }`}
         >
-            {copied ? '✓ Copiado!' : '📋 Copiar'}
+            {copied ? (
+                <><Check className="w-3 h-3" />Copiado!</>
+            ) : (
+                <><Copy className="w-3 h-3" />Copiar</>
+            )}
         </button>
     );
 }
@@ -83,8 +88,8 @@ function RenderAssistOutput({ data }: { data: any }) {
                             {e.conteudo}
                         </div>
                         <div className="flex gap-4 mt-2 text-xs text-zinc-500">
-                            {e.onde_usar && <span>📍 {e.onde_usar}</span>}
-                            {e.dicas && <span>💡 {e.dicas}</span>}
+                            {e.onde_usar && <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{e.onde_usar}</div>}
+                            {e.dicas && <div className="flex items-center gap-1"><Lightbulb className="w-3 h-3" />{e.dicas}</div>}
                         </div>
                     </div>
                 ))}
@@ -98,7 +103,10 @@ function RenderAssistOutput({ data }: { data: any }) {
             <div className="space-y-4">
                 {data.concorrentes.map((c: any, i: number) => (
                     <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
-                        <h4 className="text-sm font-bold text-white mb-3">🎯 {c.nome}</h4>
+                        <div className="flex items-center gap-2 mb-3">
+                            <Target className="w-4 h-4 text-red-400" />
+                            <h4 className="text-sm font-bold text-white">{c.nome}</h4>
+                        </div>
                         <div className="grid grid-cols-2 gap-3 mb-3">
                             <div>
                                 <p className="text-[10px] text-emerald-400 uppercase font-semibold mb-1">Pontos Fortes</p>
@@ -122,15 +130,17 @@ function RenderAssistOutput({ data }: { data: any }) {
                             </div>
                         </div>
                         {c.como_superar && (
-                            <p className="text-xs text-amber-300 bg-amber-500/10 rounded-lg p-2">
-                                ⚡ {c.como_superar}
+                            <p className="text-xs text-amber-300 bg-amber-500/10 rounded-lg p-2 flex items-start gap-1.5">
+                                <Zap className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                {c.como_superar}
                             </p>
                         )}
                     </div>
                 ))}
                 {data.posicionamento_recomendado && (
-                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300">
-                        📌 {data.posicionamento_recomendado}
+                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300 flex items-start gap-2">
+                        <Bookmark className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        {data.posicionamento_recomendado}
                     </div>
                 )}
             </div>
@@ -143,7 +153,10 @@ function RenderAssistOutput({ data }: { data: any }) {
             <div className="space-y-4">
                 {data.perfil_ideal_cliente && (
                     <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
-                        <h4 className="text-sm font-semibold text-white mb-2">👤 Perfil Ideal de Cliente</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                            <User className="w-4 h-4 text-white" />
+                            <h4 className="text-sm font-semibold text-white">Perfil Ideal de Cliente</h4>
+                        </div>
                         <div className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
                             {data.perfil_ideal_cliente.segmentos && (
                                 <div><span className="text-zinc-500">Segmentos:</span> {data.perfil_ideal_cliente.segmentos.join(', ')}</div>
@@ -174,10 +187,16 @@ function RenderAssistOutput({ data }: { data: any }) {
                         <p className="text-xs text-zinc-500 uppercase font-semibold">Onde Encontrar Leads</p>
                         {data.onde_encontrar.map((item: any, i: number) => (
                             <div key={i} className="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
-                                <p className="text-sm font-semibold text-white mb-1">📍 {item.canal}</p>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <MapPin className="w-4 h-4 text-white" />
+                                    <p className="text-sm font-semibold text-white">{item.canal}</p>
+                                </div>
                                 <p className="text-xs text-zinc-400">{item.como_buscar}</p>
                                 {item.filtros_sugeridos && (
-                                    <p className="text-xs text-violet-300 mt-1">🔍 Filtros: {item.filtros_sugeridos}</p>
+                                    <div className="flex items-center gap-1 text-xs text-violet-300 mt-1">
+                                        <Filter className="w-3 h-3" />
+                                        Filtros: {item.filtros_sugeridos}
+                                    </div>
                                 )}
                             </div>
                         ))}
@@ -189,7 +208,10 @@ function RenderAssistOutput({ data }: { data: any }) {
                         {data.exemplos_abordagem.map((ex: any, i: number) => (
                             <div key={i} className="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs text-zinc-400">📧 {ex.canal}</span>
+                                    <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                                        <Mail className="w-3 h-3" />
+                                        {ex.canal}
+                                    </div>
                                     <CopyButton text={ex.mensagem} />
                                 </div>
                                 <p className="text-sm text-zinc-300 whitespace-pre-wrap font-mono bg-zinc-950 rounded-lg p-3">
@@ -208,14 +230,18 @@ function RenderAssistOutput({ data }: { data: any }) {
         return (
             <div className="space-y-4">
                 {data.sequencia_ideal && (
-                    <p className="text-sm text-blue-300 bg-blue-500/10 rounded-xl p-3 border border-blue-500/20">
-                        📌 Sequência ideal: {data.sequencia_ideal}
-                    </p>
+                    <div className="flex items-start gap-2 text-sm text-blue-300 bg-blue-500/10 rounded-xl p-3 border border-blue-500/20">
+                        <Bookmark className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>Sequência ideal: {data.sequencia_ideal}</span>
+                    </div>
                 )}
                 {data.scripts.map((script: any, i: number) => (
                     <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
                         <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-white">📞 {script.canal}</h4>
+                            <div className="flex items-center gap-2">
+                                <Phone className="w-4 h-4 text-white" />
+                                <h4 className="text-sm font-semibold text-white">{script.canal}</h4>
+                            </div>
                             <CopyButton text={script.script} />
                         </div>
                         <p className="text-xs text-zinc-500 mb-2">Objetivo: {script.objetivo}</p>
@@ -227,7 +253,10 @@ function RenderAssistOutput({ data }: { data: any }) {
                                 <p className="text-[10px] text-zinc-500 uppercase font-semibold mb-1.5">Objeções Comuns</p>
                                 {script.objecoes_comuns.map((obj: any, j: number) => (
                                     <div key={j} className="flex gap-3 mb-2 text-xs">
-                                        <span className="text-red-400 flex-shrink-0">❌ {obj.objecao}</span>
+                                        <div className="flex items-center gap-1 text-red-400 flex-shrink-0">
+                                            <X className="w-3 h-3" />
+                                            {obj.objecao}
+                                        </div>
                                         <span className="text-emerald-400">→ {obj.resposta}</span>
                                     </div>
                                 ))}
@@ -294,15 +323,19 @@ function RenderAssistOutput({ data }: { data: any }) {
                                     <div className="flex justify-between"><span className="text-zinc-500">Posição</span><span className="text-zinc-300">{c.posicionamento}</span></div>
                                 </div>
                                 {c.risco && (
-                                    <p className="text-[10px] text-amber-400 mt-2">⚠️ {c.risco}</p>
+                                    <div className="flex items-start gap-1.5 text-[10px] text-amber-400 mt-2">
+                                        <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                        {c.risco}
+                                    </div>
                                 )}
                             </div>
                         ))}
                     </div>
                 )}
                 {data.recomendacao && (
-                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300">
-                        ✅ {data.recomendacao}
+                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300 flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        {data.recomendacao}
                     </div>
                 )}
             </div>
@@ -324,7 +357,8 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    const meta = ASSIST_TYPE_META[task.suporte_ia?.tipo] || { icon: '🤖', title: 'Assistente IA', color: '#8b5cf6' };
+    const meta = ASSIST_TYPE_META[task.suporte_ia?.tipo] || { icon: Sparkles, title: 'Assistente IA', color: '#8b5cf6' };
+    const IconComponent = meta.icon;
 
     const handleGenerate = async () => {
         setLoading(true);
@@ -359,8 +393,10 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
                 {/* Header */}
                 <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0">
                     <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl">{meta.icon}</span>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${meta.color}20` }}>
+                                <IconComponent className="w-5 h-5" style={{ color: meta.color }} />
+                            </div>
                             <h2 className="text-lg font-bold text-white">{meta.title}</h2>
                         </div>
                         <p className="text-sm text-zinc-500">{task.titulo}</p>
@@ -369,7 +405,7 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
                         onClick={onClose}
                         className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-all"
                     >
-                        ✕
+                        <X className="w-4 h-4" />
                     </button>
                 </div>
 
@@ -383,16 +419,19 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
 
                     {!output && !loading && !error && (
                         <div className="text-center py-12">
-                            <span className="text-5xl mb-4 block">{meta.icon}</span>
+                            <div className="w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center" style={{ backgroundColor: `${meta.color}20` }}>
+                                <IconComponent className="w-10 h-10" style={{ color: meta.color }} />
+                            </div>
                             <p className="text-zinc-300 mb-2 font-medium">Pronto para gerar</p>
                             <p className="text-zinc-500 text-sm mb-6 max-w-md mx-auto">
                                 A IA vai analisar seu negócio e os dados de mercado para gerar conteúdo personalizado.
                             </p>
                             <button
                                 onClick={handleGenerate}
-                                className="px-8 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white font-bold text-sm hover:shadow-lg hover:shadow-violet-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                                className="px-8 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white font-bold text-sm hover:shadow-lg hover:shadow-violet-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all inline-flex items-center gap-2"
                             >
-                                🤖 Gerar com IA
+                                <Sparkles className="w-5 h-5" />
+                                Gerar com IA
                             </button>
                         </div>
                     )}

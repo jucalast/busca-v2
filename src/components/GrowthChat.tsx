@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { Search, Sparkles, Send, Loader2 } from 'lucide-react';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -94,7 +95,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
         } catch {
             setMessages([{
                 role: 'assistant',
-                content: 'Oi! 👋 Sou sua consultora de crescimento. Me conta: qual o nome do seu negócio e o que vocês fazem?'
+                content: 'Olá! Vou te ajudar a fazer uma análise completa do seu negócio. Para começar, me conta: qual o nome da sua empresa e o que ela faz?'
             }]);
         }
     };
@@ -154,7 +155,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
         } catch (err: any) {
             setMessages(prev => [
                 ...prev.slice(0, -1),
-                { role: 'assistant', content: '❌ Erro de conexão. Tente novamente.' }
+                { role: 'assistant', content: 'Erro de conexão. Tente novamente.' }
             ]);
         } finally {
             setSending(false);
@@ -228,81 +229,34 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     const requiredDone = REQUIRED_FIELDS.filter(f => fieldsCollected.includes(f)).length;
 
     return (
-        <div className="w-full max-w-3xl mx-auto flex flex-col" style={{ height: 'calc(100vh - 300px)', minHeight: '500px' }}>
-
-            {/* Header with progress */}
-            <div className="bg-zinc-950 border border-zinc-800 rounded-t-2xl px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-lg">
-                            🧠
-                        </div>
-                        <div>
-                            <h3 className="text-white font-bold text-sm">Consultora de Crescimento</h3>
-                            <p className="text-emerald-400 text-xs">
-                                {sending ? '💬 Pensando...' : readyForAnalysis ? '✅ Pronta para análise!' : '🟢 Online'}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Fields progress */}
-                    <div className="text-right">
-                        <p className="text-xs text-zinc-500">{requiredDone}/{REQUIRED_FIELDS.length} obrigatórios</p>
-                        <div className="w-24 h-1.5 bg-zinc-800 rounded-full mt-1 overflow-hidden">
-                            <div
-                                className="h-full bg-gradient-to-r from-emerald-500 to-lime-500 rounded-full transition-all duration-500"
-                                style={{ width: `${Math.round((requiredDone / REQUIRED_FIELDS.length) * 100)}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Collected fields badges */}
-                {fieldsCollected.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                        {fieldsCollected.map(f => (
-                            <span key={f} className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                ✓ {FIELD_LABELS[f] || f}
-                            </span>
-                        ))}
-                        {fieldsMissing.map(f => (
-                            <span key={f} className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-600">
-                                {FIELD_LABELS[f] || f}
-                            </span>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Messages area */}
-            <div className="flex-1 overflow-y-auto bg-zinc-950/50 border-x border-zinc-800 px-4 py-4 space-y-4">
+        <div className="flex flex-col h-full">
+            {/* Messages area - Minimal & Clean */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
                 {messages.map((msg, i) => (
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                        <div className={`max-w-[80%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
                             {/* Search indicator */}
                             {msg.searching && msg.searchQuery && (
-                                <div className="flex items-center gap-2 text-[11px] text-amber-400/80 mb-1.5 px-1">
-                                    <span className="animate-pulse">🔍</span>
-                                    <span>Buscou: &quot;{msg.searchQuery}&quot;</span>
+                                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/60 mb-1.5 px-1">
+                                    <Search className="w-3 h-3" />
+                                    <span>Pesquisou: &quot;{msg.searchQuery}&quot;</span>
                                 </div>
                             )}
 
-                            <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
-                                ? 'bg-emerald-500/15 text-emerald-50 border border-emerald-500/20 rounded-br-md'
-                                : msg.content === '...'
-                                    ? 'bg-zinc-900 text-zinc-400 border border-zinc-800 rounded-bl-md'
-                                    : 'bg-zinc-900 text-zinc-200 border border-zinc-800 rounded-bl-md'
-                                }`}>
+                            <div className={`rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${
+                                msg.role === 'user'
+                                    ? 'bg-white/[0.06] text-white border border-white/[0.08]'
+                                    : msg.content === '...'
+                                    ? 'bg-zinc-900/50 text-zinc-500 border border-white/[0.04]'
+                                    : 'bg-zinc-900/50 text-zinc-300 border border-white/[0.04]'
+                            }`}>
                                 {msg.content === '...' ? (
                                     <div className="flex items-center gap-2">
                                         <div className="flex gap-1">
-                                            <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                            <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                            <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                            <span className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                            <span className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                            <span className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                         </div>
-                                        <span className="text-xs text-zinc-600">
-                                            {sending ? 'Pensando...' : 'Digitando...'}
-                                        </span>
                                     </div>
                                 ) : (
                                     msg.content.split('\n').map((line, j) => (
@@ -319,21 +273,22 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input area */}
-            <div className="bg-zinc-950 border border-zinc-800 rounded-b-2xl px-4 py-3">
+            {/* Input area - Minimal */}
+            <div className="border-t border-white/[0.04] px-6 py-4">
                 {readyForAnalysis && !loading && (
                     <button
                         onClick={handleGenerateAnalysis}
-                        className="w-full mb-3 px-5 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 via-teal-500 to-lime-500 text-black hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:scale-[1.01] active:scale-[0.99] transition-all"
+                        className="w-full mb-3 px-5 py-3.5 rounded-xl font-semibold text-sm bg-zinc-700 text-white hover:bg-zinc-600 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
                     >
-                        🚀 Gerar Análise Completa de Crescimento
+                        <Sparkles className="w-4 h-4" />
+                        Gerar Análise Completa
                     </button>
                 )}
 
                 {loading ? (
-                    <div className="flex items-center justify-center gap-3 py-2 text-sm text-emerald-400">
-                        <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                        Gerando análise completa...
+                    <div className="flex items-center justify-center gap-3 py-3 text-sm text-zinc-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Gerando análise...</span>
                     </div>
                 ) : (
                     <div className="flex items-center gap-2">
@@ -343,25 +298,23 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                             value={input}
                             onChange={e => setInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                            placeholder="Escreva sua resposta..."
+                            placeholder="Digite sua mensagem..."
                             disabled={sending}
-                            className="flex-1 bg-zinc-900/50 hover:bg-zinc-900 focus:bg-zinc-900 rounded-xl px-4 py-3 text-white placeholder-zinc-600 outline-none transition-all text-sm border border-zinc-800 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50"
+                            className="flex-1 bg-zinc-900/50 hover:bg-zinc-900 focus:bg-zinc-900 rounded-xl px-4 py-3 text-white text-sm placeholder-zinc-600 outline-none transition-all border border-white/[0.04] focus:border-zinc-500/30 disabled:opacity-50"
                         />
                         <button
                             onClick={sendMessage}
                             disabled={!input.trim() || sending}
-                            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${input.trim() && !sending
-                                ? 'bg-emerald-500 text-black hover:bg-emerald-400 active:scale-95'
-                                : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-                                }`}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                                input.trim() && !sending
+                                    ? 'bg-zinc-700 text-white hover:bg-zinc-600 active:scale-95'
+                                    : 'bg-zinc-900 text-zinc-600 cursor-not-allowed border border-white/[0.04]'
+                            }`}
                         >
                             {sending ? (
-                                <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                                <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <line x1="22" y1="2" x2="11" y2="13" />
-                                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                                </svg>
+                                <Send className="w-4 h-4" />
                             )}
                         </button>
                     </div>
