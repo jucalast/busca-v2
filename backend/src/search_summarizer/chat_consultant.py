@@ -153,6 +153,16 @@ CONTEXT_FIELDS = [
     "maior_objecao"
 ]
 
+# Campos de presença digital — coletados naturalmente quando o usuário menciona
+DIGITAL_PRESENCE_FIELDS = [
+    "instagram_handle",   # @handle do Instagram
+    "linkedin_url",       # URL ou nome da página no LinkedIn
+    "site_url",           # URL do site
+    "email_contato",      # E-mail de contato
+    "whatsapp_numero",    # Número do WhatsApp de negócio
+    "google_maps_url",    # Link ou nome no Google Maps
+]
+
 # Campos prioritários para coleta após os obrigatórios
 PRIORITY_OPTIONAL = [
     "capital_disponivel",      # Fundamental para recomendações viáveis
@@ -164,7 +174,7 @@ PRIORITY_OPTIONAL = [
     "faturamento_mensal"      # Porte do negócio
 ]
 
-ALL_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS + CONTEXT_FIELDS
+ALL_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS + CONTEXT_FIELDS + DIGITAL_PRESENCE_FIELDS
 MINIMUM_FOR_ANALYSIS = REQUIRED_FIELDS + PRIORITY_OPTIONAL
 
 FIELD_LABELS_PT = {
@@ -195,8 +205,278 @@ FIELD_LABELS_PT = {
     "margem_lucro": "margem de lucro",
     "tempo_entrega": "prazo de entrega", 
     "origem_clientes": "origem dos clientes",
-    "maior_objecao": "maior objeção dos clientes"
+    "maior_objecao": "maior objeção dos clientes",
+    "instagram_handle": "@ do Instagram",
+    "linkedin_url": "LinkedIn da empresa",
+    "site_url": "site/URL do negócio",
+    "email_contato": "e-mail de contato",
+    "whatsapp_numero": "número do WhatsApp",
+    "google_maps_url": "link/nome no Google Maps",
 }
+
+# ── Fields the AI can RESEARCH when user doesn't know ──────────────────
+RESEARCHABLE_FIELDS = {
+    "concorrentes": {
+        "search_template": "concorrentes de {tipo_produto} {segmento} em {localizacao} lojas similares marcas",
+        "description": "Identificar concorrentes na região",
+        "task_template": "Realizar estudo aprofundado de concorrência: mapear os principais concorrentes de {nome_negocio}, suas estratégias, preços e diferenciais na região de {localizacao}",
+    },
+    "cliente_ideal": {
+        "search_template": "{segmento} {tipo_produto} {localizacao} perfil cliente típico público-alvo quem compra",
+        "description": "Definir perfil do cliente ideal",
+        "task_template": "Criar persona detalhada do cliente ideal de {nome_negocio}: mapear demografia, comportamento de compra, dores e desejos",
+    },
+    "diferencial": {
+        "search_template": "{segmento} {tipo_produto} diferencial competitivo como se destacar mercado",
+        "description": "Identificar possíveis diferenciais competitivos",
+        "task_template": "Definir posicionamento e diferencial competitivo de {nome_negocio}: análise SWOT e proposta de valor",
+    },
+    "margem_lucro": {
+        "search_template": "{segmento} {tipo_produto} margem de lucro média percentual setor brasil",
+        "description": "Pesquisar margens típicas do setor",
+        "task_template": "Analisar estrutura de custos e margem de {nome_negocio}: identificar oportunidades de melhoria",
+    },
+    "ticket_medio": {
+        "search_template": "{segmento} {tipo_produto} {localizacao} preço médio quanto custa",
+        "description": "Pesquisar preços típicos do mercado",
+        "task_template": "Realizar análise de precificação para {nome_negocio}: comparar com concorrentes e identificar oportunidades",
+    },
+    "principal_gargalo": {
+        "search_template": "{segmento} {tipo_produto} pequena empresa gargalos operacionais desafios comuns",
+        "description": "Identificar gargalos típicos do setor",
+        "task_template": "Diagnosticar gargalos operacionais de {nome_negocio}: mapear processos e identificar ineficiências",
+    },
+    "origem_clientes": {
+        "search_template": "{segmento} {tipo_produto} {localizacao} como conseguir clientes canais aquisição",
+        "description": "Pesquisar canais típicos de aquisição de clientes",
+        "task_template": "Mapear jornada de aquisição de clientes de {nome_negocio}: identificar os melhores canais",
+    },
+    "maior_objecao": {
+        "search_template": "{segmento} {tipo_produto} objeções clientes reclamações motivos não comprar",
+        "description": "Pesquisar objeções comuns do setor",
+        "task_template": "Identificar e criar estratégias para superar objeções de compra dos clientes de {nome_negocio}",
+    },
+}
+
+# Complete ordered list of ALL fields to collect
+ALL_COLLECTIBLE_FIELDS_ORDER = [
+    # Required (must collect first)
+    "nome_negocio", "segmento", "modelo", "localizacao", "dificuldades", "objetivos",
+    # Priority (collect next)
+    "capital_disponivel", "num_funcionarios", "canais_venda", "cliente_ideal",
+    "ticket_medio", "modelo_operacional", "faturamento_mensal",
+    # Optional (collect after priority)
+    "tempo_operacao", "tipo_produto", "concorrentes", "diferencial",
+    # Context (collect last, many can be researched)
+    "principal_gargalo", "margem_lucro", "origem_clientes", "maior_objecao", "tempo_entrega",
+    # Digital presence — collected naturally when mentioned
+    "instagram_handle", "linkedin_url", "site_url", "email_contato",
+    "whatsapp_numero", "google_maps_url",
+]
+
+# Prompts for ALL collectible fields
+FIELD_PROMPTS_ALL = {
+    "nome_negocio": "Qual o nome do seu negócio?",
+    "segmento": "Em que segmento/área você atua?",
+    "modelo": "Você atende empresas (B2B) ou pessoas físicas (B2C)?",
+    "localizacao": "Em que cidade você atende?",
+    "dificuldades": "Qual seu maior desafio hoje no negócio?",
+    "objetivos": "Qual sua principal meta para os próximos meses?",
+    "capital_disponivel": "Quanto você pode investir por mês em marketing/crescimento?",
+    "num_funcionarios": "Você trabalha sozinho ou tem equipe? Quantas pessoas?",
+    "canais_venda": "Onde/como você vende hoje? Instagram, loja física, site?",
+    "cliente_ideal": "Descreva seu cliente ideal - idade, perfil, características.",
+    "ticket_medio": "Qual o valor médio de cada venda?",
+    "modelo_operacional": "Como funciona sua operação? Tem estoque, trabalha sob encomenda?",
+    "faturamento_mensal": "Qual seu faturamento médio mensal aproximadamente?",
+    "tempo_operacao": "Há quanto tempo o negócio está operando?",
+    "tipo_produto": "Você vende produto, serviço, ou ambos?",
+    "concorrentes": "Quais são seus principais concorrentes?",
+    "diferencial": "Qual é o diferencial do seu negócio?",
+    "principal_gargalo": "Qual é o principal gargalo da sua operação?",
+    "margem_lucro": "Qual é sua margem de lucro aproximada?",
+    "origem_clientes": "De onde vêm seus clientes? Como eles te encontram?",
+    "maior_objecao": "Qual é a principal objeção dos seus clientes?",
+    "tempo_entrega": "Qual é o prazo médio de entrega?",
+    "instagram_handle": "Qual o @ do seu Instagram?",
+    "linkedin_url": "Tem LinkedIn da empresa? Qual o link ou nome?",
+    "site_url": "Qual o endereço do seu site?",
+    "email_contato": "Qual o e-mail de contato do negócio?",
+    "whatsapp_numero": "Qual o número do WhatsApp do negócio?",
+    "google_maps_url": "Está no Google Maps? Qual o link ou nome exato?",
+}
+
+
+def _infer_fields_from_context(messages: list, extracted_profile: dict) -> dict:
+    """
+    Infer field values from conversation history without asking the user.
+    Prevents asking obvious questions like tipo_produto when user said 'fabrico e vendo brownies'.
+    """
+    inferred = {}
+    all_user_text = " ".join(
+        m.get("content", "") for m in messages if m.get("role") == "user"
+    ).lower()
+
+    # ── tipo_produto ──
+    if not extracted_profile.get("tipo_produto"):
+        prod_patterns = r"fabric|vend[oe].*(?:brownie|bolo|doce|roupa|sapato|produto|mercadoria|artesanato|comida|salgado|camiseta|acessório|joia|bijuteria|cosmétic|móve[il]|móveis|planta|flor|cerveja|chocolate|pão|queijo|vela|sabonete)"
+        serv_patterns = r"presto.*servi[cç]o|consultoria|atendo.*cliente|marido de aluguel|design|fotograf|advogad|conta[db]|coach|personal|aula|curso|mentori|faxin|limpeza|manuten[cç]"
+        if re.search(prod_patterns, all_user_text):
+            inferred["tipo_produto"] = "produto"
+        elif re.search(serv_patterns, all_user_text):
+            inferred["tipo_produto"] = "serviço"
+        elif re.search(r"(?:vendo|faço|ofereço).{0,15}(?:produto|mercadoria)", all_user_text):
+            inferred["tipo_produto"] = "produto"
+
+    # ── modelo_operacional ──
+    if not extracted_profile.get("modelo_operacional"):
+        if re.search(r"compro.{0,25}ingrediente|fa[cç]o eu mesm|fabrico|produzo|cozinho|fa[cç]o.*caseiro|produ[cç][aã]o pr[oó]pria", all_user_text):
+            inferred["modelo_operacional"] = "fabricação própria"
+        elif re.search(r"revend|compro.{0,15}pronto|import|atacado", all_user_text):
+            inferred["modelo_operacional"] = "revenda"
+        elif re.search(r"sob encomenda|encomenda|primeiro.*paga|depois.*fa[cç]o", all_user_text):
+            inferred["modelo_operacional"] = "sob encomenda"
+
+    # ── canais_venda ──
+    if not extracted_profile.get("canais_venda"):
+        canais = []
+        if re.search(r"instagram|insta\b", all_user_text):
+            canais.append("Instagram")
+        if re.search(r"na rua|ambulante|vendo.*rua", all_user_text):
+            canais.append("venda na rua")
+        if re.search(r"whatsapp|wpp|zap", all_user_text):
+            canais.append("WhatsApp")
+        if re.search(r"loja\s+f[ií]sica|ponto.*comercial|minha loja", all_user_text):
+            canais.append("loja física")
+        if re.search(r"site|e-?commerce|loja virtual|shopee|mercado livre|shopify", all_user_text):
+            canais.append("online")
+        if re.search(r"ifood|rappi|uber eats|delivery", all_user_text):
+            canais.append("delivery")
+        if canais:
+            inferred["canais_venda"] = ", ".join(canais)
+
+    # ── num_funcionarios ──
+    if not extracted_profile.get("num_funcionarios"):
+        if re.search(r"trabalho sozinho|s[oó] eu|eu mesm[oa]|empreendedor solo|somente eu|apenas eu|toco sozinho", all_user_text):
+            inferred["num_funcionarios"] = "sozinho"
+
+    # ── instagram_handle ── extract @handle from any user message
+    if not extracted_profile.get("instagram_handle"):
+        handle_match = re.search(r"@([a-zA-Z0-9_.]{2,30})", all_user_text)
+        if handle_match:
+            inferred["instagram_handle"] = "@" + handle_match.group(1)
+        else:
+            # "meu instagram é spcom.autopecas" style
+            ig_match = re.search(r"instagram[^\w]*(?:é|e|:)?\s*([a-zA-Z0-9_.]{3,30})", all_user_text)
+            if ig_match:
+                inferred["instagram_handle"] = "@" + ig_match.group(1)
+
+    # ── site_url ── extract URL or domain
+    if not extracted_profile.get("site_url"):
+        url_match = re.search(r"(https?://[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(com\.br|com|net|org|io|app)[^\s]*)", all_user_text)
+        if url_match:
+            url = url_match.group(1)
+            if not url.startswith("http"):
+                url = "https://" + url
+            inferred["site_url"] = url
+
+    # ── linkedin_url ── extract LinkedIn URL or company name
+    if not extracted_profile.get("linkedin_url"):
+        li_match = re.search(r"linkedin\.com/(?:company|in)/([^\s/]+)", all_user_text)
+        if li_match:
+            inferred["linkedin_url"] = "https://linkedin.com/company/" + li_match.group(1)
+        else:
+            li_name = re.search(r"linkedin[^\w]*(?:é|e|:)?\s*([a-zA-Z0-9\s-]{3,50})", all_user_text)
+            if li_name:
+                inferred["linkedin_url"] = li_name.group(1).strip()
+
+    # ── whatsapp_numero ── extract phone number
+    if not extracted_profile.get("whatsapp_numero"):
+        phone_match = re.search(r"(?:whatsapp|zap|wpp|fone|tel|celular)[^\d]*(\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4})", all_user_text)
+        if phone_match:
+            inferred["whatsapp_numero"] = phone_match.group(1).strip()
+        else:
+            # standalone phone number pattern
+            bare_phone = re.search(r"\(?\d{2}\)?\s*9\d{4}[-\s]?\d{4}", all_user_text)
+            if bare_phone:
+                inferred["whatsapp_numero"] = bare_phone.group(0).strip()
+
+    # ── email_contato ── extract email address
+    if not extracted_profile.get("email_contato"):
+        email_match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", all_user_text)
+        if email_match:
+            inferred["email_contato"] = email_match.group(0)
+
+    # ── google_maps_url ── extract Maps link
+    if not extracted_profile.get("google_maps_url"):
+        maps_match = re.search(r"maps\.google\.[^\s]+|goo\.gl/maps/[^\s]+|maps\.app\.goo\.gl/[^\s]+", all_user_text)
+        if maps_match:
+            inferred["google_maps_url"] = maps_match.group(0)
+
+    return inferred
+
+
+def detect_research_response(user_message: str) -> str:
+    """Detect if user is confirming, rejecting, or modifying a pending research result.
+    Returns: 'confirm', 'reject', or 'other'
+    """
+    msg_lower = user_message.lower().strip()
+    
+    confirm_patterns = [
+        r"^(sim|ok|tá bom|ta bom|pode ser|concordo|isso|exato|correto|beleza|perfeito|legal|certo|certinho)[\s!.]*$",
+        r"(esses mesmo|são esses|sao esses|concordo|isso mesmo|é isso|certinho|faz sentido)",
+        r"(pode ser|tá certo|ta certo|isso aí|isso ai|valeu|show|massa|boa)",
+    ]
+    
+    reject_patterns = [
+        r"(não|nao).{0,15}(é|são|sao|concordo|certo|isso|esse|essa|faz sentido)",
+        r"(discordo|errado|incorreto|melhora|refaz|refaça|pesquisa.{0,10}de novo)",
+        r"(na verdade|diferente|não é bem|nao e bem|nada a ver|sem sentido)",
+        r"^(não|nao|n)[\s!.]*$",
+        r"(não faz sentido|nao faz sentido)",
+    ]
+    
+    # Check reject FIRST — negation takes priority over partial confirm matches
+    for pattern in reject_patterns:
+        if re.search(pattern, msg_lower):
+            return "reject"
+    
+    for pattern in confirm_patterns:
+        if re.search(pattern, msg_lower):
+            return "confirm"
+    
+    return "other"
+
+
+def get_field_from_context(messages: list) -> str:
+    """Detect which field the conversation is currently asking about based on last assistant message."""
+    field_keywords = {
+        "concorrentes": ["concorrente", "concorrência", "concorrencia", "competidor"],
+        "cliente_ideal": ["cliente ideal", "público-alvo", "publico-alvo", "perfil do cliente", "quem compra"],
+        "diferencial": ["diferencial", "destaca", "diferencia", "especial do seu"],
+        "ticket_medio": ["ticket", "valor médio", "valor medio", "preço médio", "preco medio"],
+        "margem_lucro": ["margem", "lucro", "rentabilidade"],
+        "principal_gargalo": ["gargalo", "maior problema", "principal problema", "limitação"],
+        "origem_clientes": ["origem", "como encontram", "onde encontram", "como te acham"],
+        "maior_objecao": ["objeção", "objecao", "por que não compram", "desistência"],
+        "capital_disponivel": ["investir", "capital", "orçamento", "orcamento", "quanto pode"],
+        "num_funcionarios": ["equipe", "funcionário", "funcionario", "sozinho", "quantas pessoas"],
+        "canais_venda": ["onde vende", "como vende", "canal de venda", "canais"],
+        "modelo_operacional": ["operação", "operacao", "funciona sua", "estoque", "encomenda"],
+        "faturamento_mensal": ["faturamento", "fatura", "receita mensal"],
+        "tempo_operacao": ["há quanto tempo", "quando abriu", "quando começou", "tempo de operação"],
+        "tipo_produto": ["produto ou serviço", "produto ou servico", "o que vende", "tipo de produto"],
+    }
+    
+    for m in reversed(messages[-3:]):
+        if m.get("role") != "assistant":
+            continue
+        content = m.get("content", "").lower()
+        for field, keywords in field_keywords.items():
+            if any(kw in content for kw in keywords):
+                return field
+    
+    return None
 
 
 def call_groq_single(api_key: str, messages: list, temperature: float = 0.4,
@@ -245,38 +525,79 @@ def call_groq_single(api_key: str, messages: list, temperature: float = 0.4,
 def should_search_proactively(user_message: str, messages: list, extracted_profile: dict) -> dict:
     """
     RESEARCH-DRIVEN LOGIC - searches when user doesn't know something.
+    Now handles field-specific research for ALL researchable fields.
     
-    Search when:
-    1. User says "não sei", "pesquisa", "me ajuda", etc.
-    2. Early conversation - get market context for their business
-    3. User gives vague answers that need clarification
-    4. We need to gather missing required fields
-    
-    Returns: { should_search: bool, query: str|null, purpose: str }
+    Returns: { should_search: bool, query: str|null, purpose: str, field_being_researched: str|null }
     """
     msg_lower = user_message.lower()
     segmento = extracted_profile.get("segmento", "")
     localizacao = extracted_profile.get("localizacao", "")
     nome = extracted_profile.get("nome_negocio", "")
+    tipo_produto = extracted_profile.get("tipo_produto", "")
+    
+    no_result = {"should_search": False, "query": None, "purpose": None, "field_being_researched": None}
     
     # Count past searches
     past_searches = sum(1 for m in messages if m.get("role") == "assistant" and "🔍" in m.get("content", ""))
     
-    # ━━━ 1. USER DOESN'T KNOW OR ASKS FOR HELP - RESEARCH FOR THEM ━━━
-    # Only search when user explicitly says they don't know
-    explicit_dont_know = [
+    # ━━━ 1. USER DOESN'T KNOW OR ASKS FOR HELP ━━━
+    dont_know_patterns = [
         r"não sei|nao sei|pesquisa|me ajuda|não conheço|nao conheco",
-        r"vish.*não sei|não faço ideia|não tenho certeza|ajuda.*descobrir"
+        r"vish.*não sei|não faço ideia|não tenho certeza|ajuda.*descobrir",
+        r"nao tenho ideia|sei lá|sei la|não sei dizer|nao sei dizer",
+        r"pode pesquisar|pesquisa pra mim|pesquisa ai|busca pra mim",
     ]
     
     user_doesnt_know = False
-    for pattern in explicit_dont_know:
+    for pattern in dont_know_patterns:
         if re.search(pattern, msg_lower):
             user_doesnt_know = True
             break
     
     if user_doesnt_know:
-        # What are we trying to find out? Look at recent assistant questions
+        # Track already-researched fields to prevent loops
+        already_researched = extracted_profile.get("_fields_researched", [])
+        
+        # Determine the next field we SHOULD be collecting (from ordered list)
+        next_collectible = None
+        for f in ALL_COLLECTIBLE_FIELDS_ORDER:
+            if not extracted_profile.get(f) and f != "investimento_marketing" and not f.startswith("_"):
+                next_collectible = f
+                break
+        
+        # Also detect field from last assistant message context
+        field_from_context = get_field_from_context(messages)
+        
+        # Prefer next_collectible if researchable AND not already researched
+        field = None
+        if next_collectible and next_collectible in RESEARCHABLE_FIELDS and next_collectible not in already_researched:
+            field = next_collectible
+        elif field_from_context and field_from_context in RESEARCHABLE_FIELDS and field_from_context not in already_researched:
+            field = field_from_context
+        else:
+            # Scan ahead for next researchable field NOT already researched
+            for f in ALL_COLLECTIBLE_FIELDS_ORDER:
+                if not extracted_profile.get(f) and f in RESEARCHABLE_FIELDS and f not in already_researched:
+                    field = f
+                    break
+        
+        if field:
+            # Build targeted search query for this specific field
+            config = RESEARCHABLE_FIELDS[field]
+            query = config["search_template"].format(
+                segmento=segmento or "pequenos negócios",
+                localizacao=localizacao or "Brasil",
+                nome_negocio=nome or "negócio",
+                tipo_produto=tipo_produto or segmento or "",
+            )
+            return {
+                "should_search": True,
+                "query": query,
+                "purpose": config["description"],
+                "field_being_researched": field,
+            }
+        
+        # Fallback: try common field patterns from the question
         recent_question = ""
         for m in reversed(messages[-3:]):
             if m.get("role") == "assistant":
@@ -285,34 +606,39 @@ def should_search_proactively(user_message: str, messages: list, extracted_profi
                     recent_question = content.split("?")[0].split(". ")[-1].lower()
                     break
         
-        # Build specific research query based on context
-        if "concorrent" in recent_question:
-            query = f"concorrentes {segmento} {localizacao} principais empresas mercado"
-            return {"should_search": True, "query": query, "purpose": "Identificar concorrentes"}
+        # Map question keywords to fields and queries
+        keyword_map = [
+            ("concorrent", "concorrentes", f"concorrentes {segmento} {localizacao} principais empresas mercado"),
+            ("cliente", "cliente_ideal", f"{segmento} {localizacao} perfil cliente típico quem compra"),
+            ("público", "cliente_ideal", f"{segmento} {localizacao} perfil cliente típico público-alvo"),
+            ("diferencial", "diferencial", f"{segmento} diferencial competitivo como se destacar"),
+            ("margem", "margem_lucro", f"{segmento} margem de lucro média setor brasil"),
+            ("lucro", "margem_lucro", f"{segmento} margem de lucro média setor brasil"),
+            ("ticket", "ticket_medio", f"{segmento} {localizacao} preço médio ticket venda"),
+            ("preço", "ticket_medio", f"{segmento} {localizacao} preço médio ticket venda"),
+            ("gargalo", "principal_gargalo", f"{segmento} principais problemas gargalos desafios empresas"),
+            ("limitação", "principal_gargalo", f"{segmento} principais limitações desafios pequenas empresas"),
+            ("origem", "origem_clientes", f"{segmento} {localizacao} canais aquisição clientes marketing"),
+            ("objeção", "maior_objecao", f"{segmento} objeções clientes reclamações motivos não comprar"),
+            ("desafio", None, f"{segmento} principais desafios problemas comuns empresas"),
+            ("objetivo", None, f"{segmento} objetivos crescimento metas comuns empresas"),
+        ]
         
-        elif "limitação" in recent_question or "maior" in recent_question:
-            query = f"{segmento} principais limitações desafios pequenas empresas"
-            return {"should_search": True, "query": query, "purpose": "Identificar limitações típicas"}
+        for keyword, field_name, query in keyword_map:
+            if keyword in recent_question or keyword in msg_lower:
+                return {
+                    "should_search": True,
+                    "query": query,
+                    "purpose": f"Pesquisa sobre {FIELD_LABELS_PT.get(field_name, keyword) if field_name else keyword}",
+                    "field_being_researched": field_name,
+                }
         
-        elif "público" in recent_question or "cliente" in recent_question:
-            query = f"{segmento} {localizacao} perfil cliente típico quem compra"
-            return {"should_search": True, "query": query, "purpose": "Definir público-alvo"}
-        
-        elif "desafio" in recent_question or "dificuldade" in recent_question:
-            query = f"{segmento} principais desafios problemas comuns empresas"
-            return {"should_search": True, "query": query, "purpose": "Identificar desafios típicos"}
-        
-        elif "objetivo" in recent_question or "meta" in recent_question:
-            query = f"{segmento} objetivos crescimento metas comuns empresas"
-            return {"should_search": True, "query": query, "purpose": "Definir objetivos típicos"}
-        
+        # Generic fallback research
+        if segmento:
+            query = f"{segmento} {localizacao} informações mercado características"
         else:
-            # Generic research based on their business
-            if segmento:
-                query = f"{segmento} {localizacao} informações mercado características"
-            else:
-                query = f"{nome} negócio informações mercado"
-            return {"should_search": True, "query": query, "purpose": "Pesquisa geral"}
+            query = f"{nome} negócio informações mercado"
+        return {"should_search": True, "query": query, "purpose": "Pesquisa geral", "field_being_researched": None}
     
     # ━━━ 2. USER MENTIONS PROBLEMS THAT NEED SOLUTIONS ━━━
     problem_patterns = {
@@ -327,37 +653,21 @@ def should_search_proactively(user_message: str, messages: list, extracted_profi
     }
     
     for pattern, (query_template, purpose) in problem_patterns.items():
-        if re.search(pattern, msg_lower) and past_searches < 3:
+        if re.search(pattern, msg_lower) and past_searches < 5:
             query = query_template.replace("{segmento}", segmento or "pequenos negócios").replace("{localizacao}", localizacao or "Brasil")
-            return {"should_search": True, "query": query, "purpose": purpose}
+            return {"should_search": True, "query": query, "purpose": purpose, "field_being_researched": None}
     
-    # ━━━ 3. VAGUE ANSWERS NEED CLARIFICATION ━━━
-    vague_answers = [
-        r"todo.*tipo|qualquer.*um|vários|diversos|geral",
-        r"tudo|qualquer.*coisa|depende|varia"
-    ]
-    
-    for pattern in vague_answers:
-        if re.search(pattern, msg_lower) and segmento and past_searches < 3:
-            query = f"{segmento} segmentação público-alvo perfil cliente específico"
-            return {"should_search": True, "query": query, "purpose": "Refinar público vago"}
-    
-    # ━━━ 4. EARLY MARKET RESEARCH ━━━
+    # ━━━ 3. EARLY MARKET RESEARCH ━━━
     msg_count = len(messages)
     if msg_count <= 4 and segmento and localizacao and past_searches == 0:
         query = f"{segmento} {localizacao} mercado oportunidades público-alvo"
-        return {"should_search": True, "query": query, "purpose": "Pesquisa inicial de mercado"}
+        return {"should_search": True, "query": query, "purpose": "Pesquisa inicial de mercado", "field_being_researched": None}
     
-    # ━━━ 5. MISSING REQUIRED FIELDS - only search if user explicitly doesn't know ━━━
-    # Removed: auto-searching for missing required fields was triggering unnecessary
-    # searches when the user was answering directly, causing LLM confusion.
-    # Searches for required fields now only happen via section 1 (user says "não sei").
-    
-    return {"should_search": False, "query": None, "purpose": None}
+    return no_result
 
 
-def search_internet(query: str, region: str = "br-pt") -> str:
-    """Search DuckDuckGo and scrape top results. Returns aggregated text."""
+def search_internet(query: str, region: str = "br-pt") -> dict:
+    """Search DuckDuckGo and scrape top results. Returns dict with text and sources."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, script_dir)
     from cli import search_duckduckgo, scrape_page
@@ -366,25 +676,49 @@ def search_internet(query: str, region: str = "br-pt") -> str:
     results = search_duckduckgo(query, max_results=4, region=region)
 
     if not results:
-        return "Nenhum resultado encontrado."
+        return {"text": "Nenhum resultado encontrado.", "sources": []}
 
     aggregated = ""
+    sources = []
     for i, r in enumerate(results):
         url = r.get('href', '')
         title = r.get('title', '')
         snippet = r.get('body', '')
         aggregated += f"[{title}]: {snippet}\n"
+        if url:
+            sources.append({"title": title, "url": url})
         if i < 2:  # Scrape top 2 results for more depth
             content = scrape_page(url)
             if content:
                 aggregated += f"  Detalhes: {content[:1500]}\n"
 
-    return aggregated[:5000]
+    return {"text": aggregated[:5000], "sources": sources}
+
+
+def _check_search_relevance(search_text: str, segmento: str, tipo_produto: str) -> bool:
+    """
+    Quick relevance check: do the search results actually mention our segment?
+    Returns True if results seem relevant, False if garbage (e.g. perfumaria for brownies).
+    """
+    if not search_text or not segmento:
+        return True  # Can't check, assume OK
+    
+    text_lower = _normalize(search_text)
+    seg_words = [w for w in _normalize(segmento).split() if len(w) > 3]
+    tp_words = [w for w in _normalize(tipo_produto or "").split() if len(w) > 3]
+    
+    check_words = seg_words + tp_words
+    if not check_words:
+        return True
+    
+    hits = sum(1 for w in check_words if w in text_lower)
+    return hits >= 1  # At least one keyword from segment/tipo must appear
 
 
 def generate_reply(api_key: str, messages: list, user_message: str,
                    extracted_profile: dict, search_context: str = None,
-                   search_purpose: str = None) -> dict:
+                   search_purpose: str = None, field_being_researched: str = None,
+                   research_pending: dict = None) -> dict:
     """
     CONSULTATIVE REPLY GENERATION.
     
@@ -416,170 +750,152 @@ def generate_reply(api_key: str, messages: list, user_message: str,
     # Build teaching block from search
     teaching_block = ""
     if search_context and search_purpose:
-        teaching_block = f"""
+        if field_being_researched:
+            field_label = FIELD_LABELS_PT.get(field_being_researched, field_being_researched)
+            teaching_block = f"""
+🔍 DADOS DA PESQUISA PARA "{field_label}" (propósito: {search_purpose}):
+{search_context}
 
+INSTRUÇÃO CRÍTICA - APRESENTE OS ACHADOS PARA CONFIRMAÇÃO:
+O usuário NÃO SABE sobre "{field_label}". Você pesquisou e encontrou dados acima.
+FAÇA EXATAMENTE ISTO:
+1. Apresente um RESUMO dos achados relevantes (2-3 itens concretos da pesquisa)
+2. Explique brevemente por que são relevantes para o negócio dele
+3. Diga: "Precisaremos fazer um estudo mais detalhado depois, já vou marcar uma tarefa para isso."
+4. Pergunte: "Concorda com essa análise inicial? Pode ajustar como quiser."
+5. NO JSON updated_profile, coloque o valor sugerido no campo "{field_being_researched}"
+6. NÃO passe para outro campo - espere a confirmação do usuário
+"""
+        else:
+            teaching_block = f"""
 🔍 DADOS DA PESQUISA (propósito: {search_purpose}):
 {search_context}
 
-INSTRUÇÃO CRÍTICA - USE OS DADOS PARA OFERECER OPÇÕES:
-- Com base na pesquisa, ofereça 2-3 opções específicas para ele escolher
-- Exemplo: "Baseado na pesquisa, seu público pode ser: A) X, B) Y ou C) Z. Qual faz mais sentido?"
-- Se for sobre concorrentes: "Encontrei estas empresas similares: [lista]. Conhece alguma?"
-- SEMPRE termine perguntando se ele concorda com alguma opção
-- Se ele concordar, SALVE a resposta e passe para o próximo campo obrigatório
+INSTRUÇÃO - USE OS DADOS:
+- Ofereça 2-3 opções específicas baseadas na pesquisa
+- Termine perguntando se ele concorda com alguma opção
 """
 
-    # Determine what info we still need
+    # Build pending research block
+    pending_block = ""
+    if research_pending:
+        pending_field = research_pending.get("field", "")
+        pending_value = research_pending.get("suggested_value", "")
+        pending_label = FIELD_LABELS_PT.get(pending_field, pending_field)
+        pending_block = f"""
+⏳ PESQUISA PENDENTE DE CONFIRMAÇÃO:
+Você pesquisou sobre "{pending_label}" e sugeriu: "{pending_value}"
+Aguardando confirmação do usuário.
+- Se confirmar: Aceite, agradeça, e passe para o PRÓXIMO campo
+- Se rejeitar: Peça o que ele acha correto, ou ofereça pesquisar de novo
+- Se der outra resposta: Use a resposta dele como valor do campo
+"""
+
+    # Determine what info we still need - ALL fields in order
     missing_required = [f for f in REQUIRED_FIELDS if not extracted_profile.get(f)]
     missing_priority = [f for f in PRIORITY_OPTIONAL if not extracted_profile.get(f)]
+    missing_optional = [f for f in OPTIONAL_FIELDS if not extracted_profile.get(f) and f not in PRIORITY_OPTIONAL]
+    missing_context = [f for f in CONTEXT_FIELDS if not extracted_profile.get(f)]
     
+    all_remaining = [f for f in ALL_COLLECTIBLE_FIELDS_ORDER
+                     if not extracted_profile.get(f)
+                     and f != "investimento_marketing"
+                     and not f.startswith("_")]
+    
+    next_field = all_remaining[0] if all_remaining else None
     next_field_hint = ""
-    if missing_required:
-        field = missing_required[0]
-        if field == "segmento":
-            next_field_hint = "Após confirmar, pergunte: 'Em que segmento/área exatamente você atua?'"
-        elif field == "modelo":
-            next_field_hint = "Após confirmar, pergunte: 'Você atende mais empresas (B2B) ou pessoas físicas (B2C)?'"
-        elif field == "dificuldades":
-            next_field_hint = "Após confirmar, pergunte: 'Qual é seu maior desafio hoje no negócio?'"
-        elif field == "objetivos":
-            next_field_hint = "Após confirmar, pergunte: 'Qual é sua meta principal para os próximos meses?'"
-    elif missing_priority:
-        field = missing_priority[0]
-        hints = {
-            "capital_disponivel": "Pergunte: 'Quanto você pode investir por mês em marketing/crescimento?'",
-            "num_funcionarios": "Pergunte: 'Você trabalha sozinho ou tem uma equipe? Quantas pessoas?'",
-            "canais_venda": "Pergunte: 'Onde/como você vende hoje? Instagram, loja física, site?'",
-            "cliente_ideal": "Pergunte: 'Descreva seu cliente ideal - idade, perfil, características'",
-            "ticket_medio": "Pergunte: 'Qual o valor médio de cada venda?'",
-            "modelo_operacional": "Pergunte: 'Como funciona sua operação? Tem estoque, trabalha sob encomenda?'",
-            "faturamento_mensal": "Pergunte: 'Qual seu faturamento médio mensal aproximadamente?'"
-        }
-        next_field_hint = hints.get(field, f"Pergunte sobre {FIELD_LABELS_PT.get(field, field)}")
+    if next_field:
+        is_researchable = next_field in RESEARCHABLE_FIELDS
+        research_note = " (Se o usuário disser 'não sei', PESQUISE usando dados do perfil)" if is_researchable else ""
+        next_field_hint = f"PRÓXIMO CAMPO A COLETAR: {FIELD_LABELS_PT.get(next_field, next_field)}{research_note}"
+    else:
+        next_field_hint = "TODOS OS CAMPOS COLETADOS - sugira gerar análise"
 
-    system_prompt = f"""Você é uma CONSULTORA que FAZ PESQUISAS para o cliente.
+    # Clean profile for display (exclude internal fields)
+    display_profile = {k: v for k, v in extracted_profile.items() if not str(k).startswith("_") and v}
+    display_profile_json = json.dumps(display_profile, ensure_ascii=False, indent=2)
 
-🎯 SEU OBJETIVO:
-- PESQUISAR e trazer informações quando o usuário não souber
-- APRESENTAR opções baseadas na pesquisa para ele escolher
-- SALVAR a escolha dele e seguir para o próximo campo obrigatório
-- COLETAR todos os 6 campos obrigatórios de forma eficiente
+    system_prompt = f"""Você é uma CONSULTORA DE CRESCIMENTO simpática e objetiva.
+Seu ÚNICO objetivo agora é ENTENDER o negócio do usuário. Você está na FASE DE COLETA.
 
-CONTEXTO ATUAL DA CONVERSA:
-{known_context if known_context else "Ainda começando a coleta."}
+PERFIL COLETADO (NUNCA apague dados existentes):
+{display_profile_json}
 
-CAMPOS JÁ COLETADOS (PRESERVE ESTES VALORES):
-{json.dumps(extracted_profile, ensure_ascii=False, indent=2)}
-
-{teaching_block}
-
-CAMPOS OBRIGATÓRIOS AINDA FALTANDO: {missing_required}
-CAMPOS IMPORTANTES AINDA FALTANDO: {missing_priority}
+{teaching_block}{pending_block}
 {next_field_hint}
 
-ATENÇÃO: Colete primeiro os 6 obrigatórios, depois os 7 importantes. Só sugira análise quando tiver pelo menos os obrigatórios + 4 importantes.
+╔═══════════════════════════════════════════════╗
+║        REGRAS ABSOLUTAS (QUEBRE = FALHA)      ║
+╚═══════════════════════════════════════════════╝
 
-╔═══════════════════════════════════════════════════════════════╗
-║  COMPORTAMENTO: PESQUISADOR + COLETOR (OBRIGATÓRIO SEGUIR)   ║
-╚═══════════════════════════════════════════════════════════════╝
+1. NUNCA ECOE: Não repita, reformule ou parafraseie o que o usuário acabou de dizer.
+   ❌ "Entendi! Você fabrica e vende brownies. Isso é incrível!"
+   ❌ "Você vende brownies na rua, legal!"
+   ✅ "Show!" → próxima pergunta
 
-1. SE TODOS OS OBRIGATÓRIOS + 4 IMPORTANTES ESTÃO COLETADOS:
-   - Sugira: "✅ Tenho informações suficientes para uma boa análise! Clique em 'Gerar Análise'."
-   - PARE de coletar
+2. NUNCA DÊ CONSELHOS durante a coleta:
+   ❌ "Você já pensou em aumentar a visibilidade nas redes sociais?"
+   ❌ "Uma dica: tente usar Instagram Reels."
+   ✅ Apenas colete informações. Conselhos vêm DEPOIS.
 
-2. SE AINDA FALTA CAMPO OBRIGATÓRIO:
-   - Priorize obrigatórios primeiro
-   - Pergunte diretamente: "Qual é o [campo]?"
-   - NÃO repita perguntas já respondidas
+3. NUNCA REPITA PERGUNTAS: Se o usuário já mencionou algo, NÃO pergunte de novo.
+   Ex: Se disse "compro ingredientes semanalmente", NÃO pergunte sobre compras.
+   Ex: Se disse "fabrico e vendo brownies", NÃO pergunte "produto ou serviço?"
 
-3. SE TEM TODOS OBRIGATÓRIOS MAS FALTA IMPORTANTE:
-   - Colete campos importantes para análise mais rica
-   - "Para uma análise mais precisa: [pergunta]"
-   - Pare ao ter pelo menos 4 importantes
+4. MÁXIMO 1 FRASE de reconhecimento + 1 PERGUNTA. Total: 2-3 frases curtas.
+   Reconhecimentos válidos: "Show!", "Legal!", "Entendi!", "Ótimo!", "Beleza!", "Perfeito!"
 
-3. QUANDO VOCÊ PESQUISOU (tem dados):
-   - Apresente 2-3 opções específicas baseadas na pesquisa
-   - "Pela pesquisa, encontrei: A) X, B) Y, C) Z. Qual faz mais sentido?"
-   - Se ele escolher, ACEITE e avance
+5. UMA PERGUNTA por mensagem. Sempre o PRÓXIMO campo faltante.
 
-4. QUANDO ELE RESPONDE DIRETAMENTE:
-   - NÃO busque desnecessariamente
-   - NÃO ecoe/repita TODOS os campos coletados (isso polui o histórico)
-   - ACEITE a resposta e avance: "Ok! [Próxima pergunta direta]"
+🔍 QUANDO O USUÁRIO NÃO SOUBER:
+- Apresente 2-3 achados concretos da pesquisa
+- Diga: "Marquei uma tarefa pra aprofundar isso depois."
+- Pergunte: "Faz sentido?" e espere confirmação
 
-5. FORMATO DA RESPOSTA:
-   - Máximo 2 frases curtas
-   - Se todos campos completos: sugira análise
-   - Se falta campo: pergunte diretamente
-   - NUNCA repita pergunta já respondida
+FORMATO DA RESPOSTA:
+- Reconhecimento curto (1 palavra/frase)
+- Pergunta direta do próximo campo
+- SEM listas, SEM checklist, SEM resumos do que já foi coletado
 
-6. PRIORIDADE DE COLETA:
-   OBRIGATÓRIOS (6):
-   1. nome_negocio - "Qual o nome do seu negócio?"
-   2. segmento - "Em que segmento/área você atua?"
-   3. modelo - "Você atende empresas (B2B) ou pessoas físicas (B2C)?"
-   4. localizacao - "Em que cidade você atende?"
-   5. dificuldades - "Qual seu maior desafio hoje?"
-   6. objetivos - "Qual sua principal meta?"
-   
-   IMPORTANTES (7):
-   7. capital_disponivel - "Quanto pode investir por mês?"
-   8. num_funcionarios - "Você trabalha sozinho ou tem equipe?"
-   9. canais_venda - "Onde/como vende hoje?"
-   10. cliente_ideal - "Descreva seu cliente ideal"
-   11. ticket_medio - "Valor médio por venda?"
-   12. modelo_operacional - "Como funciona sua operação?"
-   13. faturamento_mensal - "Faturamento médio mensal?"
+EXTRAÇÃO JSON — salve EXATAMENTE o que o usuário disse:
+- "fabrico e vendo brownies" → tipo_produto: "produto", segmento: "brownies caseiros"
+- "B2C" → modelo: "B2C" (NUNCA em segmento)
+- "Vendo na loja e WhatsApp" → canais_venda: "loja física, WhatsApp"
+- NUNCA retorne null para campos já coletados
+- investimento_marketing deve ser sempre null — use capital_disponivel
 
-7. O QUE NUNCA FAZER:
-   - NÃO repita perguntas já respondidas
-   - NÃO busque quando usuário responde diretamente  
-   - NÃO continue coletando se já tem todos os obrigatórios
-   - NÃO trave no mesmo campo
-
-═══════════════════════════════════════════════════════════════
-EXTRAÇÃO: Salve EXATAMENTE o que o usuário escolheu/disse.
-═══════════════════════════════════════════════════════════════
-
-EXEMPLOS DE EXTRAÇÃO CORRETA:
-- Usuário: "CASA, MOVEIS PLANEJADOS" → nome_negocio: "CASA", segmento: "moveis planejados"
-- Usuário: "Tenho uma cafeteria chamada Café Aroma" → nome_negocio: "Café Aroma", segmento: "cafeteria"
-- Usuário: "Vendo roupas femininas, meu negócio é Loja X" → nome_negocio: "Loja X", segmento: "roupas femininas"
-- Usuário: "trabalho sozinho há 2 anos" → num_funcionarios: "1" (ou "sozinho")
-- Usuário: "temos 5 pessoas na equipe" → num_funcionarios: "5"
-- Usuário: "posso investir R$ 500 por mês" → capital_disponivel: "R$ 500/mês"
-- Usuário: "B2C" (depois de perguntar modelo) → modelo: "B2C"
-- Usuário: "indaiatuba" → localizacao: "Indaiatuba"
-- Usuário: "vender mais" → dificuldades: "vender mais", objetivos: null (ainda não perguntou)
-
-ATENÇÃO CRÍTICA NO JSON:
-- B2B/B2C/D2C é sempre o campo "modelo", NUNCA "segmento"
-- Segmento é o que a empresa FAZ/VENDE (ex: "cafeteria", "móveis", "roupas", "consultoria")
-- Frases como "Tenho uma [X]" ou "Trabalho com [Y]" → X ou Y é o segmento
-- "trabalho sozinho" ou "sou só eu" → num_funcionarios: "1" ou "sozinho"
-- Se a primeira mensagem tem vírgula, geralmente é: nome, segmento (ex: "Padaria São João, pães artesanais")
-- NUNCA retorne `null` para campos já coletados - PRESERVE todos os valores já extraídos
-- Se não tem nova informação para um campo, mantenha o valor anterior ou coloque `null` apenas se nunca foi coletado
-- "Quanto pode investir por mês" → campo "capital_disponivel" (NÃO "investimento_marketing")
-- "investimento_marketing" deve ser sempre null — use apenas "capital_disponivel"
-
-Retorne JSON baseado no que já foi coletado + nova informação desta mensagem:
+Retorne JSON:
 {{
-    "reply": "<ESCREVA SUA RESPOSTA AQUI — máximo 2 frases curtas, em português, conversacional>",
+    "reply": "<sua resposta — máximo 2-3 frases>",
     "updated_profile": {{
-        "nome_negocio": "{extracted_profile.get('nome_negocio', 'null se nunca coletado')}",
-        "segmento": "{extracted_profile.get('segmento', 'null se nunca coletado')}",
-        "modelo": "{extracted_profile.get('modelo', 'null se nunca coletado')}",
-        "localizacao": "{extracted_profile.get('localizacao', 'null se nunca coletado')}",
-        "dificuldades": "{extracted_profile.get('dificuldades', 'null se nunca coletado')}",
-        "objetivos": "{extracted_profile.get('objetivos', 'null se nunca coletado')}",
-        "capital_disponivel": "{extracted_profile.get('capital_disponivel', 'null se nunca coletado')}",
-        "num_funcionarios": "{extracted_profile.get('num_funcionarios', 'null se nunca coletado')}",
-        "ticket_medio": "{extracted_profile.get('ticket_medio', 'null se nunca coletado')}",
-        "faturamento_mensal": "{extracted_profile.get('faturamento_mensal', 'null se nunca coletado')}",
-        "canais_venda": "{extracted_profile.get('canais_venda', 'null se nunca coletado')}",
-        "cliente_ideal": "{extracted_profile.get('cliente_ideal', 'null se nunca coletado')}",
-        "modelo_operacional": "{extracted_profile.get('modelo_operacional', 'null se nunca coletado')}",
+        "nome_negocio": "{extracted_profile.get('nome_negocio') or 'null'}",
+        "segmento": "{extracted_profile.get('segmento') or 'null'}",
+        "modelo": "{extracted_profile.get('modelo') or 'null'}",
+        "localizacao": "{extracted_profile.get('localizacao') or 'null'}",
+        "dificuldades": "{extracted_profile.get('dificuldades') or 'null'}",
+        "objetivos": "{extracted_profile.get('objetivos') or 'null'}",
+        "capital_disponivel": "{extracted_profile.get('capital_disponivel') or 'null'}",
+        "num_funcionarios": "{extracted_profile.get('num_funcionarios') or 'null'}",
+        "ticket_medio": "{extracted_profile.get('ticket_medio') or 'null'}",
+        "faturamento_mensal": "{extracted_profile.get('faturamento_mensal') or 'null'}",
+        "canais_venda": "{extracted_profile.get('canais_venda') or 'null'}",
+        "cliente_ideal": "{extracted_profile.get('cliente_ideal') or 'null'}",
+        "modelo_operacional": "{extracted_profile.get('modelo_operacional') or 'null'}",
+        "tempo_operacao": "{extracted_profile.get('tempo_operacao') or 'null'}",
+        "tipo_produto": "{extracted_profile.get('tipo_produto') or 'null'}",
+        "diferencial": "{extracted_profile.get('diferencial') or 'null'}",
+        "concorrentes": "{extracted_profile.get('concorrentes') or 'null'}",
+        "principal_gargalo": "{extracted_profile.get('principal_gargalo') or 'null'}",
+        "margem_lucro": "{extracted_profile.get('margem_lucro') or 'null'}",
+        "origem_clientes": "{extracted_profile.get('origem_clientes') or 'null'}",
+        "maior_objecao": "{extracted_profile.get('maior_objecao') or 'null'}",
+        "tempo_entrega": "{extracted_profile.get('tempo_entrega') or 'null'}",
+        "instagram_handle": "{extracted_profile.get('instagram_handle') or 'null'}",
+        "linkedin_url": "{extracted_profile.get('linkedin_url') or 'null'}",
+        "site_url": "{extracted_profile.get('site_url') or 'null'}",
+        "email_contato": "{extracted_profile.get('email_contato') or 'null'}",
+        "whatsapp_numero": "{extracted_profile.get('whatsapp_numero') or 'null'}",
+        "google_maps_url": "{extracted_profile.get('google_maps_url') or 'null'}",
         "investimento_marketing": null
     }}
 }}"""
@@ -869,10 +1185,83 @@ def run_chat(input_data: dict) -> dict:
     user_message = input_data.get("user_message", "")
     extracted_profile = input_data.get("extracted_profile", {})
 
+    # ━━━ Handle pending research confirmation ━━━
+    research_pending = extracted_profile.get("_research_pending")
+    research_tasks = extracted_profile.get("_research_tasks", [])
+    
+    # Track which fields were already researched (prevents re-searching same field)
+    fields_researched = extracted_profile.get("_fields_researched", [])
+    just_resolved_pending = False  # Flag to skip proactive search after resolving pending
+    
+    if research_pending and user_message:
+        user_response = detect_research_response(user_message)
+        pending_field = research_pending.get("field", "")
+        pending_value = research_pending.get("suggested_value", "")
+        
+        # "não sei" while pending = user still doesn't know = ACCEPT the research
+        msg_lower_check = user_message.lower().strip()
+        is_still_dont_know = bool(re.search(
+            r"n[aã]o sei|sei l[aá]|n[aã]o fa[cç]o ideia|n[aã]o tenho certeza|pode ser|tanto faz",
+            msg_lower_check
+        ))
+        
+        if user_response == "confirm" or is_still_dont_know:
+            print(f"  ✅ User {'CONFIRMED' if user_response == 'confirm' else 'still doesnt know, auto-accepting'} research for {pending_field}: {pending_value}", file=sys.stderr)
+            extracted_profile[pending_field] = pending_value
+            research_tasks.append({
+                "titulo": f"Aprofundar: {FIELD_LABELS_PT.get(pending_field, pending_field)}",
+                "descricao": research_pending.get("task_description", ""),
+                "categoria": "pesquisa",
+                "origem": "pesquisa_assistida"
+            })
+            extracted_profile["_research_tasks"] = research_tasks
+            if pending_field not in fields_researched:
+                fields_researched.append(pending_field)
+            extracted_profile["_fields_researched"] = fields_researched
+            extracted_profile.pop("_research_pending", None)
+            research_pending = None
+            just_resolved_pending = True
+            print(f"  📋 Task added for deeper study of {pending_field}", file=sys.stderr)
+        elif user_response == "reject":
+            print(f"  ❌ User REJECTED research for {pending_field}", file=sys.stderr)
+            # Still create a task for deeper research when rejected
+            task_config = RESEARCHABLE_FIELDS.get(pending_field, {})
+            rp_nome = extracted_profile.get("nome_negocio", "o negócio")
+            rp_loc = extracted_profile.get("localizacao", "")
+            rp_seg = extracted_profile.get("segmento", "")
+            try:
+                task_desc = task_config.get("task_template", "Aprofundar pesquisa").format(
+                    nome_negocio=rp_nome, localizacao=rp_loc, segmento=rp_seg)
+            except (KeyError, IndexError):
+                task_desc = f"Aprofundar pesquisa sobre {FIELD_LABELS_PT.get(pending_field, pending_field)}"
+            research_tasks.append({
+                "titulo": f"Pesquisar melhor: {FIELD_LABELS_PT.get(pending_field, pending_field)}",
+                "descricao": task_desc + " (pesquisa inicial rejeitada pelo usuário)",
+                "categoria": "pesquisa",
+                "origem": "pesquisa_rejeitada"
+            })
+            extracted_profile["_research_tasks"] = research_tasks
+            if pending_field not in fields_researched:
+                fields_researched.append(pending_field)
+            extracted_profile["_fields_researched"] = fields_researched
+            extracted_profile.pop("_research_pending", None)
+            research_pending = None
+            just_resolved_pending = True
+        else:
+            # User gave a specific answer — use it as the field value
+            print(f"  🔄 User gave specific response for {pending_field}: {user_message}", file=sys.stderr)
+            extracted_profile[pending_field] = user_message
+            if pending_field not in fields_researched:
+                fields_researched.append(pending_field)
+            extracted_profile["_fields_researched"] = fields_researched
+            extracted_profile.pop("_research_pending", None)
+            research_pending = None
+            just_resolved_pending = True
+
     # First message? Send greeting (no LLM call needed)
     if not messages and not user_message:
         return {
-            "reply": "Oi! 👋 Sou sua consultora de crescimento. Vou coletar informações sobre seu negócio para gerar uma análise completa personalizada.\n\nVou perguntar sobre:\n✅ 6 campos essenciais (nome, segmento, modelo, localização, desafios, objetivos)\n📊 Informações importantes (orçamento, equipe, canais, etc.)\n\nQuando você não souber algo, eu pesquiso pra você! Vamos começar:\n\nQual o nome do seu negócio e o que vocês fazem?",
+            "reply": "Oi! 👋 Sou sua consultora de crescimento.\n\nVou te fazer algumas perguntas rápidas pra entender seu negócio e gerar um plano de ação personalizado. Se tiver algo que você não souber, sem problema — eu pesquiso pra você!\n\nVamos lá: qual o nome do seu negócio e o que vocês fazem?",
             "extracted_profile": extracted_profile,
             "search_performed": False,
             "search_query": None,
@@ -882,29 +1271,90 @@ def run_chat(input_data: dict) -> dict:
         }
 
     # Step 1: PROACTIVE SEARCH - search when user needs help
-    search_decision = should_search_proactively(user_message, messages, extracted_profile)
+    # Skip if we just resolved a pending research (don't chain searches)
+    
+    # Pre-infer fields so tipo_produto is available for search queries
+    early_inferred = _infer_fields_from_context(
+        messages + [{"role": "user", "content": user_message}], extracted_profile
+    )
+    for f, v in early_inferred.items():
+        if not extracted_profile.get(f):
+            extracted_profile[f] = v
+            print(f"  🧠 Early inferred {f}={v} for search context", file=sys.stderr)
+    
+    if just_resolved_pending:
+        search_decision = {"should_search": False, "query": None, "purpose": None, "field_being_researched": None}
+        print("  ⏭️ Skipping proactive search — just resolved pending research", file=sys.stderr)
+    else:
+        search_decision = should_search_proactively(user_message, messages, extracted_profile)
     search_context = None
     search_performed = False
     search_query = None
     search_purpose = None
+    field_being_researched = search_decision.get("field_being_researched")
+    field_being_researched_failed = None  # Track field if search fails/irrelevant
+
+    # Track if user said "não sei" so we can acknowledge it even if search fails
+    user_said_dont_know = search_decision.get("should_search", False) and bool(
+        re.search(r"não sei|nao sei|sei lá|sei la|não faço ideia|nao faco ideia|não tenho certeza|nao tenho certeza", user_message.lower())
+    )
+
+    search_sources = []  # URLs/titles from search results
 
     if search_decision["should_search"] and search_decision["query"]:
         search_query = search_decision["query"]
         search_purpose = search_decision.get("purpose", "Busca de contexto")
-        search_context = search_internet(search_query)
+        search_result = search_internet(search_query)
+        search_context = search_result["text"]
+        search_sources = search_result["sources"]
         search_performed = True
-        print(f"  📚 Propósito: {search_purpose}", file=sys.stderr)
+        print(f"  📚 Propósito: {search_purpose} | Fontes: {len(search_sources)}", file=sys.stderr)
         
         # If we're searching, we MUST have search context before generating reply
         if not search_context or search_context.strip() == "Nenhum resultado encontrado.":
             print("  ⚠️ Busca falhou, continuando sem dados", file=sys.stderr)
+            field_being_researched_failed = field_being_researched  # save before clearing
             search_performed = False
             search_context = None
+            search_sources = []
+        else:
+            # Check relevance of results
+            seg = extracted_profile.get("segmento", "")
+            tp = extracted_profile.get("tipo_produto", "")
+            if field_being_researched and not _check_search_relevance(search_context, seg, tp):
+                print(f"  ⚠️ Search results irrelevant for '{seg}/{tp}', creating task instead", file=sys.stderr)
+                # Results are garbage — create a research task and skip showing them
+                task_config = RESEARCHABLE_FIELDS.get(field_being_researched, {})
+                rp_nome = extracted_profile.get("nome_negocio", "o negócio")
+                rp_loc = extracted_profile.get("localizacao", "")
+                try:
+                    task_desc = task_config.get("task_template", "Aprofundar pesquisa").format(
+                        nome_negocio=rp_nome, localizacao=rp_loc, segmento=seg)
+                except (KeyError, IndexError):
+                    task_desc = f"Pesquisar sobre {FIELD_LABELS_PT.get(field_being_researched, field_being_researched)}"
+                research_tasks = extracted_profile.get("_research_tasks", [])
+                research_tasks.append({
+                    "titulo": f"Pesquisar: {FIELD_LABELS_PT.get(field_being_researched, field_being_researched)}",
+                    "descricao": task_desc + " (busca automática não retornou resultados relevantes)",
+                    "categoria": "pesquisa",
+                    "origem": "busca_irrelevante"
+                })
+                extracted_profile["_research_tasks"] = research_tasks
+                fields_researched = extracted_profile.get("_fields_researched", [])
+                if field_being_researched not in fields_researched:
+                    fields_researched.append(field_being_researched)
+                extracted_profile["_fields_researched"] = fields_researched
+                # Clear search so we don't show bad results
+                field_being_researched_failed = field_being_researched  # save before clearing
+                search_performed = False
+                search_context = None
+                search_sources = []
+                field_being_researched = None
 
     # Step 2: Generate CONSULTATIVE reply (teaches + extracts profile naturally)
     print("💬 Gerando resposta consultiva...", file=sys.stderr)
     try:
-        result = generate_reply(api_key, messages, user_message, extracted_profile, search_context, search_purpose)
+        result = generate_reply(api_key, messages, user_message, extracted_profile, search_context, search_purpose, field_being_researched, research_pending)
     except Exception as e:
         print(f"  ❌ Erro ao gerar resposta: {e}", file=sys.stderr)
         # Fallback: acknowledge user input and ask next question
@@ -913,25 +1363,53 @@ def run_chat(input_data: dict) -> dict:
     reply = result.get("reply") or None
     updated_profile = result.get("updated_profile", extracted_profile)
 
+    # ━━━ Capture research suggestion BEFORE validation (would be rejected by validator) ━━━
+    research_suggestion = None
+    if field_being_researched and search_performed:
+        research_suggestion = updated_profile.get(field_being_researched)
+        if research_suggestion:
+            # Remove so validation doesn't reject it (value isn't in user text)
+            updated_profile[field_being_researched] = None
+            print(f"  🔬 Captured research suggestion for {field_being_researched}: {research_suggestion}", file=sys.stderr)
+
     # DEBUG: Log what LLM extracted
     print(f"  🧠 LLM extracted profile: {json.dumps(updated_profile, ensure_ascii=False)}", file=sys.stderr)
 
     # If reply is empty/null or is leaked system prompt text, generate a simple fallback
     if not reply or reply.startswith("<ESCREVA") or "campo obrigatório" in reply.lower():
-        missing_required = [f for f in REQUIRED_FIELDS if not extracted_profile.get(f)]
-        if missing_required:
-            field = missing_required[0]
-            field_prompts = {
-                "nome_negocio": "Qual o nome do seu negócio e o que vocês fazem?",
-                "segmento": "Em que segmento/área você atua?",
-                "modelo": "Você atende empresas (B2B) ou pessoas físicas (B2C)?",
-                "localizacao": "Em que cidade você atende?",
-                "dificuldades": "Qual seu maior desafio hoje no negócio?",
-                "objetivos": "Qual sua principal meta para os próximos meses?"
-            }
-            reply = f"Ok, anotado! {field_prompts.get(field, 'Me conta mais sobre seu negócio?')}"
-        else:
-            reply = "Entendi! Me conta mais sobre seu negócio."
+        reply = None  # Will be filled by field prompt logic below
+
+    # Post-process: fix echo replies (LLM sometimes repeats user message verbatim)
+    if reply and user_message and len(user_message) > 10:
+        user_norm = _normalize(user_message).strip()
+        reply_norm = _normalize(reply).strip()
+        
+        # Check if reply STARTS with what user said (echo)
+        if len(user_norm) > 10 and reply_norm.startswith(user_norm[:30]):
+            parts = reply.split("\n\n", 1)
+            if len(parts) > 1:
+                reply = parts[1].strip()
+            else:
+                reply = None  # Will be replaced by field prompt below
+        
+        # Check if reply CONTAINS the user message as a near-complete echo
+        elif len(user_norm) > 15:
+            # Split reply into sentences and remove any that echo the user
+            import re as _re
+            sentences = _re.split(r'(?<=[.!?])\s+', reply)
+            filtered = []
+            for s in sentences:
+                s_norm = _normalize(s).strip()
+                # Skip if >60% of user text appears in this sentence
+                overlap = sum(1 for w in user_norm.split() if len(w) > 2 and w in s_norm)
+                total_words = len([w for w in user_norm.split() if len(w) > 2])
+                if total_words > 0 and overlap / total_words > 0.6:
+                    continue  # Skip this echoing sentence
+                filtered.append(s)
+            if filtered:
+                reply = ' '.join(filtered)
+            else:
+                reply = None  # All sentences were echoes
 
     # Step 3: VALIDATE extracted profile against actual user text
     all_user_text = user_message
@@ -1007,84 +1485,206 @@ def run_chat(input_data: dict) -> dict:
         cleaned_profile["investimento_marketing"] = cleaned_profile["capital_disponivel"]
         print(f"  🔄 Synced capital_disponivel → investimento_marketing: {cleaned_profile['investimento_marketing']}", file=sys.stderr)
 
+    # Infer num_funcionarios from message if still missing
+    if not cleaned_profile.get("num_funcionarios"):
+        solo_patterns = ["trabalho sozinho", "sou só eu", "sou eu mesmo", "somente eu", 
+                         "só eu", "apenas eu", "trabalho só", "empreendedor solo"]
+        msg_lower = user_message.lower()
+        # Also check full conversation context
+        context_lower = " ".join(m.get("content", "") for m in messages).lower()
+        combined = msg_lower + " " + context_lower
+        if any(p in combined for p in solo_patterns):
+            cleaned_profile["num_funcionarios"] = "sozinho"
+            print(f"  🔄 Inferred num_funcionarios=sozinho from context", file=sys.stderr)
+
+    # ━━━ AUTO-INFER fields from conversation context ━━━
+    inferred = _infer_fields_from_context(messages + [{"role": "user", "content": user_message}], cleaned_profile)
+    for field, value in inferred.items():
+        if not cleaned_profile.get(field):
+            cleaned_profile[field] = value
+            print(f"  🧠 Auto-inferred {field}={value} from conversation context", file=sys.stderr)
+
+    # ━━━ Set _research_pending if we just searched for a specific field ━━━
+    if research_suggestion and field_being_researched:
+        # Don't mark as pending if field was already collected before this interaction
+        already_collected = extracted_profile.get(field_being_researched)
+        if not already_collected:
+            task_config = RESEARCHABLE_FIELDS.get(field_being_researched, {})
+            rp_nome = cleaned_profile.get("nome_negocio", "o negócio")
+            rp_loc = cleaned_profile.get("localizacao", "")
+            rp_seg = cleaned_profile.get("segmento", "")
+            try:
+                task_desc = task_config.get("task_template", "Aprofundar pesquisa").format(
+                    nome_negocio=rp_nome, localizacao=rp_loc, segmento=rp_seg)
+            except (KeyError, IndexError):
+                task_desc = f"Aprofundar pesquisa sobre {FIELD_LABELS_PT.get(field_being_researched, field_being_researched)}"
+            cleaned_profile["_research_pending"] = {
+                "field": field_being_researched,
+                "suggested_value": research_suggestion,
+                "task_description": task_desc,
+            }
+            # Don't store value as confirmed yet
+            cleaned_profile[field_being_researched] = None
+            print(f"  ⏳ Set _research_pending for {field_being_researched}: {research_suggestion}", file=sys.stderr)
+            
+            # ━━━ CRITICAL: Override reply if LLM didn't present findings ━━━
+            # The LLM (especially smaller fallback model) often says "Vou pesquisar"
+            # instead of presenting the actual search results. Force-build a reply.
+            skip_phrases = ["vou pesquisar", "marquei uma tarefa", "vou buscar", 
+                           "preciso pesquisar", "vou procurar", "vou verificar",
+                           "deixa eu pesquisar", "vou dar uma olhada"]
+            llm_reply_lower = (reply or "").lower()
+            llm_skipped_results = (
+                not reply or 
+                any(sp in llm_reply_lower for sp in skip_phrases) or
+                len(reply.strip()) < 40  # Too short to contain real findings
+            )
+            
+            if llm_skipped_results and research_suggestion and research_suggestion != "null":
+                field_label = FIELD_LABELS_PT.get(field_being_researched, field_being_researched)
+                reply = f"Pesquisei sobre **{field_label}** pro seu negócio e encontrei:\n\n"
+                reply += f"📋 **{research_suggestion}**\n\n"
+                reply += "Marquei uma tarefa pra aprofundar isso depois. Faz sentido pra você?"
+                print(f"  🔧 Override: LLM reply was empty/generic, built reply with research data", file=sys.stderr)
+        else:
+            print(f"  ⚠️ {field_being_researched} already has value '{already_collected}', not marking as pending", file=sys.stderr)
+    
+    # Preserve _research_tasks from previous interactions
+    if extracted_profile.get("_research_tasks") and not cleaned_profile.get("_research_tasks"):
+        cleaned_profile["_research_tasks"] = extracted_profile["_research_tasks"]
+
+    # Preserve _fields_researched from previous interactions
+    if extracted_profile.get("_fields_researched") and not cleaned_profile.get("_fields_researched"):
+        cleaned_profile["_fields_researched"] = extracted_profile["_fields_researched"]
+
     # Calculate what we have
-    fields_collected = [f for f in ALL_FIELDS if cleaned_profile.get(f)]
+    fields_collected = [f for f in ALL_FIELDS if cleaned_profile.get(f) and not f.startswith("_")]
     fields_missing = [f for f in REQUIRED_FIELDS if not cleaned_profile.get(f)]
     priority_collected = [f for f in PRIORITY_OPTIONAL if cleaned_profile.get(f)]
     priority_missing = [f for f in PRIORITY_OPTIONAL if not cleaned_profile.get(f)]
+    
+    # ALL remaining fields (for systematic collection)
+    all_remaining = [f for f in ALL_COLLECTIBLE_FIELDS_ORDER
+                     if not cleaned_profile.get(f)
+                     and f != "investimento_marketing"
+                     and not f.startswith("_")]
     
     # DEBUG: Log field status
     print(f"  📊 Fields collected: {fields_collected}", file=sys.stderr)
     print(f"  ❌ Missing required: {fields_missing}", file=sys.stderr)
     print(f"  🟢 Priority collected ({len(priority_collected)}/7): {priority_collected}", file=sys.stderr)
     print(f"  🔴 Priority missing: {priority_missing}", file=sys.stderr)
+    print(f"  📋 All remaining: {all_remaining}", file=sys.stderr)
     
     # Check readiness
     required_done = len(fields_missing) == 0
     priority_count = len(priority_collected)
+    has_pending = cleaned_profile.get("_research_pending") is not None
     
     # User explicitly wants to generate
     user_wants_finish = any(x in user_message.lower() for x in 
         ["pode gerar", "analisar", "pronto", "terminar", "concluir", "gerar análise", "gerar a análise", "fazer análise", "vamos analisar"])
     
-    # Ready when: all required + ALL priority fields (7) OR user explicitly asks
-    # Coleta completa garantindo análise rica e detalhada
-    ready = user_wants_finish or (required_done and priority_count >= 7)
+    # Base readiness: required + 5 priority
+    base_ready = required_done and priority_count >= 5
+    ready = user_wants_finish or base_ready
 
-    # If user explicitly wants to finish, add encouragement
+    # ━━━ Unified field collection and reply appendix ━━━
     if user_wants_finish:
-        reply += "\n\n✅ Vou gerar a análise completa agora - clique no botão abaixo!"
-    elif ready:
-        # Has enough info for good analysis - DON'T ask more questions
-        reply += "\n\n✅ Tenho informações suficientes para uma boa análise! Clique em 'Gerar Análise'."
-    elif not required_done:
-        # Still missing required fields - ask for the next one directly
-        missing_field = fields_missing[0]
-        field_prompts = {
-            "nome_negocio": "Qual o nome do seu negócio?",
-            "segmento": "Em que segmento/área você atua?", 
-            "modelo": "Você atende empresas (B2B) ou pessoas físicas (B2C)?",
-            "localizacao": "Em que cidade você atende?",
-            "dificuldades": "Qual seu maior desafio hoje?",
-            "objetivos": "Qual sua principal meta?"
-        }
+        if reply:
+            reply += "\n\n✅ Vou gerar a análise agora!"
+        else:
+            reply = "✅ Vou gerar a análise agora!"
+    elif has_pending:
+        # Waiting for research confirmation - don't ask new fields
+        pending_data = cleaned_profile.get("_research_pending", {})
+        pending_val = pending_data.get("suggested_value", "") if isinstance(pending_data, dict) else ""
+        pending_fld = pending_data.get("field", "") if isinstance(pending_data, dict) else ""
+        pending_lbl = FIELD_LABELS_PT.get(pending_fld, pending_fld) if pending_fld else ""
         
-        if not reply.strip().endswith("?"):
-            prompt = field_prompts.get(missing_field, f"Me conta sobre {FIELD_LABELS_PT.get(missing_field, missing_field)}?")
+        # Check if reply mentions the findings or is too generic
+        skip_phrases = ["vou pesquisar", "marquei uma tarefa", "vou buscar",
+                       "preciso pesquisar", "vou procurar", "vou verificar"]
+        reply_lower = (reply or "").lower()
+        reply_is_generic = not reply or any(sp in reply_lower for sp in skip_phrases) or len((reply or "").strip()) < 40
+        
+        if reply_is_generic and pending_val and pending_val != "null":
+            reply = f"Pesquisei sobre **{pending_lbl}** pro seu negócio e encontrei:\n\n"
+            reply += f"📋 **{pending_val}**\n\n"
+            reply += "Marquei uma tarefa pra aprofundar isso depois. Faz sentido pra você?"
+        elif not reply:
+            reply = "O que você acha da sugestão?"
+    elif not required_done:
+        # Missing required fields - ask next one
+        missing_field = fields_missing[0]
+        prompt = FIELD_PROMPTS_ALL.get(missing_field, f"Me conta sobre {FIELD_LABELS_PT.get(missing_field, missing_field)}?")
+        if not reply:
+            reply = prompt
+        elif not reply.strip().endswith("?"):
             reply += f"\n\n{prompt}"
-    elif required_done and priority_count < 7 and not ready:
-        # Has required but needs more priority fields for richer analysis (only if not already ready)
-        next_priority = priority_missing[0] if priority_missing else None
-        if next_priority:
-            # DEBUG: Check if we're about to ask for a field that's already filled
-            if cleaned_profile.get(next_priority):
-                print(f"  ⚠️ WARNING: About to ask for '{next_priority}' but it's already filled: {cleaned_profile.get(next_priority)}", file=sys.stderr)
-            
-            priority_prompts = {
-                "capital_disponivel": "Para sugestões mais precisas: quanto você pode investir por mês em marketing/crescimento?",
-                "num_funcionarios": "Você trabalha sozinho ou tem uma equipe? Quantas pessoas?",
-                "canais_venda": "Onde/como você vende hoje? Instagram, loja física, site?",
-                "cliente_ideal": "Descreva seu cliente ideal - idade, perfil, características",
-                "ticket_medio": "Qual o valor médio de cada venda?",
-                "modelo_operacional": "Como funciona sua operação? Tem estoque, trabalha sob encomenda?",
-                "faturamento_mensal": "Qual seu faturamento médio mensal aproximadamente?"
-            }
-            
-            prompt = priority_prompts.get(next_priority, f"Me conta sobre {FIELD_LABELS_PT.get(next_priority, next_priority)}?")
-            # Don't append if reply already asks a similar question
-            reply_lower = reply.lower()
-            prompt_keywords = [w for w in prompt.lower().split() if len(w) > 4]
-            already_asking = sum(1 for kw in prompt_keywords if kw in reply_lower) >= 2
-            
-            print(f"  🤔 Should append '{next_priority}' question? reply_ends_with_?: {reply.strip().endswith('?')}, already_asking: {already_asking}", file=sys.stderr)
-            
-            if not reply.strip().endswith("?") and not already_asking:
-                print(f"  ➕ Appending question for '{next_priority}'", file=sys.stderr)
+    elif user_said_dont_know and not has_pending:
+        # User said "não sei" but search failed or returned irrelevant results
+        # Acknowledge it instead of silently skipping to the next field
+        failed_field = field_being_researched_failed or get_field_from_context(messages)
+        field_label = FIELD_LABELS_PT.get(failed_field or '', 'esse assunto')
+        if not reply:
+            reply = f"Sem problemas! Não encontrei dados confiáveis agora sobre {field_label}. Marquei uma tarefa pra pesquisar isso depois com mais calma."
+        # Create a research task for the failed field
+        if failed_field:
+            task_config = RESEARCHABLE_FIELDS.get(failed_field, {})
+            rp_nome = cleaned_profile.get("nome_negocio", "o negócio")
+            rp_loc = cleaned_profile.get("localizacao", "")
+            rp_seg = cleaned_profile.get("segmento", "")
+            try:
+                task_desc = task_config.get("task_template", "Aprofundar pesquisa").format(
+                    nome_negocio=rp_nome, localizacao=rp_loc, segmento=rp_seg)
+            except (KeyError, IndexError):
+                task_desc = f"Pesquisar sobre {field_label}"
+            research_tasks_list = cleaned_profile.get("_research_tasks", [])
+            research_tasks_list.append({
+                "titulo": f"Pesquisar: {field_label}",
+                "descricao": task_desc + " (busca automática não retornou resultados relevantes)",
+                "categoria": "pesquisa",
+                "origem": "busca_falhou"
+            })
+            cleaned_profile["_research_tasks"] = research_tasks_list
+            fr_list = cleaned_profile.get("_fields_researched", [])
+            if failed_field not in fr_list:
+                fr_list.append(failed_field)
+            cleaned_profile["_fields_researched"] = fr_list
+        # Move on to next field
+        next_remaining = [f for f in ALL_COLLECTIBLE_FIELDS_ORDER
+                         if not cleaned_profile.get(f) and f != "investimento_marketing" and not f.startswith("_")]
+        if next_remaining:
+            prompt = FIELD_PROMPTS_ALL.get(next_remaining[0], "")
+            if prompt and not reply.strip().endswith("?"):
                 reply += f"\n\n{prompt}"
+    elif all_remaining:
+        # Have basics, systematically collect remaining fields
+        next_field = all_remaining[0]
+        is_researchable = next_field in RESEARCHABLE_FIELDS
+        
+        prompt = FIELD_PROMPTS_ALL.get(next_field, f"Me conta sobre {FIELD_LABELS_PT.get(next_field, next_field)}?")
+        if is_researchable:
+            prompt += " Se não souber, posso pesquisar pra você!"
+        
+        # Check if reply already contains a question
+        if not reply:
+            reply = prompt
+        elif not reply.strip().endswith("?"):
+            if base_ready:
+                reply += f"\n\nPra enriquecer a análise: {prompt}"
+            else:
+                reply += f"\n\n{prompt}"
+    else:
+        # ALL fields collected!
+        if not reply:
+            reply = "✅ Tenho tudo! Clique em 'Gerar Análise' pra ver seu relatório."
+        else:
+            reply += "\n\n✅ Tenho tudo! Clique em 'Gerar Análise' pra ver seu relatório."
 
-    # Add search indicator to reply if search was performed
-    if search_performed:
-        reply = f"🔍\nBuscou: \"{search_query[:50]}...\"\n{reply}"
+    # NOTE: search indicator is handled by the frontend via search_performed/search_query fields
+    # Do NOT prepend raw search text to reply
 
     # FINAL DEBUG: Log what we're returning
     print(f"📤 RETURNING cleaned_profile: {json.dumps(cleaned_profile, ensure_ascii=False)}", file=sys.stderr)
@@ -1098,6 +1698,7 @@ def run_chat(input_data: dict) -> dict:
         "extracted_profile": cleaned_profile,
         "search_performed": search_performed,
         "search_query": search_query if search_performed else None,
+        "search_sources": search_sources if search_performed else [],
         "ready_for_analysis": ready,
         "fields_collected": fields_collected,
         "fields_missing": fields_missing,

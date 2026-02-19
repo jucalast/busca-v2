@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical } from 'lucide-react';
+import ConfirmDialog from './ConfirmDialog';
 
 interface Business {
   id: string;
@@ -24,6 +25,7 @@ interface SidebarLayoutProps {
   currentBusinessId: string | null;
   onSelectBusiness: (businessId: string) => void;
   onCreateNew: () => void;
+  onDeleteBusiness: (businessId: string) => void;
   onLogout: () => void;
   children: React.ReactNode;
 }
@@ -33,6 +35,7 @@ export default function SidebarLayout({
   currentBusinessId,
   onSelectBusiness,
   onCreateNew,
+  onDeleteBusiness,
   onLogout,
   children,
 }: SidebarLayoutProps) {
@@ -40,10 +43,26 @@ export default function SidebarLayout({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; businessId: string; businessName: string }>({ isOpen: false, businessId: '', businessName: '' });
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadBusinesses();
   }, [userId]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+
+    if (openMenuId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [openMenuId]);
 
   const loadBusinesses = async () => {
     setLoading(true);
@@ -83,6 +102,23 @@ export default function SidebarLayout({
     if (score >= 80) return 'bg-green-500/10';
     if (score >= 60) return 'bg-yellow-500/10';
     return 'bg-red-500/10';
+  };
+
+  const handleDeleteBusiness = async (businessId: string, businessName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteDialog({ isOpen: true, businessId, businessName });
+  };
+
+  const confirmDelete = async () => {
+    const { businessId } = deleteDialog;
+    setDeleteDialog({ isOpen: false, businessId: '', businessName: '' });
+
+    try {
+      await onDeleteBusiness(businessId);
+      await loadBusinesses();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao excluir negócio');
+    }
   };
 
   return (
@@ -137,63 +173,92 @@ export default function SidebarLayout({
             </div>
           ) : (
             businesses.map((business) => (
-              <button
-                key={business.id}
-                onClick={() => onSelectBusiness(business.id)}
-                className={`w-full text-left p-5 rounded-2xl bg-[#111113] border transition-all duration-200 ${
-                  currentBusinessId === business.id
-                    ? 'border-white/[0.12]'
-                    : 'border-white/[0.06] hover:border-white/[0.12]'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2.5">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-white truncate mb-1.5">
-                      {business.name}
-                    </h3>
-                    <p className="text-xs text-zinc-500 truncate">
-                      {business.segment}
-                    </p>
+              <div key={business.id} className="relative">
+                <div
+                  onClick={() => onSelectBusiness(business.id)}
+                  className={`cursor-pointer p-5 rounded-2xl bg-[#111113] border transition-all duration-200 ${
+                    currentBusinessId === business.id
+                      ? 'border-white/[0.12]'
+                      : 'border-white/[0.06] hover:border-white/[0.12]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-2.5">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <h3 className="text-sm font-semibold text-white truncate mb-1.5">
+                        {business.name}
+                      </h3>
+                      <p className="text-xs text-zinc-500 truncate">
+                        {business.segment}
+                      </p>
+                    </div>
+                    {business.latest_analysis && (
+                      <div
+                        className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
+                          business.latest_analysis.score_geral
+                        )} flex-shrink-0 border ${
+                          business.latest_analysis.score_geral >= 80
+                            ? 'border-green-500/30'
+                            : business.latest_analysis.score_geral >= 60
+                            ? 'border-yellow-500/30'
+                            : 'border-red-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <TrendingUp
+                            className={`w-3.5 h-3.5 ${getScoreColor(
+                              business.latest_analysis.score_geral
+                            )}`}
+                          />
+                          <span
+                            className={`text-sm font-bold ${getScoreColor(
+                              business.latest_analysis.score_geral
+                            )}`}
+                          >
+                            {business.latest_analysis.score_geral}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {business.latest_analysis && (
-                    <div
-                      className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
-                        business.latest_analysis.score_geral
-                      )} flex-shrink-0 border ${
-                        business.latest_analysis.score_geral >= 80
-                          ? 'border-green-500/30'
-                          : business.latest_analysis.score_geral >= 60
-                          ? 'border-yellow-500/30'
-                          : 'border-red-500/30'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <TrendingUp
-                          className={`w-3.5 h-3.5 ${getScoreColor(
-                            business.latest_analysis.score_geral
-                          )}`}
-                        />
-                        <span
-                          className={`text-sm font-bold ${getScoreColor(
-                            business.latest_analysis.score_geral
-                          )}`}
-                        >
-                          {business.latest_analysis.score_geral}
-                        </span>
+                  <div className="flex items-center justify-between gap-2 text-xs text-zinc-600">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
+                        {business.model}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        <span>{business.location}</span>
                       </div>
                     </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-xs text-zinc-600">
-                  <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
-                    {business.model}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    <span>{business.location}</span>
+                    <div className="relative" ref={openMenuId === business.id ? menuRef : null}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === business.id ? null : business.id);
+                        }}
+                        className="p-1 hover:bg-zinc-800 rounded transition-colors"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
+                      </button>
+                      {openMenuId === business.id && (
+                        <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl overflow-hidden z-50">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(null);
+                              handleDeleteBusiness(business.id, business.name, e);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Excluir negócio</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </button>
+              </div>
             ))
           )}
         </div>
@@ -209,6 +274,18 @@ export default function SidebarLayout({
           </button>
         </div>
       </aside>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        title="Excluir negócio"
+        message={`Tem certeza que deseja excluir "${deleteDialog.businessName}"? Esta ação não pode ser desfeita e todos os dados serão perdidos permanentemente.`}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteDialog({ isOpen: false, businessId: '', businessName: '' })}
+        isDangerous
+      />
 
       {/* Toggle Button - Floating between sidebar and content */}
       <button

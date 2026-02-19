@@ -526,6 +526,37 @@ def delete_business(business_id: str) -> bool:
     return success
 
 
+def hard_delete_business(business_id: str) -> bool:
+    """Permanently delete a business and all its analyses."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete dimension chats first (foreign key constraint)
+        cursor.execute('''
+            DELETE FROM dimension_chats 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        
+        # Delete analyses
+        cursor.execute('DELETE FROM analyses WHERE business_id = ?', (business_id,))
+        
+        # Delete business
+        cursor.execute('DELETE FROM businesses WHERE id = ?', (business_id,))
+        
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        
+        return success
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Analysis Operations
 # ═══════════════════════════════════════════════════════════════════

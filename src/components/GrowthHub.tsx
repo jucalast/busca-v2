@@ -177,12 +177,20 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                                     {dim.justificativa || 'Clique para ver detalhes e conversar com a IA'}
                                 </p>
 
-                                {relatedTasks.length > 0 && (
-                                    <div className="flex items-center gap-1 mt-3 text-zinc-700 text-[10px]">
-                                        <ArrowUpRight className="w-3 h-3" />
-                                        {relatedTasks.length} {relatedTasks.length === 1 ? 'acao recomendada' : 'acoes recomendadas'}
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-3 mt-3">
+                                    {relatedTasks.length > 0 && (
+                                        <span className="flex items-center gap-1 text-zinc-700 text-[10px]">
+                                            <ArrowUpRight className="w-3 h-3" />
+                                            {relatedTasks.length} {relatedTasks.length === 1 ? 'ação' : 'ações'}
+                                        </span>
+                                    )}
+                                    {dim.fontes_utilizadas?.length > 0 && (
+                                        <span className="flex items-center gap-1 text-zinc-700 text-[10px]">
+                                            <Globe className="w-3 h-3" />
+                                            {dim.fontes_utilizadas.length} {dim.fontes_utilizadas.length === 1 ? 'fonte' : 'fontes'}
+                                        </span>
+                                    )}
+                                </div>
                             </button>
                         );
                     })}

@@ -47,18 +47,22 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
         }
 
         // Parse output based on action markers
-        const marker = action === 'analyze' ? '--- GROWTH_RESULT ---'
-            : action === 'assist' ? '--- ASSIST_RESULT ---'
-                : action === 'dimension-chat' ? '--- DIMENSION_CHAT_RESULT ---'
-                    : action === 'list-businesses' ? '--- LIST_BUSINESSES_RESULT ---'
-                        : action === 'get-business' ? '--- GET_BUSINESS_RESULT ---'
-                            : action === 'create-business' ? '--- CREATE_BUSINESS_RESULT ---'
-                                : action === 'save-analysis' ? '--- SAVE_ANALYSIS_RESULT ---'
-                                    : action === 'register' ? '--- REGISTER_RESULT ---'
-                                        : action === 'login' ? '--- LOGIN_RESULT ---'
-                                            : action === 'logout' ? '--- LOGOUT_RESULT ---'
-                                                : action === 'validate-session' ? '--- VALIDATE_SESSION_RESULT ---'
-                                                    : null;
+        const markerMap: Record<string, string> = {
+            'analyze': '--- GROWTH_RESULT ---',
+            'assist': '--- ASSIST_RESULT ---',
+            'chat': '--- CHAT_RESULT ---',
+            'dimension-chat': '--- DIMENSION_CHAT_RESULT ---',
+            'list-businesses': '--- LIST_BUSINESSES_RESULT ---',
+            'get-business': '--- GET_BUSINESS_RESULT ---',
+            'create-business': '--- CREATE_BUSINESS_RESULT ---',
+            'save-analysis': '--- SAVE_ANALYSIS_RESULT ---',
+            'register': '--- REGISTER_RESULT ---',
+            'login': '--- LOGIN_RESULT ---',
+            'logout': '--- LOGOUT_RESULT ---',
+            'validate-session': '--- VALIDATE_SESSION_RESULT ---',
+            'delete-business': '--- DELETE_BUSINESS_RESULT ---',
+        };
+        const marker = markerMap[action] || null;
 
         if (marker) {
             const markerIdx = stdout.indexOf(marker);
@@ -270,6 +274,19 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('validate-session', {
                 token,
             }, 10000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Delete Business ━━━
+        if (action === 'delete-business') {
+            if (!business_id) {
+                return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('delete-business', {
+                business_id,
+            }, 30000);
 
             return NextResponse.json(result);
         }

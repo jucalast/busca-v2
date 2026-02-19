@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from business_profiler import run_profiler
 from business_scorer import run_scorer
-from task_generator import run_task_generator
+from business_discovery import discover_business
 from task_assistant import run_assistant
 from chat_consultant import run_chat
 import database as db
@@ -277,6 +277,22 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
     if not categories or (isinstance(categories, list) and len(categories) == 0):
         categories = BUSINESS_CATEGORIES
         print(f"  ⚠️ Nenhuma categoria fornecida, usando categorias padrão: {categories}", file=sys.stderr)
+    
+    # Convert string categories to proper category objects
+    if isinstance(categories, list) and categories and isinstance(categories[0], str):
+        print(f"  🔄 Convertendo categorias string → objetos: {categories}", file=sys.stderr)
+        categories = [
+            {
+                "id": cat.lower().replace(" ", "_"),
+                "nome": cat.title(),
+                "icone": "📊",
+                "cor": "#71717a",
+                "foco": f"análise de {cat} para o negócio",
+                "nao_falar": "",
+                "prioridade": 5
+            }
+            for cat in categories
+        ]
 
     perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
     description = f"{perfil_data.get('nome', '')} - {perfil_data.get('segmento', '')} - {perfil_data.get('modelo_negocio', '')} - {perfil_data.get('localizacao', '')}"
@@ -306,8 +322,8 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
     categories_result = []
     all_sources = []
 
-    # Parallel execution with max 3 workers to respect rate limits gently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    # Parallel execution with max 2 workers to respect rate limits
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_to_cat = {
             executor.submit(process_category, cat, queries, perfil_data, description, restricoes, region, api_key): cat 
             for cat in categories
@@ -336,7 +352,7 @@ def main():
     parser.add_argument("--action", required=True, choices=[
         "profile", "analyze", "assist", "chat", "dimension-chat",
         "list-businesses", "get-business", "create-business", "save-analysis",
-        "register", "login", "logout", "validate-session"
+        "register", "login", "logout", "validate-session", "delete-business"
     ])
     parser.add_argument("--input-file", required=True, help="Path to JSON input file")
     args = parser.parse_args()
@@ -364,26 +380,45 @@ def main():
         business_id = input_data.get("business_id")  # Optional: for persistence
         user_id = input_data.get("user_id", "default_user")
 
-        # Step 1: Market search
+        # Step 1: Business Discovery (search for the ACTUAL business online)
+        print("🔎 Executando discovery do negócio...", file=sys.stderr)
+        discovery_data = discover_business(profile, region)
+        discovery_found = discovery_data.get("found", False)
+        print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+
+        # Step 2: Market search
         print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
         market_data = run_market_search(profile, region)
         print(f"  ✅ Pesquisa completa: {len(market_data.get('categories', []))} categorias", file=sys.stderr)
 
-        # Step 2: Business Score
-        print("📊 Calculando score...", file=sys.stderr)
-        score_result = run_scorer(profile, market_data)
-        print(f"  ✅ Score calculado", file=sys.stderr)
-
-        # Step 3: Task Generation
+        # Step 3: Per-dimension scoring with discovery context
+        print("📊 Calculando score por dimensão...", file=sys.stderr)
+        score_result = run_scorer(profile, market_data, discovery_data=discovery_data)
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
-        print("📋 Gerando tarefas...", file=sys.stderr)
-        task_result = run_task_generator(profile, score_data, market_data)
-        print(f"  ✅ Tarefas geradas", file=sys.stderr)
+        task_plan = score_result.get("taskPlan", {})
+        print(f"  ✅ Score e tarefas calculados", file=sys.stderr)
 
-        # Step 4: Persist to database
+        # Merge research tasks from chat (if any)
+        research_tasks = profile.get("_research_tasks", [])
+        if research_tasks:
+            tasks_list = task_plan.setdefault("tasks", [])
+            for rt in research_tasks:
+                tasks_list.append({
+                    "id": f"research_{len(tasks_list) + 1}",
+                    "titulo": rt.get("titulo", "Pesquisa pendente"),
+                    "categoria": "pesquisa",
+                    "descricao": rt.get("descricao", ""),
+                    "impacto": 5,
+                    "prazo_sugerido": "2 semanas",
+                    "custo_estimado": "R$ 0",
+                    "fonte_referencia": f"Origem: {rt.get('origem', 'chat')}",
+                })
+            print(f"  📋 {len(research_tasks)} tarefas de pesquisa incorporadas", file=sys.stderr)
+
+        # Step 3: Persist to database
         if business_id:
             print("💾 Salvando análise...", file=sys.stderr)
-            analysis = db.create_analysis(business_id, score_data, task_result.get("taskPlan", {}), market_data)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
         else:
             # Create new business if no business_id provided
@@ -395,15 +430,16 @@ def main():
             business_id = business["id"]
             print(f"  ✅ Negócio criado: {business_id}", file=sys.stderr)
             
-            analysis = db.create_analysis(business_id, score_data, task_result.get("taskPlan", {}), market_data)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
         # Combine results
         output = {
             "success": True,
+            "discoveryData": discovery_data if discovery_found else None,
             "marketData": market_data,
-            "score": score_result.get("score", {}),
-            "taskPlan": task_result.get("taskPlan", {}),
+            "score": score_data,
+            "taskPlan": task_plan,
             "business_id": business_id,
             "analysis_id": analysis.get("id") if 'analysis' in locals() else None
         }
@@ -568,6 +604,27 @@ def main():
             else:
                 print("--- VALIDATE_SESSION_RESULT ---")
                 print(json.dumps({"success": False, "error": "Sessão inválida ou expirada"}, ensure_ascii=False, indent=2))
+
+    # ━━━ Delete Business Action ━━━
+    elif args.action == "delete-business":
+        business_id = input_data.get("business_id")
+        
+        if not business_id:
+            print("--- DELETE_BUSINESS_RESULT ---")
+            print(json.dumps({"success": False, "error": "Business ID não fornecido"}, ensure_ascii=False, indent=2))
+        else:
+            try:
+                success = db.hard_delete_business(business_id)
+                
+                if success:
+                    print("--- DELETE_BUSINESS_RESULT ---")
+                    print(json.dumps({"success": True, "message": "Negócio excluído com sucesso"}, ensure_ascii=False, indent=2))
+                else:
+                    print("--- DELETE_BUSINESS_RESULT ---")
+                    print(json.dumps({"success": False, "error": "Negócio não encontrado"}, ensure_ascii=False, indent=2))
+            except Exception as e:
+                print("--- DELETE_BUSINESS_RESULT ---")
+                print(json.dumps({"success": False, "error": f"Erro ao excluir: {str(e)}"}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

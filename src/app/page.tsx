@@ -63,6 +63,29 @@ export default function Home() {
         };
       }
 
+      // Merge raw chat fields into formal profile so scorer sees actual user data
+      const rawFields = { ...chatProfile };
+      delete rawFields._research_tasks;
+      delete rawFields._fields_researched;
+      delete rawFields._research_pending;
+      delete rawFields._chat_context;
+
+      if (profileResult.profile?.perfil) {
+        // Chat perfil fields take precedence — they use correct key names and have richer data
+        const chatPerfil = chatProfile.perfil || {};
+        const chatCtx = chatProfile._chat_context || {};
+        profileResult.profile.perfil = {
+          ...profileResult.profile.perfil, // Formal profiler base
+          ...chatPerfil,                   // Chat perfil fields override (correct key names)
+          ...chatCtx,                      // _chat_context fields also promoted into perfil
+        };
+      }
+
+      // Pass research tasks through for task plan
+      if (chatProfile._research_tasks?.length) {
+        profileResult.profile._research_tasks = chatProfile._research_tasks;
+      }
+
       setProfile(profileResult);
 
       // Start analysis
@@ -176,6 +199,57 @@ export default function Home() {
     setError('');
   };
 
+  // ─── Redo Analysis: Re-run with same profile data ───
+  const handleRedoAnalysis = async () => {
+    if (!profile) {
+      // No profile data — fall back to creating new business
+      handleCreateNewBusiness();
+      return;
+    }
+
+    setGrowthLoading(true);
+    setGrowthStage('analyzing');
+    setGrowthProgress('Refazendo análise com os mesmos dados...');
+    setError('');
+    setSelectedDimension(null);
+    setDimensionChats({});
+
+    try {
+      await runAnalysis(profile);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao refazer análise.');
+      setGrowthLoading(false);
+      setGrowthProgress('');
+      setGrowthStage('results');
+    }
+  };
+
+  const handleDeleteBusiness = async (businessId: string) => {
+    try {
+      const res = await fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete-business',
+          business_id: businessId,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao excluir negócio');
+      }
+
+      // If deleted business was current, reset to onboarding
+      if (businessId === currentBusinessId) {
+        handleCreateNewBusiness();
+      }
+    } catch (err: any) {
+      throw new Error(err.message || 'Erro ao excluir negócio');
+    }
+  };
+
   // ─── Task AI Assist ───
   const handleGenerateAssist = async (taskId: string) => {
     const task = growthData?.taskPlan?.tasks?.find((t: any) => t.id === taskId);
@@ -284,6 +358,7 @@ export default function Home() {
       currentBusinessId={currentBusinessId}
       onSelectBusiness={handleSelectBusiness}
       onCreateNew={handleCreateNewBusiness}
+      onDeleteBusiness={handleDeleteBusiness}
       onLogout={logout}
     >
       {/* Chat Onboarding Stage - Create New Business */}
@@ -356,7 +431,7 @@ export default function Home() {
               data={growthData}
               userProfile={userProf}
               onSelectDimension={(key) => setSelectedDimension(key)}
-              onRedo={handleCreateNewBusiness}
+              onRedo={handleRedoAnalysis}
             />
           )}
         </>

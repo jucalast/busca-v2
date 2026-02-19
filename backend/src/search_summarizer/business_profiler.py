@@ -17,9 +17,9 @@ load_dotenv()
 
 
 def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3) -> dict:
-    """Generic Groq API call with retry + exponential backoff + model fallback."""
+    """Generic Groq API call with retry + exponential backoff."""
     client = Groq(api_key=api_key)
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    models = ["llama-3.1-8b-instant"]
 
     for model in models:
         for attempt in range(max_retries):

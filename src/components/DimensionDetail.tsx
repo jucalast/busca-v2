@@ -164,32 +164,27 @@ export default function DimensionDetail({
                     </div>
                 </div>
 
-                {/* Actions Section */}
-                {(dim.acoes_imediatas?.length > 0 || tasks.length > 0) && (
+                {/* Key Finding */}
+                {dim.dado_chave && (
+                    <div className="mb-8 p-4 rounded-xl bg-amber-500/5 border border-amber-500/15">
+                        <div className="flex items-start gap-2.5">
+                            <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <p className="text-[10px] font-semibold text-amber-500/80 uppercase tracking-wide mb-1">Dado-chave</p>
+                                <p className="text-sm text-zinc-300 leading-relaxed">{dim.dado_chave}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions Section — only show tasks (flattened from scorer) to avoid duplicates */}
+                {tasks.length > 0 && (
                     <section className="mb-8">
                         <h2 className="flex items-center gap-2 text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-4">
                             <Lightbulb className="w-3.5 h-3.5" />
-                            Acoes recomendadas
+                            Ações recomendadas
                         </h2>
                         <div className="space-y-2">
-                            {(dim.acoes_imediatas || []).map((acao: string, i: number) => (
-                                <button
-                                    key={`acao-${i}`}
-                                    onClick={() => toggleAction(`acao-${i}`)}
-                                    className={`w-full flex items-start gap-3 p-3.5 rounded-xl border transition-all text-left ${actionStates[`acao-${i}`]
-                                        ? 'bg-emerald-500/5 border-emerald-500/20'
-                                        : 'bg-[#111113] border-white/[0.06] hover:border-white/[0.12]'
-                                        }`}
-                                >
-                                    {actionStates[`acao-${i}`]
-                                        ? <Check className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-                                        : <Circle className="w-4 h-4 text-zinc-700 mt-0.5 flex-shrink-0" />
-                                    }
-                                    <span className={`text-sm ${actionStates[`acao-${i}`] ? 'text-zinc-500 line-through' : 'text-zinc-300'}`}>
-                                        {acao}
-                                    </span>
-                                </button>
-                            ))}
                             {tasks.map((task: any) => (
                                 <button
                                     key={task.id}
@@ -210,12 +205,51 @@ export default function DimensionDetail({
                                         {task.descricao && (
                                             <p className="text-zinc-600 text-xs mt-1 line-clamp-2">{task.descricao}</p>
                                         )}
-                                        {task.prazo_sugerido && (
-                                            <span className="text-zinc-700 text-[10px] mt-1 inline-block">{task.prazo_sugerido}</span>
+                                        <div className="flex gap-2 mt-1.5">
+                                            {task.prazo_sugerido && (
+                                                <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.04] text-zinc-600">{task.prazo_sugerido}</span>
+                                            )}
+                                            {task.custo_estimado && (
+                                                <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.04] text-zinc-600">{task.custo_estimado}</span>
+                                            )}
+                                        </div>
+                                        {task.fonte_referencia && (
+                                            <p className="text-[10px] text-zinc-700 mt-1.5 flex items-center gap-1">
+                                                <BookOpen className="w-2.5 h-2.5" />
+                                                {task.fonte_referencia}
+                                            </p>
                                         )}
                                     </div>
                                 </button>
                             ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Sources Used */}
+                {dim.fontes_utilizadas?.length > 0 && (
+                    <section className="mb-8">
+                        <h2 className="flex items-center gap-2 text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-4">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Fontes utilizadas
+                        </h2>
+                        <div className="flex flex-wrap gap-1.5">
+                            {dim.fontes_utilizadas.map((fonte: string, i: number) => {
+                                let display = fonte;
+                                try { display = new URL(fonte).hostname; } catch { /* keep original */ }
+                                return (
+                                    <a
+                                        key={i}
+                                        href={fonte.startsWith('http') ? fonte : undefined}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-md bg-white/[0.03] text-zinc-500 hover:text-zinc-300 border border-white/[0.04] transition-colors"
+                                    >
+                                        <ExternalLink className="w-2.5 h-2.5" />
+                                        {display}
+                                    </a>
+                                );
+                            })}
                         </div>
                     </section>
                 )}
