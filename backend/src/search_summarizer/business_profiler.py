@@ -102,12 +102,23 @@ REGRAS CRÍTICAS:
    - "modelo_operacional": se trabalha "sem estoque", "sob encomenda", "dropshipping" → NÃO recomendar ERP de estoque
    - "capital_disponivel": se "zero", "baixo", "pouco" → NÃO recomendar ferramentas caras
    - "equipe_solo": se trabalha sozinho → NÃO recomendar estratégias complexas que exigem equipe
-3. Gere CATEGORIAS DE ANÁLISE RELEVANTES para ESTE negócio específico:
-   - Se não tem estoque → categoria sobre "Credibilidade e Confiança" em vez de "Gestão de Estoque"
-   - Se já usa Instagram → categoria sobre "Otimização de Conversão" em vez de "Criar Presença Digital"
-   - Se problema é credibilidade → categoria sobre "Prova Social e Garantias"
-4. Gere QUERIES de busca específicas para os PROBLEMAS REAIS do negócio.
+3. Gere EXATAMENTE 6 CATEGORIAS — uma para cada dimensão obrigatória abaixo.
+   Cada categoria DEVE ter o "id" exato indicado. Adapte o "nome", "foco" e "query" para o negócio específico.
+4. Gere QUERIES de busca específicas para cada categoria.
 5. Seja preciso e direto — não invente dados, apenas interprete os fornecidos.
+
+AS 6 DIMENSÕES OBRIGATÓRIAS (use estes IDs exatos):
+1. id="presenca_digital"  → Presença online, redes sociais, SEO, conteúdo, reputação
+2. id="competitividade"   → Concorrentes diretos, diferenciais, posicionamento, benchmarks
+3. id="diversificacao_canais" → Canais de venda atuais e novos, marketplaces, prospecção
+4. id="precificacao"      → Estratégia de preços, margem, percepção de valor vs concorrentes
+5. id="potencial_mercado" → Tamanho do mercado, tendências, nichos, crescimento do setor
+6. id="maturidade_operacional" → Processos, logística, fornecedores, eficiência, escalabilidade
+
+ADAPTE o nome e foco de cada categoria ao contexto real do negócio. Exemplos:
+- B2B logística: "presenca_digital" → nome="LinkedIn e Presença B2B Digital", foco="SEO técnico, LinkedIn, catálogos digitais"
+- Solo sem capital: "diversificacao_canais" → nome="Novos Canais Sem Custo", foco="WhatsApp, indicações, parcerias"
+- Já usa Instagram: "presenca_digital" → nome="Otimização do Instagram", foco="conversão, bio, stories, reels"
 
 ESTRUTURA DO JSON:
 {{
@@ -143,9 +154,7 @@ ESTRUTURA DO JSON:
                 "restricao_afetada": "qual restrição afeta a solução deste problema"
             }}
         ],
-        "pontos_fortes": [
-            "aspecto positivo identificado"
-        ],
+        "pontos_fortes": ["aspecto positivo identificado"],
         "maturidade": {{
             "vendas": 1-5,
             "marketing_digital": 1-5,
@@ -156,18 +165,67 @@ ESTRUTURA DO JSON:
     }},
     "categorias_relevantes": [
         {{
-            "id": "id_da_categoria",
-            "nome": "Nome da Categoria ESPECÍFICA para este negócio",
+            "id": "presenca_digital",
+            "nome": "Nome adaptado ao negócio",
             "icone": "emoji",
             "cor": "#hex",
-            "foco": "o que buscar que seja ÚTIL considerando as restrições",
+            "foco": "o que buscar especificamente para ESTE negócio nesta dimensão",
             "prioridade": 1-10,
-            "justificativa": "por que essa categoria é importante PARA ESTE NEGÓCIO ESPECÍFICO",
-            "nao_falar": "o que NÃO buscar/recomendar por conta das restrições"
+            "nao_falar": "o que NÃO recomendar por conta das restrições"
+        }},
+        {{
+            "id": "competitividade",
+            "nome": "Nome adaptado ao negócio",
+            "icone": "emoji",
+            "cor": "#hex",
+            "foco": "concorrentes específicos deste segmento, diferenciais reais",
+            "prioridade": 1-10,
+            "nao_falar": ""
+        }},
+        {{
+            "id": "diversificacao_canais",
+            "nome": "Nome adaptado ao negócio",
+            "icone": "emoji",
+            "cor": "#hex",
+            "foco": "canais viáveis considerando capital e equipe disponíveis",
+            "prioridade": 1-10,
+            "nao_falar": "canais que exigem capital alto se capital for baixo"
+        }},
+        {{
+            "id": "precificacao",
+            "nome": "Nome adaptado ao negócio",
+            "icone": "emoji",
+            "cor": "#hex",
+            "foco": "preços praticados no segmento, margem, posicionamento vs concorrentes",
+            "prioridade": 1-10,
+            "nao_falar": ""
+        }},
+        {{
+            "id": "potencial_mercado",
+            "nome": "Nome adaptado ao negócio",
+            "icone": "emoji",
+            "cor": "#hex",
+            "foco": "tamanho e tendências do mercado específico deste negócio",
+            "prioridade": 1-10,
+            "nao_falar": ""
+        }},
+        {{
+            "id": "maturidade_operacional",
+            "nome": "Nome adaptado ao negócio",
+            "icone": "emoji",
+            "cor": "#hex",
+            "foco": "processos, gargalos operacionais e logísticos específicos deste negócio",
+            "prioridade": 1-10,
+            "nao_falar": ""
         }}
     ],
     "queries_sugeridas": {{
-        "categoria_id": "query de busca otimizada para o problema REAL, não genérica"
+        "presenca_digital": "query de busca específica para presença digital deste negócio",
+        "competitividade": "query sobre concorrentes e diferenciais deste segmento",
+        "diversificacao_canais": "query sobre canais de venda para este tipo de negócio",
+        "precificacao": "query sobre preços e margens neste segmento",
+        "potencial_mercado": "query sobre tamanho e tendências deste mercado",
+        "maturidade_operacional": "query sobre processos e logística deste tipo de negócio"
     }},
     "objetivos_parseados": [
         {{
@@ -178,21 +236,7 @@ ESTRUTURA DO JSON:
             "alerta_viabilidade": "se baixa viabilidade, explicar por quê"
         }}
     ]
-}}
-
-EXEMPLOS DE CATEGORIAS CONTEXTUAIS:
-- Se "sem estoque" + "credibilidade": 
-  → "Credibilidade e Confiança" (foco: depoimentos, garantias, prova social)
-  → "Logística Sob Encomenda" (foco: prazos, fornecedores confiáveis)
-  → NÃO incluir "Gestão de Estoque"
-
-- Se "solo" + "capital zero":
-  → "Marketing Orgânico de Baixo Custo" (foco: conteúdo, SEO, parcerias)
-  → NÃO incluir "Anúncios Pagos" ou "Contratar Equipe"
-
-- Se já usa Instagram/WhatsApp:
-  → "Otimização de Conversão no Instagram" (foco: melhorar o que já faz)
-  → NÃO incluir "Criar Presença nas Redes Sociais" (ele já tem)"""
+}}"""
 
     return call_groq(api_key, prompt, temperature=0.2)
 
@@ -200,138 +244,60 @@ EXEMPLOS DE CATEGORIAS CONTEXTUAIS:
 def identify_dynamic_categories(profile: dict) -> list:
     """
     From a generated profile, extract the ordered list of relevant categories.
-    NOW: Uses restrictions to generate context-aware fallback categories.
+    Validates that all 6 required dimension IDs are present; injects defaults for any missing.
     """
+    REQUIRED_IDS = [
+        "presenca_digital",
+        "competitividade",
+        "diversificacao_canais",
+        "precificacao",
+        "potencial_mercado",
+        "maturidade_operacional",
+    ]
+
+    DEFAULTS = {
+        "presenca_digital": {
+            "nome": "Presença Digital", "icone": "📱", "cor": "#3b82f6", "prioridade": 7,
+            "foco": "redes sociais, SEO, conteúdo, reputação online", "nao_falar": "",
+        },
+        "competitividade": {
+            "nome": "Competitividade e Concorrência", "icone": "🎯", "cor": "#f59e0b", "prioridade": 7,
+            "foco": "concorrentes diretos, diferenciais, posicionamento, benchmarks", "nao_falar": "",
+        },
+        "diversificacao_canais": {
+            "nome": "Canais de Venda", "icone": "�", "cor": "#ef4444", "prioridade": 6,
+            "foco": "canais atuais e novos, marketplaces, prospecção", "nao_falar": "",
+        },
+        "precificacao": {
+            "nome": "Precificação e Margem", "icone": "�", "cor": "#ec4899", "prioridade": 6,
+            "foco": "estratégia de preços, margem, percepção de valor vs concorrentes", "nao_falar": "",
+        },
+        "potencial_mercado": {
+            "nome": "Potencial de Mercado", "icone": "�", "cor": "#10b981", "prioridade": 6,
+            "foco": "tamanho do mercado, tendências, nichos, crescimento do setor", "nao_falar": "",
+        },
+        "maturidade_operacional": {
+            "nome": "Maturidade Operacional", "icone": "⚙️", "cor": "#6366f1", "prioridade": 6,
+            "foco": "processos, logística, fornecedores, eficiência, escalabilidade", "nao_falar": "",
+        },
+    }
+
     categories = profile.get("categorias_relevantes", [])
-    restricoes = profile.get("restricoes_criticas", {})
 
-    if categories and len(categories) >= 3:
-        # Sort by priority descending
-        categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
-        return categories
+    # Build index of existing IDs
+    existing_ids = {c.get("id", ""): c for c in categories}
 
-    # Fallback: generate context-aware categories based on restrictions
-    modelo_op = restricoes.get("modelo_operacional", "")
-    capital = restricoes.get("capital_disponivel", "medio")
-    solo = restricoes.get("equipe_solo", False)
-    canais = restricoes.get("canais_existentes", [])
-    
-    fallback_categories = []
-    
-    # Always include market overview
-    fallback_categories.append({
-        "id": "mercado",
-        "nome": "Panorama do Mercado",
-        "icone": "📊",
-        "cor": "#10b981",
-        "prioridade": 8,
-        "foco": "tamanho do mercado, tendências, oportunidades de nicho",
-        "nao_falar": ""
-    })
-    
-    # Competition is always relevant
-    fallback_categories.append({
-        "id": "concorrentes",
-        "nome": "Mapa de Concorrentes",
-        "icone": "🎯",
-        "cor": "#f59e0b",
-        "prioridade": 7,
-        "foco": "concorrentes diretos, diferenciais, pontos fracos exploráveis",
-        "nao_falar": ""
-    })
-    
-    # Credibility category if model is dropshipping/sob encomenda
-    if modelo_op in ["sob_encomenda", "dropshipping"]:
-        fallback_categories.append({
-            "id": "credibilidade",
-            "nome": "Credibilidade e Confiança",
-            "icone": "👥",
-            "cor": "#8b5cf6",
-            "prioridade": 9,  # High priority for this model
-            "foco": "como construir confiança online, depoimentos, garantias, prova social, formas de pagamento seguras",
-            "nao_falar": "NÃO fale sobre gestão de estoque ou ERP. O negócio trabalha sob encomenda."
-        })
-    else:
-        fallback_categories.append({
-            "id": "publico_alvo",
-            "nome": "Quem Compra de Você",
-            "icone": "👥",
-            "cor": "#8b5cf6",
-            "prioridade": 7,
-            "foco": "perfil de clientes, onde encontrá-los, canais de aquisição",
-            "nao_falar": ""
-        })
-    
-    # Marketing category - adapt based on capital and existing channels
-    has_instagram = any("instagram" in c.lower() for c in canais) if canais else False
-    
-    if capital in ["zero", "baixo"] and solo:
-        fallback_categories.append({
-            "id": "marketing_organico",
-            "nome": "Marketing Orgânico de Baixo Custo",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 8,
-            "foco": "estratégias gratuitas, conteúdo, SEO, parcerias, indicações",
-            "nao_falar": "NÃO sugira anúncios pagos ou ferramentas caras. O negócio tem capital limitado."
-        })
-    elif has_instagram:
-        fallback_categories.append({
-            "id": "otimizacao_conversao",
-            "nome": "Otimização de Conversão",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 8,
-            "foco": "como converter mais seguidores em clientes, Instagram Shopping, copywriting, funil de vendas",
-            "nao_falar": "NÃO sugira 'criar presença no Instagram'. Ele já usa. Foque em OTIMIZAR."
-        })
-    else:
-        fallback_categories.append({
-            "id": "presenca_online",
-            "nome": "Presença Online",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 6,
-            "foco": "canais digitais, redes sociais, Google Meu Negócio",
-            "nao_falar": ""
-        })
-    
-    # Pricing - always relevant but adapt
-    fallback_categories.append({
-        "id": "precificacao",
-        "nome": "Preços e Margens",
-        "icone": "💎",
-        "cor": "#ec4899",
-        "prioridade": 6,
-        "foco": "precificação competitiva, margem de lucro, posicionamento de valor",
-        "nao_falar": ""
-    })
-    
-    # Sales/Prospecting - adapt for solo entrepreneur
-    if solo:
-        fallback_categories.append({
-            "id": "vendas_solo",
-            "nome": "Vendas para Quem Trabalha Sozinho",
-            "icone": "💰",
-            "cor": "#ef4444",
-            "prioridade": 7,
-            "foco": "técnicas de venda escaláveis para uma pessoa só, automações simples, scripts rápidos",
-            "nao_falar": "NÃO sugira técnicas que exigem equipe de vendas."
-        })
-    else:
-        fallback_categories.append({
-            "id": "como_vender",
-            "nome": "Como Prospectar Clientes",
-            "icone": "💰",
-            "cor": "#ef4444",
-            "prioridade": 6,
-            "foco": "técnicas de prospecção, abordagem, conversão",
-            "nao_falar": ""
-        })
-    
-    # Sort by priority
-    fallback_categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
-    return fallback_categories
+    # Inject any missing required dimension
+    for dim_id in REQUIRED_IDS:
+        if dim_id not in existing_ids:
+            print(f"  ⚠️ Categoria '{dim_id}' ausente — injetando padrão", file=sys.stderr)
+            default = dict(DEFAULTS[dim_id])
+            default["id"] = dim_id
+            categories.append(default)
+
+    # Sort by priority descending
+    categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
+    return categories
 
 
 def run_profiler(onboarding_data: dict) -> dict:

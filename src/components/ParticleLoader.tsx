@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface ParticleLoaderProps {
   progress?: string;
+  thoughts?: string[];
 }
 
 interface Particle {
@@ -19,13 +20,26 @@ interface Particle {
   vy: number;
 }
 
-export default function ParticleLoader({ progress }: ParticleLoaderProps) {
+export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
   const ambientRef = useRef<Particle[]>([]);
   const mouseRef = useRef<{ x: number | null; y: number | null; radius: number }>({ x: null, y: null, radius: 80 });
   const shadowCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [currentVisible, setCurrentVisible] = useState(true);
+  const prevTopRef = useRef<string>('');
+
+  // Trigger fade-in animation whenever the latest thought changes
+  useEffect(() => {
+    const top = thoughts[0];
+    if (!top || top === prevTopRef.current) return;
+    prevTopRef.current = top;
+    setCurrentVisible(false);
+    const t = setTimeout(() => setCurrentVisible(true), 120);
+    return () => clearTimeout(t);
+  }, [thoughts]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -320,16 +334,49 @@ export default function ParticleLoader({ progress }: ParticleLoaderProps) {
         style={{ width: '100%', height: '100%' }}
       />
 
-      {/* Progress text overlay */}
-      <div className="relative z-10 flex flex-col items-center gap-4 pointer-events-none mt-[55%]">
-        {progress && (
-          <p className="text-white/60 text-sm tracking-wide text-center max-w-md px-4">
-            {progress}
-          </p>
+      {/* Agent thought stream — bottom-left panel */}
+      <div className="absolute bottom-8 left-6 z-10 pointer-events-none w-[min(380px,90vw)]">
+        {/* Current thought — active line */}
+        {thoughts.length > 0 && (
+          <div
+            style={{
+              transition: 'opacity 0.3s ease',
+              opacity: currentVisible ? 1 : 0,
+            }}
+            className="flex items-center gap-2 mb-3"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/80 shrink-0 animate-pulse" />
+            <span className="text-white/90 text-sm font-mono tracking-wide">
+              {thoughts[0]}
+            </span>
+          </div>
         )}
-        <p className="text-white/30 text-xs tracking-wider">
-          Isso pode levar de 1 a 3 minutos
-        </p>
+
+        {/* History — fading previous thoughts */}
+        <div className="flex flex-col gap-1.5">
+          {thoughts.slice(1, 4).map((thought: string, i: number) => (
+            <div
+              key={`${thought}-${i}`}
+              className="flex items-center gap-2"
+              style={{ opacity: 0.18 - i * 0.04 }}
+            >
+              <span className="inline-block w-1 h-1 rounded-full bg-white/40 shrink-0" />
+              <span className="text-white/60 text-xs font-mono tracking-wide line-through decoration-white/20">
+                {thought}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Divider + status */}
+        <div className="mt-4 border-t border-white/10 pt-3 flex items-center justify-between">
+          {progress ? (
+            <p className="text-white/40 text-xs tracking-wider">{progress}</p>
+          ) : (
+            <p className="text-white/30 text-xs tracking-wider">Analisando seu negócio...</p>
+          )}
+          <p className="text-white/20 text-xs tracking-wider">1–3 min</p>
+        </div>
       </div>
     </div>
   );

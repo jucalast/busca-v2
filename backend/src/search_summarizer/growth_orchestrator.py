@@ -260,7 +260,7 @@ Responda de forma direta e util:"""
     }
 
 
-def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
+def run_market_search(profile: dict, region: str = 'br-pt', emit_thought=None) -> dict:
     """
     Run targeted market searches in PARALLEL to speed up analysis.
     NOW: Passes restrictions to category processing for context-aware results.
@@ -321,6 +321,8 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
 
     categories_result = []
     all_sources = []
+    done_count = 0
+    total = len(categories)
 
     # Parallel execution with max 2 workers to respect rate limits
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -334,6 +336,10 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
                 result = future.result()
                 categories_result.append(result)
                 all_sources.extend(result.get("fontes", []))
+                done_count += 1
+                cat_nome = result.get("nome", "categoria")
+                if emit_thought:
+                    emit_thought(f"Pesquisa de mercado: {cat_nome} ({done_count}/{total})...")
             except Exception as exc:
                 print(f"  ❌ Generated an exception: {exc}", file=sys.stderr)
 
@@ -380,22 +386,154 @@ def main():
         business_id = input_data.get("business_id")  # Optional: for persistence
         user_id = input_data.get("user_id", "default_user")
 
+        def thought(msg: str):
+            """Emit a real-time thought line to stdout for the frontend to consume."""
+            print(f"THOUGHT: {msg}", flush=True)
+
+        perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
+        nome_negocio = perfil_data.get("nome", perfil_data.get("nome_negocio", "seu negócio"))
+        segmento = perfil_data.get("segmento", "")
+
+        # ── Normalize categories: keep ONLY the 6 scorer dimensions ──
+        # Discard any legacy IDs (credibilidade_e_confianca, logistica_sob_encomenda, etc.)
+        _REQUIRED_DIM_IDS = {
+            "presenca_digital", "competitividade", "diversificacao_canais",
+            "precificacao", "potencial_mercado", "maturidade_operacional",
+        }
+        _REQUIRED_DIMS = {
+            "presenca_digital":       ("Presença Digital B2B",       "📱", "#3b82f6", f"presença digital, LinkedIn, SEO técnico para {segmento}"),
+            "competitividade":        ("Competitividade",             "🎯", "#f59e0b", f"concorrentes diretos de {segmento}, diferenciais, benchmarks"),
+            "diversificacao_canais":  ("Canais de Venda",             "💰", "#ef4444", f"canais de venda para {segmento}, prospecção B2B, marketplaces"),
+            "precificacao":           ("Precificação e Margem",       "💎", "#ec4899", f"preços e margens em {segmento}, estratégia de precificação"),
+            "potencial_mercado":      ("Potencial de Mercado",        "📊", "#10b981", f"tamanho e tendências do mercado de {segmento}"),
+            "maturidade_operacional": ("Maturidade Operacional",      "⚙️", "#6366f1", f"logística, processos e eficiência operacional em {segmento}"),
+        }
+        # Keep only existing cats that already have a valid dimension ID
+        existing_cats = profile.get("categorias_relevantes", [])
+        kept = {c["id"]: c for c in existing_cats if c.get("id") in _REQUIRED_DIM_IDS}
+        # Inject any missing dimension with defaults
+        for dim_id, (nome_dim, icone, cor, foco) in _REQUIRED_DIMS.items():
+            if dim_id not in kept:
+                print(f"  ➕ Injetando categoria: {dim_id}", file=sys.stderr)
+                kept[dim_id] = {"id": dim_id, "nome": nome_dim, "icone": icone,
+                                "cor": cor, "foco": foco, "prioridade": 6, "nao_falar": ""}
+        profile["categorias_relevantes"] = list(kept.values())
+
+        # Build queries for all 6 dimensions (prefer existing, fill missing)
+        old_queries = profile.get("queries_sugeridas", {})
+        _DEFAULT_QUERIES = {
+            "presenca_digital":       f"presença digital {segmento} LinkedIn SEO B2B 2025",
+            "competitividade":        f"concorrentes {segmento} diferenciais benchmark preços 2025",
+            "diversificacao_canais":  f"canais de venda {segmento} como prospectar clientes B2B 2025",
+            "precificacao":           f"precificação margem lucro {segmento} tabela preços 2025",
+            "potencial_mercado":      f"mercado {segmento} tamanho tendências crescimento 2025",
+            "maturidade_operacional": f"logística operações {segmento} eficiência fornecedores 2025",
+        }
+        profile["queries_sugeridas"] = {
+            dim_id: old_queries.get(dim_id, default_q)
+            for dim_id, default_q in _DEFAULT_QUERIES.items()
+        }
+
+        # ── LOG: Profile input summary ──
+        print("\n" + "="*60, file=sys.stderr)
+        print("📋 PIPELINE INPUT — PERFIL DO NEGÓCIO", file=sys.stderr)
+        print("="*60, file=sys.stderr)
+        _log_fields = [
+            ("nome",              perfil_data.get("nome", perfil_data.get("nome_negocio", "?"))),
+            ("segmento",          perfil_data.get("segmento", "?")),
+            ("modelo_negocio",    perfil_data.get("modelo_negocio", perfil_data.get("modelo", "?"))),
+            ("localizacao",       perfil_data.get("localizacao", "?")),
+            ("canais_venda",      perfil_data.get("canais_venda", "?")),
+            ("num_funcionarios",  perfil_data.get("num_funcionarios", "?")),
+            ("faturamento",       perfil_data.get("faturamento_mensal", perfil_data.get("faturamento_faixa", "?"))),
+            ("ticket_medio",      perfil_data.get("ticket_medio", perfil_data.get("ticket_medio_estimado", "?"))),
+            ("margem_lucro",      perfil_data.get("margem_lucro", "?")),
+            ("capital_disponivel",perfil_data.get("capital_disponivel", "?")),
+            ("concorrentes",      perfil_data.get("concorrentes", "?")),
+            ("diferencial",       perfil_data.get("diferencial", "?")),
+            ("dificuldades",      perfil_data.get("dificuldades", "?")),
+            ("cliente_ideal",     perfil_data.get("cliente_ideal", "?")),
+            ("origem_clientes",   perfil_data.get("origem_clientes", "?")),
+            ("maior_objecao",     perfil_data.get("maior_objecao", "?")),
+            ("instagram_handle",  perfil_data.get("instagram_handle", "?")),
+            ("site_url",          perfil_data.get("site_url", "?")),
+            ("linkedin_url",      perfil_data.get("linkedin_url", "?")),
+            ("whatsapp_numero",   perfil_data.get("whatsapp_numero", "?")),
+            ("google_maps_url",   perfil_data.get("google_maps_url", "?")),
+            ("email_contato",     perfil_data.get("email_contato", "?")),
+        ]
+        for field, value in _log_fields:
+            if value and str(value) not in ("?", "None", ""):
+                print(f"  {field}: {value}", file=sys.stderr)
+        restricoes_criticas = profile.get("restricoes_criticas", {})
+        if restricoes_criticas:
+            print(f"  restricoes_criticas: {json.dumps(restricoes_criticas, ensure_ascii=False)}", file=sys.stderr)
+        cats = profile.get("categorias_relevantes", [])
+        if cats:
+            cat_names = [c.get("nome", c) if isinstance(c, dict) else c for c in cats]
+            print(f"  categorias_relevantes: {cat_names}", file=sys.stderr)
+        queries = profile.get("queries_sugeridas", {})
+        if queries:
+            print(f"  queries_sugeridas: {list(queries.keys())}", file=sys.stderr)
+        print("="*60, file=sys.stderr)
+
         # Step 1: Business Discovery (search for the ACTUAL business online)
-        print("🔎 Executando discovery do negócio...", file=sys.stderr)
-        discovery_data = discover_business(profile, region)
+        print("\n🔎 [STEP 1] BUSINESS DISCOVERY", file=sys.stderr)
+        print(f"  INPUT: nome='{nome_negocio}' | segmento='{segmento}' | region='{region}'", file=sys.stderr)
+        discovery_data = discover_business(profile, region, emit_thought=thought)
         discovery_found = discovery_data.get("found", False)
+        if discovery_found:
+            thought(f"Dados reais de '{nome_negocio}' encontrados online")
+            # Log discovery output
+            pd = discovery_data.get("presenca_digital", {})
+            print(f"  OUTPUT discovery:", file=sys.stderr)
+            for canal, info in pd.items():
+                if isinstance(info, dict) and info.get("encontrado"):
+                    obs = info.get("observacoes", "")
+                    print(f"    ✅ {canal}: {obs[:100]}", file=sys.stderr)
+            concorrentes = discovery_data.get("concorrentes_encontrados", [])
+            if concorrentes:
+                print(f"    concorrentes encontrados: {[c.get('nome') for c in concorrentes]}", file=sys.stderr)
+            resumo_exec = discovery_data.get("resumo_executivo", "")
+            if resumo_exec:
+                print(f"    resumo: {resumo_exec[:200]}", file=sys.stderr)
+        else:
+            thought(f"Sem dados específicos online — usando dados do perfil")
         print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
 
         # Step 2: Market search
-        print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
-        market_data = run_market_search(profile, region)
-        print(f"  ✅ Pesquisa completa: {len(market_data.get('categories', []))} categorias", file=sys.stderr)
+        thought(f"Iniciando pesquisa de mercado: {segmento}...")
+        print(f"\n🔍 [STEP 2] MARKET SEARCH", file=sys.stderr)
+        print(f"  INPUT: {len(cats)} categorias | region='{region}'", file=sys.stderr)
+        market_data = run_market_search(profile, region, emit_thought=thought)
+        n_cats = len(market_data.get('categories', []))
+        thought(f"Pesquisa de mercado concluída: {n_cats} categorias analisadas")
+        print(f"  OUTPUT: {n_cats} categorias pesquisadas", file=sys.stderr)
+        for cat in market_data.get("categories", []):
+            resumo = cat.get("resumo", {})
+            visao = resumo.get("visao_geral", "") if isinstance(resumo, dict) else ""
+            n_fontes = len(cat.get("fontes", []))
+            print(f"    [{cat.get('id','?')}] {cat.get('nome','?')} | {n_fontes} fontes | {visao[:80]}", file=sys.stderr)
+        print(f"  ✅ Pesquisa completa: {n_cats} categorias", file=sys.stderr)
 
         # Step 3: Per-dimension scoring with discovery context
-        print("📊 Calculando score por dimensão...", file=sys.stderr)
-        score_result = run_scorer(profile, market_data, discovery_data=discovery_data)
+        print(f"\n📊 [STEP 3] SCORING", file=sys.stderr)
+        print(f"  INPUT: profile + {n_cats} cats de mercado + discovery_found={discovery_found}", file=sys.stderr)
+        score_result = run_scorer(profile, market_data, discovery_data=discovery_data, emit_thought=thought)
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
         task_plan = score_result.get("taskPlan", {})
+        score_geral = score_data.get("score_geral", "?")
+        thought(f"Score geral calculado: {score_geral}/100")
+        # Log scoring output
+        print(f"  OUTPUT scoring:", file=sys.stderr)
+        for dim_key, dim_val in score_data.get("dimensoes", {}).items():
+            s = dim_val.get("score", "?")
+            status = dim_val.get("status", "?")
+            dado = dim_val.get("dado_chave", "")[:80]
+            n_acoes = len(dim_val.get("acoes_imediatas", []))
+            print(f"    {dim_key}: {s}/100 [{status}] | {n_acoes} ações | {dado}", file=sys.stderr)
+        n_tasks = len(task_plan.get("tasks", []))
+        print(f"  score_geral={score_geral} | classificacao={score_data.get('classificacao','?')} | {n_tasks} tarefas geradas", file=sys.stderr)
         print(f"  ✅ Score e tarefas calculados", file=sys.stderr)
 
         # Merge research tasks from chat (if any)
@@ -415,13 +553,14 @@ def main():
                 })
             print(f"  📋 {len(research_tasks)} tarefas de pesquisa incorporadas", file=sys.stderr)
 
-        # Step 3: Persist to database
+        # Step 4: Persist to database
         if business_id:
+            thought("Salvando análise no banco de dados...")
             print("💾 Salvando análise...", file=sys.stderr)
             analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
         else:
-            # Create new business if no business_id provided
+            thought("Criando registro do negócio...")
             print("💾 Criando novo negócio...", file=sys.stderr)
             db.get_or_create_user(user_id)
             perfil = profile.get("perfil", profile)
@@ -431,6 +570,7 @@ def main():
             print(f"  ✅ Negócio criado: {business_id}", file=sys.stderr)
             
             analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
+            thought("Análise salva com sucesso")
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
         # Combine results

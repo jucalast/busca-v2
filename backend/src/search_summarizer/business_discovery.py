@@ -21,6 +21,7 @@ import re
 import sys
 import time
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
@@ -76,6 +77,16 @@ def _extract_search_hints(profile: dict) -> dict:
     whatsapp_numero = _get("whatsapp_numero")
     google_maps_url = _get("google_maps_url")
 
+    # Normalize site URL
+    if site_url and not site_url.startswith("http"):
+        site_url = "https://" + site_url
+
+    # If site_url is actually a LinkedIn URL, move it to linkedin_url and clear site_url
+    if site_url and "linkedin.com" in site_url.lower():
+        if not linkedin_url:
+            linkedin_url = site_url
+        site_url = ""
+
     # Detect which channels user mentioned
     has_instagram = "instagram" in canais_raw or bool(instagram_handle_raw)
     has_site = any(x in canais_raw for x in ["site", "loja virtual", "ecommerce"]) or bool(site_url)
@@ -94,10 +105,6 @@ def _extract_search_hints(profile: dict) -> dict:
         handle_match = re.search(r"@([a-zA-Z0-9_.]+)", all_text)
         if handle_match:
             instagram_handle = handle_match.group(1)
-
-    # Normalize site URL
-    if site_url and not site_url.startswith("http"):
-        site_url = "https://" + site_url
 
     # Extract competitor names
     competitor_names = []
@@ -349,175 +356,111 @@ def _run_discovery_search(query_spec: dict, region: str = "br-pt") -> dict:
 def _synthesize_discovery(raw_results: list, hints: dict, api_key: str) -> dict:
     """Use LLM to extract structured insights from raw discovery data.
     Produces a clean discovery_data dict that feeds into the scorer."""
-    
-    # Build the raw data block
+
+    # Truncate each result individually (800 chars each) so total stays under ~7K
+    PER_RESULT_LIMIT = 800
     raw_block = ""
     for r in raw_results:
         if r.get("found") and r.get("raw_text"):
-            raw_block += f"\n{'='*40}\n"
-            raw_block += f"BUSCA: {r['purpose']}\n"
-            raw_block += f"{r['raw_text']}\n"
-    
+            raw_block += f"\n[{r['id']}] {r['purpose']}:\n"
+            raw_block += r["raw_text"][:PER_RESULT_LIMIT] + "\n"
+
     if not raw_block.strip():
         print("  ⚠️ Nenhum dado de discovery encontrado", file=sys.stderr)
         return {"found": False, "insights": {}}
-    
+
     nome = hints["nome"] or "o negócio"
     segmento = hints["segmento"] or "?"
     loc = hints["localizacao"] or "?"
-    
+
     canais_conhecidos = []
     if hints.get('has_instagram'): canais_conhecidos.append(f"Instagram (@{hints.get('instagram_handle') or nome})")
-    if hints.get('has_site'): canais_conhecidos.append(f"Site ({hints.get('site_url') or 'URL não informada'})")
-    if hints.get('has_whatsapp'): canais_conhecidos.append(f"WhatsApp ({hints.get('whatsapp_numero') or 'número não informado'})")
+    if hints.get('has_site'): canais_conhecidos.append(f"Site ({hints.get('site_url') or '?'})")
+    if hints.get('has_whatsapp'): canais_conhecidos.append(f"WhatsApp ({hints.get('whatsapp_numero') or '?'})")
     if hints.get('has_ifood'): canais_conhecidos.append('iFood')
     if hints.get('has_facebook'): canais_conhecidos.append('Facebook')
-    if hints.get('has_linkedin'): canais_conhecidos.append(f"LinkedIn ({hints.get('linkedin_url') or 'URL não informada'})")
+    if hints.get('has_linkedin'): canais_conhecidos.append(f"LinkedIn ({hints.get('linkedin_url') or '?'})")
     if hints.get('email_contato'): canais_conhecidos.append(f"E-mail ({hints['email_contato']})")
-    if hints.get('google_maps_url'): canais_conhecidos.append(f"Google Maps ({hints['google_maps_url']})")
+    if hints.get('google_maps_url'): canais_conhecidos.append(f"Google Maps")
 
-    prompt = f"""Você é um analista de inteligência de negócios especialista em presença digital. Analise os dados REAIS encontrados na internet sobre "{nome}" ({segmento}, {loc}).
+    # Compact prompt — smaller schema to keep output tokens low
+    prompt = f"""Analise dados reais coletados da internet sobre "{nome}" ({segmento}, {loc}) e retorne JSON compacto.
 
-DADOS COLETADOS:
-{raw_block[:8000]}
+NEGÓCIO: {nome} | {segmento} | {loc} | Canais: {', '.join(canais_conhecidos) or '?'} | Concorrentes: {', '.join(hints.get('competitor_names', [])) or 'nenhum'} | Dificuldade: {hints.get('dificuldades', '?')}
 
-INFORMAÇÕES JÁ CONHECIDAS DO CHAT:
-- Nome: {nome}
-- Segmento: {segmento}
-- Localização: {loc}
-- Modelo: {hints.get('modelo', '?')}
-- Canais declarados: {', '.join(canais_conhecidos) or 'não informado'}
-- Concorrentes mencionados: {', '.join(hints.get('competitor_names', [])) or 'nenhum'}
-- Diferencial: {hints.get('diferencial', '?')}
-- Cliente ideal: {hints.get('cliente_ideal', '?')}
-- Ticket médio: {hints.get('ticket_medio', '?')}
-- Margem: {hints.get('margem_lucro', '?')}
-- Dificuldade principal: {hints.get('dificuldades', '?')}
-- Maior objeção: {hints.get('maior_objecao', '?')}
+DADOS COLETADOS (extraia apenas o que está aqui, null se não encontrado):
+{raw_block[:6000]}
 
-EXTRAIA (apenas o que encontrar nos dados — NÃO invente):
-
-1. INSTAGRAM — bio real, nº seguidores, frequência de posts, tipo de conteúdo, engajamento estimado
-2. SITE — URL real, produtos/serviços listados, preços visíveis, qualidade do SEO, CTA presente
-3. LINKEDIN — seguidores, descrição da empresa, posts recentes, funcionários listados
-4. WHATSAPP BUSINESS — tem catálogo? usa automação? tempo de resposta observado?
-5. GOOGLE MAPS — nota, nº avaliações, comentários positivos e negativos reais
-6. E-MAIL / CONTATO — e-mail encontrado, formulário de contato no site
-7. CONCORRENTES REAIS — nomes, canais digitais deles, preços, diferenciais, pontos fracos
-8. DADOS DE MERCADO — preços praticados, tendências, oportunidades identificadas
-9. PROBLEMAS DETECTADOS — reclamações, gaps vs concorrentes, oportunidades perdidas
-
-REGRAS:
-- Extraia APENAS dados REAIS encontrados nos textos acima
-- Se um dado não está nos textos, coloque null
-- Cite a fonte (URL) de cada achado importante
-- Não invente números ou dados
-- Ignore conteúdo de afiliados ou "ganhar dinheiro fácil"
-
-JSON:
+Retorne SOMENTE este JSON (sem texto extra, sem markdown):
 {{
-    "presenca_digital": {{
-        "instagram": {{
-            "encontrado": true,
-            "handle": "@...",
-            "bio": "...",
-            "seguidores": "número ou null",
-            "frequencia_posts": "diário/semanal/mensal ou null",
-            "tipo_conteudo": "fotos de produto/videos/reels/etc ou null",
-            "engajamento_estimado": "alto/medio/baixo ou null",
-            "observacoes": "...",
-            "fonte": "URL"
-        }},
-        "site": {{
-            "encontrado": true,
-            "url": "...",
-            "produtos_listados": ["produto1", "produto2"],
-            "tem_preco_visivel": true,
-            "tem_cta": true,
-            "qualidade_seo": "boa/media/ruim ou null",
-            "observacoes": "...",
-            "fonte": "URL"
-        }},
-        "linkedin": {{
-            "encontrado": true,
-            "url": "...",
-            "seguidores": "número ou null",
-            "descricao": "...",
-            "posts_recentes": true,
-            "observacoes": "...",
-            "fonte": "URL"
-        }},
-        "whatsapp": {{
-            "encontrado": true,
-            "numero": "...",
-            "tem_catalogo": true,
-            "usa_whatsapp_business": true,
-            "observacoes": "..."
-        }},
-        "google_maps": {{
-            "encontrado": true,
-            "nota": "X.X",
-            "num_avaliacoes": "número ou null",
-            "principais_comentarios": ["comentário positivo real", "comentário negativo real"],
-            "fonte": "URL"
-        }},
-        "email": {{
-            "encontrado": true,
-            "endereco": "...",
-            "fonte": "URL"
-        }},
-        "outras_plataformas": ["ifood", "marketplace X"]
-    }},
-    "concorrentes_encontrados": [
-        {{
-            "nome": "...",
-            "instagram": "@...",
-            "site": "URL ou null",
-            "preco_referencia": "R$ ...",
-            "diferencial": "...",
-            "ponto_fraco": "...",
-            "canais_digitais": ["Instagram", "Site"],
-            "fonte": "URL"
-        }}
-    ],
-    "dados_mercado_local": {{
-        "preco_medio_regiao": "R$ ...",
-        "tendencias": ["tendência real encontrada"],
-        "oportunidades": ["oportunidade específica identificada"]
-    }},
-    "problemas_detectados": [
-        "problema específico encontrado nos dados"
-    ],
-    "resumo_executivo": "2-3 frases: o que mais se destaca sobre a situação digital real desse negócio vs concorrentes"
+  "presenca_digital": {{
+    "instagram": {{"encontrado": true, "handle": "...", "seguidores": null, "observacoes": "1 frase"}},
+    "site": {{"encontrado": true, "url": "...", "observacoes": "1 frase"}},
+    "linkedin": {{"encontrado": true, "seguidores": null, "observacoes": "1 frase"}},
+    "whatsapp": {{"encontrado": true, "observacoes": "1 frase"}},
+    "google_maps": {{"encontrado": true, "nota": null, "num_avaliacoes": null, "observacoes": "1 frase"}},
+    "email": {{"encontrado": true, "endereco": null}}
+  }},
+  "concorrentes_encontrados": [
+    {{"nome": "...", "site": null, "diferencial": "1 frase", "ponto_fraco": "1 frase"}}
+  ],
+  "dados_mercado_local": {{
+    "tendencias": ["1 tendência real"],
+    "oportunidades": ["1 oportunidade real"]
+  }},
+  "problemas_detectados": ["1 problema real encontrado nos dados"],
+  "resumo_executivo": "2 frases sobre situação digital real vs concorrentes"
 }}"""
 
-    try:
-        result = call_groq(api_key, prompt, temperature=0.2)
-        result["found"] = True
-        
-        # Collect all sources
-        all_sources = []
-        for r in raw_results:
-            all_sources.extend(r.get("sources", []))
-        result["fontes_discovery"] = list(dict.fromkeys(all_sources))
-        
-        return result
-    except Exception as e:
-        print(f"  ❌ Erro ao sintetizar discovery: {e}", file=sys.stderr)
-        return {"found": False, "error": str(e)[:200]}
+    client = Groq(api_key=api_key)
+    # Use a model with higher output limit; llama-3.3-70b handles complex JSON better
+    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    last_error = None
+
+    for model in models:
+        try:
+            completion = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=model,
+                temperature=0.1,
+                max_tokens=1500,
+                response_format={"type": "json_object"},
+            )
+            result = json.loads(completion.choices[0].message.content)
+            result["found"] = True
+
+            all_sources = []
+            for r in raw_results:
+                all_sources.extend(r.get("sources", []))
+            result["fontes_discovery"] = list(dict.fromkeys(all_sources))
+
+            print(f"  ✅ Discovery sintetizado com {model}", file=sys.stderr)
+            return result
+        except Exception as e:
+            last_error = e
+            print(f"  ⚠️ Erro com {model}: {str(e)[:120]}", file=sys.stderr)
+            continue
+
+    print(f"  ❌ Erro ao sintetizar discovery: {last_error}", file=sys.stderr)
+    return {"found": False, "error": str(last_error)[:200]}
 
 
-def discover_business(profile: dict, region: str = "br-pt") -> dict:
+def discover_business(profile: dict, region: str = "br-pt", emit_thought=None) -> dict:
     """
     Main entry point. Searches for the ACTUAL business online using chat data.
     
     Args:
         profile: Full profile dict from chat (contains perfil, restricoes, etc.)
         region: Search region
+        emit_thought: Optional callable(str) to stream real-time thoughts to frontend
     
     Returns:
         discovery_data dict with structured findings about the real business
     """
+    def _t(msg: str):
+        if emit_thought:
+            emit_thought(msg)
+
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         return {"found": False, "error": "No API key"}
@@ -526,6 +469,7 @@ def discover_business(profile: dict, region: str = "br-pt") -> dict:
 
     # Step 1: Extract what we know from the chat
     hints = _extract_search_hints(profile)
+    nome = hints['nome'] or 'negócio'
     print(f"  📋 Hints extraídos do chat:", file=sys.stderr)
     print(f"     Nome: {hints['nome']}", file=sys.stderr)
     print(f"     Instagram: {'SIM' if hints['has_instagram'] else 'NÃO'} (handle: @{hints['instagram_handle'] or '?'})", file=sys.stderr)
@@ -540,10 +484,33 @@ def discover_business(profile: dict, region: str = "br-pt") -> dict:
     # Step 2: Build targeted queries
     queries = _build_discovery_queries(hints)
     print(f"  🔎 {len(queries)} buscas de discovery planejadas", file=sys.stderr)
-    
+
+    # Map query IDs to human-readable labels for thoughts
+    _purpose_labels = {
+        "presenca_real":      f"Buscando '{nome}' na internet...",
+        "instagram_real":     f"Verificando Instagram de '{nome}'...",
+        "site_real":          f"Analisando site de '{nome}'...",
+        "linkedin_real":      f"Verificando LinkedIn de '{nome}'...",
+        "google_reviews":     f"Buscando avaliações no Google Maps...",
+        "whatsapp_business":  f"Verificando WhatsApp Business...",
+        "aquisicao_clientes": f"Pesquisando estratégias de aquisição de clientes...",
+        "precificacao_mercado": f"Pesquisando preços praticados no mercado...",
+        "oportunidades_b2b":  f"Pesquisando oportunidades B2B do setor...",
+        "oportunidades":      f"Pesquisando tendências e oportunidades do segmento...",
+    }
+
     # Step 3: Execute searches (sequential to avoid rate limits)
     raw_results = []
     for i, q in enumerate(queries):
+        qid = q.get("id", "")
+        # Emit thought: concorrente searches use the competitor name
+        if qid.startswith("concorrente_"):
+            comp_name = q.get("purpose", "").replace("Analisar concorrente real: ", "").split(" —")[0]
+            _t(f"Pesquisando concorrente: {comp_name}...")
+        else:
+            label = _purpose_labels.get(qid, q.get("purpose", f"Buscando dados ({qid})..."))
+            _t(label)
+
         result = _run_discovery_search(q, region)
         raw_results.append(result)
         
@@ -566,6 +533,7 @@ def discover_business(profile: dict, region: str = "br-pt") -> dict:
             "insights": {},
         }
     
+    _t(f"Sintetizando dados encontrados sobre '{nome}'...")
     # Step 4: Use LLM to synthesize structured insights
     print("  🧠 Sintetizando insights...", file=sys.stderr)
     discovery_data = _synthesize_discovery(raw_results, hints, api_key)

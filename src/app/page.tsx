@@ -25,6 +25,7 @@ export default function Home() {
   const [growthData, setGrowthData] = useState<any>(null);
   const [growthLoading, setGrowthLoading] = useState(false);
   const [growthProgress, setGrowthProgress] = useState('');
+  const [agentThoughts, setAgentThoughts] = useState<string[]>([]);
   const [error, setError] = useState('');
 
   // Task Assistant state
@@ -101,10 +102,11 @@ export default function Home() {
     }
   };
 
-  // ─── Growth mode: Run full analysis ───
+  // ─── Growth mode: Run full analysis (SSE streaming) ───
   const runAnalysis = async (profileData: any) => {
     try {
-      setGrowthProgress('Analisando mercado, calculando score e gerando tarefas...');
+      setGrowthProgress('Iniciando análise...');
+      setAgentThoughts([]);
 
       const res = await fetch('/api/growth', {
         method: 'POST',
@@ -118,19 +120,46 @@ export default function Home() {
         }),
       });
 
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || result.erro || 'Falha na análise');
+      if (!res.ok || !res.body) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha na análise');
       }
 
-      // Store business_id from result (newly created or existing)
-      if (result.business_id) {
-        setCurrentBusinessId(result.business_id);
-      }
+      // Consume SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      setGrowthData(result);
-      setGrowthStage('results');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'thought') {
+              setAgentThoughts(prev => [event.text, ...prev].slice(0, 20));
+            } else if (event.type === 'result') {
+              const result = event.data;
+              if (!result.success) throw new Error(result.error || 'Falha na análise');
+              if (result.business_id) setCurrentBusinessId(result.business_id);
+              setGrowthData(result);
+              setGrowthStage('results');
+            } else if (event.type === 'error') {
+              throw new Error(event.message || 'Erro na análise');
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          }
+        }
+      }
 
     } catch (err: any) {
       setError(err.message || 'Erro na análise.');
@@ -214,6 +243,7 @@ export default function Home() {
     setError('');
     setSelectedDimension(null);
     setDimensionChats({});
+    setAgentThoughts([]);
 
     try {
       await runAnalysis(profile);
@@ -376,7 +406,7 @@ export default function Home() {
 
       {/* Analyzing Stage - Particle Animation */}
       {growthStage === 'analyzing' && growthLoading && (
-        <ParticleLoader progress={growthProgress} />
+        <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
       )}
 
       {/* Results Stage - Hub or Dimension Detail */}

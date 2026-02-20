@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import path from 'path';
 import util from 'util';
 import fs from 'fs';
@@ -86,6 +86,97 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
     }
 }
 
+/**
+ * Run the analyze action with real-time SSE streaming.
+ * Emits: { type: 'thought', text } for THOUGHT: lines
+ *        { type: 'result', data } for the final JSON result
+ *        { type: 'error', message } on failure
+ */
+function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480000): ReadableStream {
+    const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
+    const scriptPath = path.join(process.cwd(), 'backend', 'src', 'search_summarizer', 'growth_orchestrator.py');
+    const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' };
+    const tmpPath = writeTempInput(inputData);
+
+    return new ReadableStream({
+        start(controller) {
+            const send = (obj: object) => {
+                try { controller.enqueue(`data: ${JSON.stringify(obj)}\n\n`); } catch { /* stream closed */ }
+            };
+
+            const child = spawn(pythonCommand, [scriptPath, '--action', 'analyze', '--input-file', tmpPath], {
+                env,
+                windowsHide: true,
+            });
+
+            // Single accumulator for full stdout — used both for streaming thoughts and parsing result
+            let fullStdout = '';
+            let lineBuffer = '';
+
+            child.stdout.setEncoding('utf-8');
+            child.stdout.on('data', (chunk: string) => {
+                fullStdout += chunk;
+                lineBuffer += chunk;
+
+                // Emit THOUGHT lines as they arrive
+                const lines = lineBuffer.split('\n');
+                lineBuffer = lines.pop() ?? '';
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('THOUGHT: ')) {
+                        send({ type: 'thought', text: trimmed.slice(9) });
+                    }
+                }
+            });
+
+            child.stderr.setEncoding('utf-8');
+            child.stderr.on('data', (chunk: string) => {
+                console.log(`[Growth SSE] stderr: ${chunk}`);
+            });
+
+            const timer = setTimeout(() => {
+                child.kill();
+                send({ type: 'error', message: 'Analysis timed out' });
+                try { controller.close(); } catch { /* ignore */ }
+            }, timeoutMs);
+
+            child.on('error', (err) => {
+                clearTimeout(timer);
+                try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+                send({ type: 'error', message: err.message });
+                try { controller.close(); } catch { /* ignore */ }
+            });
+
+            child.on('close', () => {
+                clearTimeout(timer);
+                try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+
+                // Flush any remaining line in buffer
+                if (lineBuffer.trim().startsWith('THOUGHT: ')) {
+                    send({ type: 'thought', text: lineBuffer.trim().slice(9) });
+                }
+
+                // Parse and emit final result
+                const marker = '--- GROWTH_RESULT ---';
+                const markerIdx = fullStdout.indexOf(marker);
+                if (markerIdx !== -1) {
+                    try {
+                        const jsonStr = fullStdout.substring(markerIdx + marker.length).trim();
+                        const result = JSON.parse(jsonStr);
+                        send({ type: 'result', data: result });
+                    } catch (e: any) {
+                        send({ type: 'error', message: `Failed to parse result: ${e.message}` });
+                    }
+                } else {
+                    send({ type: 'error', message: 'No result found in output' });
+                }
+
+                try { controller.close(); } catch { /* ignore */ }
+            });
+        },
+    });
+}
+
 // ─────────────────────────────────────────────
 // Growth Mode API
 // ─────────────────────────────────────────────
@@ -109,21 +200,27 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
-        // ━━━ Action: Analyze (profile → market data + score + tasks) ━━━
+        // ━━━ Action: Analyze (profile → market data + score + tasks) — SSE streaming ━━━
         if (action === 'analyze') {
             if (!profile) {
                 return NextResponse.json({ error: 'profile is required' }, { status: 400 });
             }
 
-            const result = await runOrchestrator('analyze', {
+            const stream = runOrchestratorStreaming({
                 action: 'analyze',
                 profile,
                 region: region || 'br-pt',
                 business_id: business_id || null,
                 user_id: user_id || 'default_user',
-            }, 300000);
+            }, 480000);
 
-            return NextResponse.json(result);
+            return new Response(stream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
         }
 
         // ━━━ Action: Assist (task → AI help) ━━━
