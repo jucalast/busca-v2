@@ -99,6 +99,60 @@ def init_db():
             FOREIGN KEY (analysis_id) REFERENCES analyses (id)
         )
     ''')
+
+    # Execution plans - macro plan (phases + task titles)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS execution_plans (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            meta TEXT NOT NULL,
+            plan_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (analysis_id) REFERENCES analyses (id)
+        )
+    ''')
+
+    # Plan task details - micro plan (expanded sub-tasks, generated JIT)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS plan_task_details (
+            id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            detail_data TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (plan_id) REFERENCES execution_plans (id)
+        )
+    ''')
+
+    # Task chats - per-task scoped chat history
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS task_chats (
+            id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            messages TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (plan_id) REFERENCES execution_plans (id)
+        )
+    ''')
+
+    # Specialist cache - cached RAG results by segment + task type
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS specialist_cache (
+            cache_key TEXT PRIMARY KEY,
+            segment TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            task_title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            hit_count INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            last_used TEXT NOT NULL
+        )
+    ''')
     
     # Create indexes for common queries
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses (user_id, status)')
@@ -106,6 +160,10 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_dimension_chats_analysis ON dimension_chats (analysis_id, dimension)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_execution_plans_analysis ON execution_plans (analysis_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_plan_task_details_plan ON plan_task_details (plan_id, task_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_task_chats_plan ON task_chats (plan_id, task_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_specialist_cache_segment ON specialist_cache (segment, categoria)')
     
     conn.commit()
     conn.close()
@@ -732,6 +790,269 @@ def get_dimension_chat(analysis_id: str, dimension: str) -> Optional[Dict]:
         "messages": json.loads(row["messages"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Execution Plan Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def save_execution_plan(analysis_id: str, meta: str, plan_data: Dict) -> Dict:
+    """Save a macro execution plan."""
+    import uuid
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    # Check if plan exists for this analysis
+    cursor.execute('SELECT id FROM execution_plans WHERE analysis_id = ?', (analysis_id,))
+    row = cursor.fetchone()
+    
+    if row:
+        plan_id = row["id"]
+        cursor.execute('''
+            UPDATE execution_plans SET meta = ?, plan_data = ?, updated_at = ?
+            WHERE id = ?
+        ''', (meta, json.dumps(plan_data, ensure_ascii=False), now, plan_id))
+    else:
+        plan_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO execution_plans (id, analysis_id, meta, plan_data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (plan_id, analysis_id, meta, json.dumps(plan_data, ensure_ascii=False), now, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": plan_id,
+        "analysis_id": analysis_id,
+        "meta": meta,
+        "plan_data": plan_data,
+        "updated_at": now
+    }
+
+
+def get_execution_plan(analysis_id: str) -> Optional[Dict]:
+    """Get execution plan for an analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM execution_plans WHERE analysis_id = ? ORDER BY created_at DESC LIMIT 1', (analysis_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "analysis_id": row["analysis_id"],
+        "meta": row["meta"],
+        "plan_data": json.loads(row["plan_data"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Plan Task Detail Operations (JIT micro-plans)
+# ═══════════════════════════════════════════════════════════════════
+
+def save_task_detail(plan_id: str, task_id: str, detail_data: Dict) -> Dict:
+    """Save expanded task detail (micro-plan)."""
+    import uuid
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('SELECT id FROM plan_task_details WHERE plan_id = ? AND task_id = ?', (plan_id, task_id))
+    row = cursor.fetchone()
+    
+    if row:
+        detail_id = row["id"]
+        cursor.execute('''
+            UPDATE plan_task_details SET detail_data = ?, updated_at = ?
+            WHERE id = ?
+        ''', (json.dumps(detail_data, ensure_ascii=False), now, detail_id))
+    else:
+        detail_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO plan_task_details (id, plan_id, task_id, detail_data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (detail_id, plan_id, task_id, json.dumps(detail_data, ensure_ascii=False), now, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": detail_id,
+        "plan_id": plan_id,
+        "task_id": task_id,
+        "detail_data": detail_data,
+        "updated_at": now
+    }
+
+
+def get_task_detail(plan_id: str, task_id: str) -> Optional[Dict]:
+    """Get expanded task detail."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM plan_task_details WHERE plan_id = ? AND task_id = ?', (plan_id, task_id))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "plan_id": row["plan_id"],
+        "task_id": row["task_id"],
+        "detail_data": json.loads(row["detail_data"]),
+        "completed": bool(row["completed"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"]
+    }
+
+
+def toggle_task_complete(plan_id: str, task_id: str, completed: bool) -> bool:
+    """Mark a task as completed or not."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    cursor.execute('''
+        UPDATE plan_task_details SET completed = ?, updated_at = ?
+        WHERE plan_id = ? AND task_id = ?
+    ''', (1 if completed else 0, now, plan_id, task_id))
+    
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Task Chat Operations (per-task scoped chat)
+# ═══════════════════════════════════════════════════════════════════
+
+def save_task_chat(plan_id: str, task_id: str, messages: List[Dict]) -> Dict:
+    """Save or update task-scoped chat history."""
+    import uuid
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('SELECT id FROM task_chats WHERE plan_id = ? AND task_id = ?', (plan_id, task_id))
+    row = cursor.fetchone()
+    
+    if row:
+        chat_id = row["id"]
+        cursor.execute('''
+            UPDATE task_chats SET messages = ?, updated_at = ?
+            WHERE id = ?
+        ''', (json.dumps(messages, ensure_ascii=False), now, chat_id))
+    else:
+        chat_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO task_chats (id, plan_id, task_id, messages, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (chat_id, plan_id, task_id, json.dumps(messages, ensure_ascii=False), now, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": chat_id,
+        "plan_id": plan_id,
+        "task_id": task_id,
+        "messages": messages,
+        "updated_at": now
+    }
+
+
+def get_task_chat(plan_id: str, task_id: str) -> Optional[Dict]:
+    """Get task-scoped chat history."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM task_chats WHERE plan_id = ? AND task_id = ?', (plan_id, task_id))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "plan_id": row["plan_id"],
+        "task_id": row["task_id"],
+        "messages": json.loads(row["messages"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Specialist Cache Operations (RAG result caching)
+# ═══════════════════════════════════════════════════════════════════
+
+def save_specialist_cache(cache_key: str, segment: str, categoria: str, task_title: str, content: Dict) -> Dict:
+    """Save RAG result to cache."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO specialist_cache (cache_key, segment, categoria, task_title, content, hit_count, created_at, last_used)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    ''', (cache_key, segment, categoria, task_title, json.dumps(content, ensure_ascii=False), now, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {"cache_key": cache_key, "created_at": now}
+
+
+def get_specialist_cache(cache_key: str) -> Optional[Dict]:
+    """Get cached RAG result. Updates hit_count and last_used."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM specialist_cache WHERE cache_key = ?', (cache_key,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return None
+    
+    # Update hit count
+    now = datetime.utcnow().isoformat()
+    cursor.execute('''
+        UPDATE specialist_cache SET hit_count = hit_count + 1, last_used = ?
+        WHERE cache_key = ?
+    ''', (now, cache_key))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "cache_key": row["cache_key"],
+        "segment": row["segment"],
+        "categoria": row["categoria"],
+        "task_title": row["task_title"],
+        "content": json.loads(row["content"]),
+        "hit_count": row["hit_count"] + 1,
+        "created_at": row["created_at"],
+        "last_used": now
     }
 
 

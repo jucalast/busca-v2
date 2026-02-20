@@ -5,6 +5,8 @@ import { Bot, Search, BarChart3, ListTodo, Loader2 } from 'lucide-react';
 import ParticleLoader from '@/components/ParticleLoader';
 import GrowthHub from '@/components/GrowthHub';
 import DimensionDetail from '@/components/DimensionDetail';
+import ExecutionDashboard from '@/components/ExecutionDashboard';
+import TaskDetail from '@/components/TaskDetail';
 import TaskAssistant from '@/components/TaskAssistant';
 import GrowthChat from '@/components/GrowthChat';
 import SidebarLayout from '@/components/SidebarLayout';
@@ -35,6 +37,15 @@ export default function Home() {
   const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
   const [dimensionChats, setDimensionChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[]; searchQuery?: string }>>>({});
   const [dimensionLoading, setDimensionLoading] = useState(false);
+
+  // Execution plan state (Co-Pilot mode)
+  const [viewMode, setViewMode] = useState<'execution' | 'diagnostic'>('execution');
+  const [selectedTask, setSelectedTask] = useState<{ id: string; titulo: string; categoria: string; phaseTitle: string } | null>(null);
+  const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
+  const [expandingTaskId, setExpandingTaskId] = useState<string | null>(null);
+  const [taskChats, setTaskChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[] }>>>({});
+  const [taskChatLoading, setTaskChatLoading] = useState(false);
+  const [completedSubtasks, setCompletedSubtasks] = useState<Record<string, Set<string>>>({});
 
   // ─── Growth mode: Chat profile ready → Run Analysis ───
   const handleChatProfileReady = async (chatProfile: any) => {
@@ -200,9 +211,14 @@ export default function Home() {
             marketData: business.latest_analysis.market_data,
             score: business.latest_analysis.score_data,
             taskPlan: business.latest_analysis.task_data,
+            executionPlan: business.latest_analysis.execution_plan || null,
+            plan_id: business.latest_analysis.plan_id || null,
+            meta: business.latest_analysis.meta || '',
             business_id: businessId,
             analysis_id: business.latest_analysis.id,
           });
+          setSelectedTask(null);
+          setViewMode('execution');
           setGrowthStage('results');
         } else {
           // No analysis yet, go to onboarding to create one
@@ -225,6 +241,11 @@ export default function Home() {
     setGrowthData(null);
     setSelectedDimension(null);
     setDimensionChats({});
+    setSelectedTask(null);
+    setTaskDetails({});
+    setTaskChats({});
+    setCompletedSubtasks({});
+    setViewMode('execution');
     setGrowthStage('onboarding');
     setError('');
   };
@@ -360,6 +381,115 @@ export default function Home() {
     }
   };
 
+  // ─── Execution Plan: Select task → JIT expand with RAG ───
+  const handleSelectTask = async (task: any, phaseTitle: string) => {
+    const taskId = task.id;
+    setSelectedTask({ id: taskId, titulo: task.titulo, categoria: task.categoria, phaseTitle });
+
+    // If already expanded, just show it
+    if (taskDetails[taskId]) return;
+
+    // JIT expand: search + generate sub-tasks
+    setExpandingTaskId(taskId);
+    try {
+      const res = await fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'expand-task',
+          task_id: taskId,
+          task_title: task.titulo,
+          categoria: task.categoria,
+          profile: profile?.profile || profile,
+          plan_context: {
+            meta: growthData?.meta || growthData?.executionPlan?.meta || '',
+            phase: phaseTitle,
+          },
+          plan_id: growthData?.plan_id || null,
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setTaskDetails(prev => ({ ...prev, [taskId]: result }));
+      } else {
+        setError(result.error || 'Erro ao expandir tarefa');
+        setSelectedTask(null);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Erro ao expandir tarefa');
+      setSelectedTask(null);
+    } finally {
+      setExpandingTaskId(null);
+    }
+  };
+
+  // ─── Task-scoped chat handler ───
+  const handleTaskChatMessage = async (message: string) => {
+    if (!selectedTask) return;
+    const taskId = selectedTask.id;
+    const currentChat = taskChats[taskId] || [];
+    const newChat = [...currentChat, { role: 'user' as const, content: message }];
+    setTaskChats(prev => ({ ...prev, [taskId]: newChat }));
+    setTaskChatLoading(true);
+
+    try {
+      const res = await fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'task-chat',
+          task_id: taskId,
+          task_title: selectedTask.titulo,
+          user_message: message,
+          messages: newChat,
+          profile: profile?.profile || profile,
+          task_detail: taskDetails[taskId] || {},
+          plan_context: {
+            meta: growthData?.meta || growthData?.executionPlan?.meta || '',
+          },
+          plan_id: growthData?.plan_id || null,
+        }),
+      });
+      const result = await res.json();
+      setTaskChats(prev => ({
+        ...prev,
+        [taskId]: [
+          ...(prev[taskId] || []),
+          {
+            role: 'assistant' as const,
+            content: result.reply || 'Desculpe, não consegui gerar uma resposta.',
+            sources: result.sources || [],
+          },
+        ],
+      }));
+    } catch {
+      setTaskChats(prev => ({
+        ...prev,
+        [taskId]: [
+          ...(prev[taskId] || []),
+          { role: 'assistant' as const, content: 'Erro ao processar. Tente novamente.' },
+        ],
+      }));
+    } finally {
+      setTaskChatLoading(false);
+    }
+  };
+
+  // ─── Toggle subtask completion ───
+  const handleToggleSubtask = (subtaskId: string) => {
+    if (!selectedTask) return;
+    const taskId = selectedTask.id;
+    setCompletedSubtasks(prev => {
+      const current = new Set(prev[taskId] || []);
+      if (current.has(subtaskId)) {
+        current.delete(subtaskId);
+      } else {
+        current.add(subtaskId);
+      }
+      return { ...prev, [taskId]: current };
+    });
+  };
+
   // Show loading while checking auth
   if (authLoading) {
     return (
@@ -409,26 +539,67 @@ export default function Home() {
         <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
       )}
 
-      {/* Results Stage - Hub or Dimension Detail */}
+      {/* Results Stage */}
       {growthStage === 'results' && growthData && (
         <>
-          {selectedDimension ? (
-            <DimensionDetail
-              dimensionKey={selectedDimension}
-              data={growthData}
-              userProfile={userProf}
-              chatHistory={dimensionChats[selectedDimension] || []}
-              onBack={() => setSelectedDimension(null)}
-              onSendMessage={handleDimensionMessage}
-              isLoading={dimensionLoading}
+          {/* Task Detail View (expanded task with sub-tasks + scoped chat) */}
+          {selectedTask ? (
+            <TaskDetail
+              taskId={selectedTask.id}
+              taskTitle={selectedTask.titulo}
+              phaseTitle={selectedTask.phaseTitle}
+              detail={taskDetails[selectedTask.id] || null}
+              isLoading={expandingTaskId === selectedTask.id}
+              chatHistory={taskChats[selectedTask.id] || []}
+              chatLoading={taskChatLoading}
+              onBack={() => setSelectedTask(null)}
+              onSendMessage={handleTaskChatMessage}
+              onToggleSubtask={handleToggleSubtask}
+              completedSubtasks={completedSubtasks[selectedTask.id] || new Set()}
             />
+          ) : viewMode === 'diagnostic' ? (
+            /* Diagnostic View (GrowthHub + DimensionDetail) */
+            selectedDimension ? (
+              <DimensionDetail
+                dimensionKey={selectedDimension}
+                data={growthData}
+                userProfile={userProf}
+                chatHistory={dimensionChats[selectedDimension] || []}
+                onBack={() => setSelectedDimension(null)}
+                onSendMessage={handleDimensionMessage}
+                isLoading={dimensionLoading}
+              />
+            ) : (
+              <GrowthHub
+                data={growthData}
+                userProfile={userProf}
+                onSelectDimension={(key) => setSelectedDimension(key)}
+                onRedo={handleRedoAnalysis}
+                onBackToExecution={growthData.executionPlan ? () => setViewMode('execution') : undefined}
+              />
+            )
           ) : (
-            <GrowthHub
-              data={growthData}
-              userProfile={userProf}
-              onSelectDimension={(key) => setSelectedDimension(key)}
-              onRedo={handleRedoAnalysis}
-            />
+            /* Execution Plan View (primary — Co-Pilot mode) */
+            growthData.executionPlan ? (
+              <ExecutionDashboard
+                plan={growthData.executionPlan}
+                score={growthData.score}
+                userProfile={userProf}
+                planId={growthData.plan_id || null}
+                onSelectTask={handleSelectTask}
+                onRedo={handleRedoAnalysis}
+                onViewDiagnostic={() => setViewMode('diagnostic')}
+                expandingTaskId={expandingTaskId}
+              />
+            ) : (
+              /* Fallback: no execution plan, show diagnostic hub */
+              <GrowthHub
+                data={growthData}
+                userProfile={userProf}
+                onSelectDimension={(key) => setSelectedDimension(key)}
+                onRedo={handleRedoAnalysis}
+              />
+            )
           )}
         </>
       )}

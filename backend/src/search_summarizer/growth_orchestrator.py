@@ -3,10 +3,13 @@ Growth Orchestrator — Coordinates the full growth analysis pipeline.
 Called by the /api/growth route with --action and --input flags.
 
 Actions:
-    chat      → Conversational AI consultant with internet search
-    profile   → Runs business_profiler on onboarding data
-    analyze   → Runs market search + scorer + task generator
-    assist    → Runs task assistant for a specific task
+    chat           → Conversational AI consultant with internet search
+    profile        → Runs business_profiler on onboarding data
+    analyze        → Runs market search + scorer + task generator + macro plan
+    assist         → Runs task assistant for a specific task
+    macro-plan     → Generates execution plan skeleton (phases + task titles)
+    expand-task    → JIT micro-planning: expands a task into sub-tasks with RAG
+    task-chat      → Task-scoped chat for execution help
 """
 
 import argparse
@@ -23,6 +26,8 @@ from business_scorer import run_scorer
 from business_discovery import discover_business
 from task_assistant import run_assistant
 from chat_consultant import run_chat
+from macro_planner import generate_macro_plan
+from micro_planner import expand_task, run_task_chat
 import database as db
 
 # Reuse search functions from cli.py
@@ -357,6 +362,7 @@ def main():
     parser = argparse.ArgumentParser(description="Growth Orchestrator")
     parser.add_argument("--action", required=True, choices=[
         "profile", "analyze", "assist", "chat", "dimension-chat",
+        "macro-plan", "expand-task", "task-chat",
         "list-businesses", "get-business", "create-business", "save-analysis",
         "register", "login", "logout", "validate-session", "delete-business"
     ])
@@ -573,6 +579,42 @@ def main():
             thought("Análise salva com sucesso")
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
+        # Step 5: Generate Macro Execution Plan (phases + task titles only)
+        meta = input_data.get("meta", "")
+        if not meta:
+            # Auto-generate a meta from the score data
+            if score_geral < 40:
+                meta = f"Resolver os pontos críticos e alcançar score 60+ em 3 meses"
+            elif score_geral < 70:
+                meta = f"Otimizar operações e alcançar score 80+ em 3 meses"
+            else:
+                meta = f"Escalar o negócio e manter excelência operacional"
+
+        thought("Gerando plano de execução...")
+        print(f"\n📋 [STEP 5] MACRO PLAN", file=sys.stderr)
+        macro_result = generate_macro_plan(
+            profile, score_data, meta,
+            discovery_data=discovery_data if discovery_found else None,
+            emit_thought=thought
+        )
+        execution_plan = None
+        plan_id = None
+        if macro_result.get("success"):
+            plan_data = macro_result["plan"]
+            n_fases = len(plan_data.get("fases", []))
+            n_tarefas_plan = sum(len(f.get("tarefas", [])) for f in plan_data.get("fases", []))
+            print(f"  ✅ Plano macro: {n_fases} fases, {n_tarefas_plan} tarefas", file=sys.stderr)
+            
+            # Persist execution plan
+            if 'analysis' in locals():
+                ep = db.save_execution_plan(analysis["id"], meta, plan_data)
+                plan_id = ep["id"]
+                print(f"  💾 Plano salvo: {plan_id}", file=sys.stderr)
+            
+            execution_plan = plan_data
+        else:
+            print(f"  ⚠️ Macro plan failed: {macro_result.get('error', '?')}", file=sys.stderr)
+
         # Combine results
         output = {
             "success": True,
@@ -580,6 +622,9 @@ def main():
             "marketData": market_data,
             "score": score_data,
             "taskPlan": task_plan,
+            "executionPlan": execution_plan,
+            "plan_id": plan_id,
+            "meta": meta,
             "business_id": business_id,
             "analysis_id": analysis.get("id") if 'analysis' in locals() else None
         }
@@ -608,6 +653,65 @@ def main():
         result = run_dimension_chat(input_data)
 
         print("--- DIMENSION_CHAT_RESULT ---")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Macro Plan Action (standalone — for re-generating plan) ━━━
+    elif args.action == "macro-plan":
+        profile = input_data.get("profile", {})
+        score_data = input_data.get("score", {})
+        meta = input_data.get("meta", "Crescer o negócio nos próximos 3 meses")
+        discovery_data = input_data.get("discovery_data")
+        analysis_id = input_data.get("analysis_id")
+
+        result = generate_macro_plan(profile, score_data, meta, discovery_data=discovery_data)
+
+        if result.get("success") and analysis_id:
+            ep = db.save_execution_plan(analysis_id, meta, result["plan"])
+            result["plan_id"] = ep["id"]
+
+        print("--- MACRO_PLAN_RESULT ---")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Expand Task Action (JIT micro-planning with RAG) ━━━
+    elif args.action == "expand-task":
+        task_id = input_data.get("task_id", "")
+        task_title = input_data.get("task_title", "")
+        categoria = input_data.get("categoria", "")
+        profile = input_data.get("profile", {})
+        plan_context = input_data.get("plan_context", {})
+        plan_id = input_data.get("plan_id")
+
+        result = expand_task(task_id, task_title, categoria, profile, plan_context)
+
+        # Save expanded detail to DB
+        if result.get("success") and plan_id:
+            db.save_task_detail(plan_id, task_id, result)
+
+        print("--- EXPAND_TASK_RESULT ---")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Task Chat Action (task-scoped execution chat) ━━━
+    elif args.action == "task-chat":
+        task_id = input_data.get("task_id", "")
+        task_title = input_data.get("task_title", "")
+        user_message = input_data.get("user_message", "")
+        messages = input_data.get("messages", [])
+        profile = input_data.get("profile", {})
+        task_detail = input_data.get("task_detail", {})
+        plan_context = input_data.get("plan_context", {})
+        plan_id = input_data.get("plan_id")
+
+        result = run_task_chat(task_id, task_title, user_message, messages, profile, task_detail, plan_context)
+
+        # Persist chat history
+        if plan_id and result.get("success"):
+            all_msgs = messages + [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": result.get("reply", "")}
+            ]
+            db.save_task_chat(plan_id, task_id, all_msgs[-10:])
+
+        print("--- TASK_CHAT_RESULT ---")
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ List Businesses Action ━━━
@@ -639,6 +743,12 @@ def main():
             latest = db.get_latest_analysis(business_id)
             if latest:
                 business["latest_analysis"] = latest
+                # Also load execution plan if it exists
+                exec_plan = db.get_execution_plan(latest["id"])
+                if exec_plan:
+                    business["latest_analysis"]["execution_plan"] = exec_plan["plan_data"]
+                    business["latest_analysis"]["plan_id"] = exec_plan["id"]
+                    business["latest_analysis"]["meta"] = exec_plan["meta"]
             
             print("--- GET_BUSINESS_RESULT ---")
             print(json.dumps({"success": True, "business": business}, ensure_ascii=False, indent=2))

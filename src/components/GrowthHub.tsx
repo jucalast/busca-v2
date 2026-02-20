@@ -79,9 +79,10 @@ interface GrowthHubProps {
     userProfile: { name: string; segment: string };
     onSelectDimension: (key: string) => void;
     onRedo: () => void;
+    onBackToExecution?: () => void;
 }
 
-export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo }: GrowthHubProps) {
+export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo, onBackToExecution }: GrowthHubProps) {
     const score = data.score || {};
     const dimensoes = score.dimensoes || {};
     const scoreGeral = score.score_geral || 0;
@@ -101,9 +102,19 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
             <div className="w-full max-w-5xl mx-auto px-6 py-10">
 
                 {/* ── Header ── */}
-                <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-white tracking-tight">{userProfile.name}</h1>
-                    <p className="text-zinc-500 mt-1 text-sm">{userProfile.segment}</p>
+                <div className="flex items-start justify-between mb-8">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight">{userProfile.name}</h1>
+                        <p className="text-zinc-500 mt-1 text-sm">{userProfile.segment}</p>
+                    </div>
+                    {onBackToExecution && (
+                        <button
+                            onClick={onBackToExecution}
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl text-zinc-500 hover:text-zinc-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] transition-all text-xs"
+                        >
+                            Voltar ao Plano
+                        </button>
+                    )}
                 </div>
 
                 {/* ── Feature Chips Row ── */}

@@ -65,8 +65,10 @@ def _parse_retry_wait(error_msg):
         return int(float(match.group(1)))
     return 0
 
-def call_groq(api_key, prompt, temperature=0.5, max_retries=2, model=None, force_json=True):
-    """Generic Groq API call with multi-model fallback across separate TPD quotas.
+def call_groq(api_key, prompt, temperature=0.5, max_retries=4, model=None, force_json=True):
+    """Generic Groq API call with exponential backoff and multi-model fallback.
+    
+    Backoff strategy: 2s → 4s → 8s → 10s (capped) on rate limits.
     Each model on Groq has independent daily token limits, so switching models
     gives access to more tokens when one model's quota is exhausted.
     """
@@ -122,17 +124,21 @@ def call_groq(api_key, prompt, temperature=0.5, max_retries=2, model=None, force
                 if is_rate_limit and is_tpd:
                     retry_secs = _parse_retry_wait(error_msg)
                     if attempt < max_retries - 1 and retry_secs <= 30:
-                        print(f"  ⏳ Rate limit (TPD) em {current_model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                        time.sleep(retry_secs or 5)
+                        # Exponential backoff: min(2^(attempt+1), 10) seconds
+                        backoff = min(2 ** (attempt + 1), 10)
+                        wait = max(backoff, retry_secs) if retry_secs else backoff
+                        print(f"  ⏳ Rate limit (TPD) em {current_model}. Backoff {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                        time.sleep(wait)
                         continue
                     elif mi < len(models) - 1:
                         print(f"  🔄 TPD esgotado em {current_model} (espera: {retry_secs}s). Trocando modelo...", file=sys.stderr)
                         break
                     raise
                 elif is_rate_limit and attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 3
-                    print(f"  ⏳ Rate limit ({current_model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                    time.sleep(wait_time)
+                    # Exponential backoff: 2s, 4s, 8s, 10s (capped)
+                    backoff = min(2 ** (attempt + 1), 10)
+                    print(f"  ⏳ Rate limit ({current_model}). Backoff {backoff}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                    time.sleep(backoff)
                     continue
                 elif is_rate_limit and mi < len(models) - 1:
                     print(f"  🔄 Rate limit esgotado em {current_model}. Trocando modelo...", file=sys.stderr)

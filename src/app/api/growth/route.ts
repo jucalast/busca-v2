@@ -52,6 +52,9 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
             'assist': '--- ASSIST_RESULT ---',
             'chat': '--- CHAT_RESULT ---',
             'dimension-chat': '--- DIMENSION_CHAT_RESULT ---',
+            'macro-plan': '--- MACRO_PLAN_RESULT ---',
+            'expand-task': '--- EXPAND_TASK_RESULT ---',
+            'task-chat': '--- TASK_CHAT_RESULT ---',
             'list-businesses': '--- LIST_BUSINESSES_RESULT ---',
             'get-business': '--- GET_BUSINESS_RESULT ---',
             'create-business': '--- CREATE_BUSINESS_RESULT ---',
@@ -371,6 +374,64 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('validate-session', {
                 token,
             }, 10000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Macro Plan (generate execution plan skeleton) ━━━
+        if (action === 'macro-plan') {
+            const { score, meta, discovery_data, analysis_id } = body;
+            if (!profile || !score) {
+                return NextResponse.json({ error: 'profile and score are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('macro-plan', {
+                profile,
+                score,
+                meta: meta || '',
+                discovery_data: discovery_data || null,
+                analysis_id: analysis_id || null,
+            }, 120000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Expand Task (JIT micro-planning with RAG) ━━━
+        if (action === 'expand-task') {
+            const { task_id, task_title, categoria, plan_context, plan_id } = body;
+            if (!task_id || !task_title) {
+                return NextResponse.json({ error: 'task_id and task_title are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('expand-task', {
+                task_id,
+                task_title,
+                categoria: categoria || '',
+                profile: profile || {},
+                plan_context: plan_context || {},
+                plan_id: plan_id || null,
+            }, 60000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Task Chat (task-scoped execution chat) ━━━
+        if (action === 'task-chat') {
+            const { task_id, task_title, user_message: taskMsg, messages: taskMessages, task_detail, plan_context, plan_id } = body;
+            if (!task_id || !taskMsg) {
+                return NextResponse.json({ error: 'task_id and user_message are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('task-chat', {
+                task_id,
+                task_title: task_title || '',
+                user_message: taskMsg,
+                messages: taskMessages || [],
+                profile: profile || {},
+                task_detail: task_detail || {},
+                plan_context: plan_context || {},
+                plan_id: plan_id || null,
+            }, 60000);
 
             return NextResponse.json(result);
         }
