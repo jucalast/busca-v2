@@ -86,26 +86,81 @@ DIMENSIONS = {
 }
 
 
-def _call_llm(api_key: str, prompt: str, temperature: float = 0.2, max_retries: int = 3) -> dict:
-    """Focused LLM call using 8b-instant (fast, consistent, avoids rate limits)."""
+def _parse_retry_seconds(error_msg: str) -> int:
+    """Extract wait time in seconds from Groq rate limit error message."""
+    match = re.search(r"try again in (\d+)m([\d.]+)s", error_msg)
+    if match:
+        return int(match.group(1)) * 60 + int(float(match.group(2)))
+    match = re.search(r"try again in ([\d.]+)s", error_msg)
+    if match:
+        return int(float(match.group(1)))
+    return 0
+
+
+def _call_llm(api_key: str, prompt: str, temperature: float = 0.2, max_retries: int = 2) -> dict:
+    """Focused LLM call with multi-model fallback across separate TPD quotas.
+    Each model on Groq has an independent daily token limit, so switching models
+    effectively gives us access to more tokens.
+    
+    Models and approximate free-tier TPD limits:
+    - llama-3.1-8b-instant: 500K TPD (primary — fast, cheap)
+    - llama3-8b-8192: separate quota (Llama 3 original)
+    - llama3-70b-8192: separate quota (Llama 3 original 70b)
+    - llama-3.3-70b-versatile: 100K TPD (last resort — expensive quota)
+    """
     client = Groq(api_key=api_key)
-    for attempt in range(max_retries):
-        try:
-            completion = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant",
-                temperature=temperature,
-                max_tokens=4096,
-                response_format={"type": "json_object"},
-            )
-            return json.loads(completion.choices[0].message.content)
-        except Exception as e:
-            if "429" in str(e) and attempt < max_retries - 1:
-                wait = (attempt + 1) * 3
-                print(f"  ⏳ Rate limit. Aguardando {wait}s...", file=sys.stderr)
-                time.sleep(wait)
-                continue
-            raise
+    models = [
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "llama3-70b-8192",
+        "llama-3.3-70b-versatile",
+    ]
+
+    for mi, model in enumerate(models):
+        for attempt in range(max_retries):
+            try:
+                completion = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=4096,
+                    response_format={"type": "json_object"},
+                )
+                if mi > 0:
+                    print(f"  ⚡ Scorer usando fallback: {model}", file=sys.stderr)
+                return json.loads(completion.choices[0].message.content)
+            except Exception as e:
+                error_msg = str(e)
+                is_rate_limit = "429" in error_msg
+                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
+
+                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
+
+                # Model doesn't exist or doesn't support JSON mode — skip immediately
+                if is_model_error and mi < len(models) - 1:
+                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
+                    break
+
+                if is_rate_limit and is_tpd:
+                    retry_secs = _parse_retry_seconds(error_msg)
+                    if attempt < max_retries - 1 and retry_secs <= 30:
+                        print(f"  ⏳ Rate limit (TPD) em {model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                        time.sleep(retry_secs or 5)
+                        continue
+                    elif mi < len(models) - 1:
+                        print(f"  🔄 TPD esgotado em {model} (espera: {retry_secs}s). Trocando modelo...", file=sys.stderr)
+                        break
+                    raise
+                elif is_rate_limit and attempt < max_retries - 1:
+                    wait = (attempt + 1) * 3
+                    print(f"  ⏳ Rate limit (TPM) em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+                elif is_rate_limit and mi < len(models) - 1:
+                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                    break
+                raise
+    raise Exception("Todos os modelos esgotaram o rate limit diário. Tente novamente mais tarde.")
 
 
 def _filter_market(dim_key: str, market_data: dict) -> str:
@@ -401,9 +456,9 @@ EXEMPLOS BOM vs RUIM para {nome} ({segmento}):
 - ❌ RUIM: "Otimizar o perfil com palavras-chave" (genérico)
 - ✅ BOM: "No Instagram {perfil.get('instagram_handle', '@perfil')}, adicionar '{segmento} em {perfil.get('localizacao', 'sua cidade')}' na bio — pesquisa mostra que esse termo tem alta busca local"
 - ❌ RUIM: "Crie um site" (usuário já tem site)
-- ✅ BOM: "No site {perfil.get('site_url', 'do negócio')}, adicionar botão de WhatsApp fixo e CTA 'Solicitar orçamento' — concorrente X já faz isso e tem mais conversões"
+- ✅ BOM: "No site {perfil.get('site_url', 'do negócio')}, adicionar botão de WhatsApp fixo e CTA 'Solicitar orçamento' — dado encontrado mostra que concorrentes diretos já fazem isso e têm mais conversões"
 - ❌ RUIM: "Aumentar credibilidade com depoimentos" (genérico)
-- ✅ BOM: "Pedir para 3 clientes gravarem depoimento em vídeo de 15s e publicar nos Stories — concorrente {perfil.get('concorrentes', 'X')} faz isso e tem engajamento alto"
+- ✅ BOM: "Pedir para 3 clientes gravarem depoimento em vídeo de 15s e publicar nos Stories — {perfil.get('concorrentes', '').split(',')[0].strip() if perfil.get('concorrentes') else 'concorrente direto'} faz isso e tem engajamento alto"
 
 Retorne JSON:
 {{
@@ -467,34 +522,47 @@ Retorne JSON:
 
 def _dedup_actions_cross_dimension(all_tasks: list) -> list:
     """Remove tasks that are too similar across dimensions.
-    Uses word overlap to detect near-duplicates."""
+    Uses word overlap (Jaccard) + substring containment to detect near-duplicates."""
     if len(all_tasks) <= 1:
         return all_tasks
     
     def normalize(text):
         return set(re.sub(r"[^a-záàâãéèêíìîóòôõúùûç\s]", "", text.lower()).split())
     
+    def normalize_str(text):
+        return re.sub(r"[^a-záàâãéèêíìîóòôõúùûç\s]", "", text.lower()).strip()
+    
     deduped = []
     seen_word_sets = []
+    seen_normalized_strs = []
     
     for task in all_tasks:
         title_words = normalize(task.get("titulo", ""))
+        title_norm = normalize_str(task.get("titulo", ""))
         if not title_words:
             deduped.append(task)
             continue
         
         is_duplicate = False
-        for seen in seen_word_sets:
-            # Jaccard similarity
+        for i, seen in enumerate(seen_word_sets):
+            # Jaccard similarity (lowered threshold to catch more duplicates)
             intersection = len(title_words & seen)
             union = len(title_words | seen)
-            if union > 0 and intersection / union > 0.5:  # >50% word overlap = duplicate
+            if union > 0 and intersection / union > 0.4:
+                is_duplicate = True
+                break
+            
+            # Substring containment: if one action's core text is inside another
+            seen_str = seen_normalized_strs[i]
+            shorter, longer = (title_norm, seen_str) if len(title_norm) <= len(seen_str) else (seen_str, title_norm)
+            if len(shorter) > 20 and shorter in longer:
                 is_duplicate = True
                 break
         
         if not is_duplicate:
             deduped.append(task)
             seen_word_sets.append(title_words)
+            seen_normalized_strs.append(title_norm)
     
     removed = len(all_tasks) - len(deduped)
     if removed > 0:

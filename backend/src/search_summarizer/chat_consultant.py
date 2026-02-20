@@ -371,14 +371,22 @@ def _infer_fields_from_context(messages: list, extracted_profile: dict) -> dict:
             if ig_match:
                 inferred["instagram_handle"] = "@" + ig_match.group(1)
 
-    # ── site_url ── extract URL or domain
+    # ── site_url ── extract URL or domain (reject social media URLs)
+    SOCIAL_DOMAINS = ["instagram.com", "linkedin.com", "facebook.com", "twitter.com", "x.com", "tiktok.com", "youtube.com"]
     if not extracted_profile.get("site_url"):
         url_match = re.search(r"(https?://[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(com\.br|com|net|org|io|app)[^\s]*)", all_user_text)
         if url_match:
             url = url_match.group(1)
             if not url.startswith("http"):
                 url = "https://" + url
-            inferred["site_url"] = url
+            # Do NOT accept social media URLs as site_url
+            if not any(sd in url.lower() for sd in SOCIAL_DOMAINS):
+                inferred["site_url"] = url
+    # Also validate if LLM extracted a social media URL as site_url
+    existing_site = extracted_profile.get("site_url", "")
+    if existing_site and any(sd in existing_site.lower() for sd in SOCIAL_DOMAINS):
+        print(f"  ⚠️ site_url rejeitado (é rede social): {existing_site}", file=sys.stderr)
+        extracted_profile.pop("site_url", None)
 
     # ── linkedin_url ── extract LinkedIn URL or company name
     if not extracted_profile.get("linkedin_url"):
@@ -479,25 +487,47 @@ def get_field_from_context(messages: list) -> str:
     return None
 
 
+def _parse_retry_wait_chat(error_msg: str) -> int:
+    """Extract wait time in seconds from Groq rate limit error message."""
+    match = re.search(r"try again in (\d+)m([\d.]+)s", error_msg)
+    if match:
+        return int(match.group(1)) * 60 + int(float(match.group(2)))
+    match = re.search(r"try again in ([\d.]+)s", error_msg)
+    if match:
+        return int(float(match.group(1)))
+    return 0
+
+
 def call_groq_single(api_key: str, messages: list, temperature: float = 0.4,
                      max_retries: int = 2, json_mode: bool = True,
                      prefer_small: bool = False) -> str:
     """
-    Groq chat completion with retry + model fallback. Returns raw content string.
+    Groq chat completion with multi-model fallback across separate TPD quotas.
+    Returns raw content string.
     If prefer_small=True, starts with the small model to save rate limit.
     """
     client = Groq(api_key=api_key)
 
     if prefer_small:
-        models = ["llama-3.1-8b-instant"]
+        models = [
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "llama3-70b-8192",
+            "llama-3.3-70b-versatile",
+        ]
     else:
-        models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        models = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "llama3-70b-8192",
+        ]
 
     kwargs = {}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    for model in models:
+    for mi, model in enumerate(models):
         for attempt in range(max_retries):
             try:
                 completion = client.chat.completions.create(
@@ -507,19 +537,33 @@ def call_groq_single(api_key: str, messages: list, temperature: float = 0.4,
                     **kwargs,
                 )
                 content = completion.choices[0].message.content
+                if mi > 0:
+                    print(f"  ⚡ Chat usando fallback: {model}", file=sys.stderr)
                 return content
             except Exception as e:
                 error_msg = str(e)
-                if "429" in error_msg and attempt < max_retries - 1:
+                is_rate_limit = "429" in error_msg
+                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
+
+                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
+
+                if is_model_error and mi < len(models) - 1:
+                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
+                    break
+
+                if is_rate_limit and is_tpd and mi < len(models) - 1:
+                    print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                    break
+                elif is_rate_limit and attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 2
                     print(f"  ⏳ Rate limit ({model}). Aguardando {wait_time}s...", file=sys.stderr)
                     time.sleep(wait_time)
                     continue
-                elif "429" in error_msg and model != models[-1]:
-                    print(f"  🔄 Tentando modelo menor...", file=sys.stderr)
+                elif is_rate_limit and mi < len(models) - 1:
+                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
                     break
                 raise
-    raise Exception("Todos os modelos falharam")
+    raise Exception("Todos os modelos esgotaram o rate limit diário.")
 
 
 def should_search_proactively(user_message: str, messages: list, extracted_profile: dict) -> dict:
@@ -973,6 +1017,13 @@ def validate_extraction(updated_profile: dict, all_user_text: str, previous_prof
             val_upper = str(value).upper().strip()
             if val_upper in ["B2B", "B2C", "D2C", "MISTO"]:
                 # Wrong field! Skip it
+                continue
+
+        # Special validation: site_url must NOT be a social media URL
+        if field == "site_url":
+            _social = ["instagram.com", "linkedin.com", "facebook.com", "twitter.com", "x.com", "tiktok.com", "youtube.com"]
+            if any(sd in str(value).lower() for sd in _social):
+                print(f"  ⚠️ site_url rejeitado em validate_extraction (é rede social): {value}", file=sys.stderr)
                 continue
         
         # Special validation: capital_disponivel zero-synonyms

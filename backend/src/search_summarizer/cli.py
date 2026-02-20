@@ -54,22 +54,44 @@ def scrape_page(url, timeout=5):
     except Exception:
         return ""
 
-def call_groq(api_key, prompt, temperature=0.5, max_retries=3, model=None, force_json=True):
-    """Generic Groq API call with retry + exponential backoff + model fallback."""
+def _parse_retry_wait(error_msg):
+    """Extract wait time in seconds from Groq rate limit error message."""
+    import re as _re
+    match = _re.search(r"try again in (\d+)m([\d.]+)s", error_msg)
+    if match:
+        return int(match.group(1)) * 60 + int(float(match.group(2)))
+    match = _re.search(r"try again in ([\d.]+)s", error_msg)
+    if match:
+        return int(float(match.group(1)))
+    return 0
+
+def call_groq(api_key, prompt, temperature=0.5, max_retries=2, model=None, force_json=True):
+    """Generic Groq API call with multi-model fallback across separate TPD quotas.
+    Each model on Groq has independent daily token limits, so switching models
+    gives access to more tokens when one model's quota is exhausted.
+    """
     client = Groq(api_key=api_key)
     
-    # Prioritizes model if provided, otherwise default list
-    models = [model] if model else ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    # Ensure fallback models if the first one fails
-    if "llama-3.1-8b-instant" not in models:
-        models.append("llama-3.1-8b-instant")
+    # Full fallback chain with separate TPD quotas
+    all_models = [
+        "llama-3.3-70b-versatile",   # 100K TPD (best quality)
+        "llama-3.1-8b-instant",      # 500K TPD (fast)
+        "llama3-8b-8192",            # separate quota (Llama 3 original)
+        "llama3-70b-8192",           # separate quota (Llama 3 original 70b)
+    ]
+    
+    # If specific model requested, put it first but keep fallbacks
+    if model:
+        models = [model] + [m for m in all_models if m != model]
+    else:
+        models = all_models
 
-    for model in models:
+    for mi, current_model in enumerate(models):
         for attempt in range(max_retries):
             try:
                 completion_params = {
                     "messages": [{"role": "user", "content": prompt}],
-                    "model": model,
+                    "model": current_model,
                     "temperature": temperature,
                 }
                 
@@ -78,8 +100,8 @@ def call_groq(api_key, prompt, temperature=0.5, max_retries=3, model=None, force
                 
                 completion = client.chat.completions.create(**completion_params)
                 
-                if model != models[0]:
-                    print(f"  ⚡ Usando modelo fallback: {model}", file=sys.stderr)
+                if mi > 0:
+                    print(f"  ⚡ Usando modelo fallback: {current_model}", file=sys.stderr)
                 
                 content = completion.choices[0].message.content
                 
@@ -88,15 +110,35 @@ def call_groq(api_key, prompt, temperature=0.5, max_retries=3, model=None, force
                 
             except Exception as e:
                 error_msg = str(e)
-                if "429" in error_msg and attempt < max_retries - 1:
+                is_rate_limit = "429" in error_msg
+                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
+                
+                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
+
+                if is_model_error and mi < len(models) - 1:
+                    print(f"  ⚠️ Modelo {current_model} indisponível. Trocando...", file=sys.stderr)
+                    break
+
+                if is_rate_limit and is_tpd:
+                    retry_secs = _parse_retry_wait(error_msg)
+                    if attempt < max_retries - 1 and retry_secs <= 30:
+                        print(f"  ⏳ Rate limit (TPD) em {current_model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                        time.sleep(retry_secs or 5)
+                        continue
+                    elif mi < len(models) - 1:
+                        print(f"  🔄 TPD esgotado em {current_model} (espera: {retry_secs}s). Trocando modelo...", file=sys.stderr)
+                        break
+                    raise
+                elif is_rate_limit and attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
-                    print(f"  ⏳ Rate limit ({model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                    print(f"  ⏳ Rate limit ({current_model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
                     time.sleep(wait_time)
                     continue
-                elif "429" in error_msg and model != models[-1]:
-                    print(f"  🔄 Rate limit esgotado em {model}. Tentando modelo menor...", file=sys.stderr)
-                    break  # break inner loop, try next model
+                elif is_rate_limit and mi < len(models) - 1:
+                    print(f"  🔄 Rate limit esgotado em {current_model}. Trocando modelo...", file=sys.stderr)
+                    break
                 raise
+    raise Exception("Todos os modelos esgotaram o rate limit diário. Tente novamente mais tarde.")
 
 # ==============================================================================
 # Simple Search Mode (original)

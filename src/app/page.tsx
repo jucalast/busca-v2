@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Bot, Search, BarChart3, ListTodo, Loader2 } from 'lucide-react';
+import ParticleLoader from '@/components/ParticleLoader';
 import GrowthHub from '@/components/GrowthHub';
 import DimensionDetail from '@/components/DimensionDetail';
 import TaskAssistant from '@/components/TaskAssistant';
@@ -373,44 +374,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* Analyzing Stage - Loading */}
+      {/* Analyzing Stage - Particle Animation */}
       {growthStage === 'analyzing' && growthLoading && (
-        <div className="flex items-center justify-center min-h-full p-12">
-          <div className="max-w-2xl text-center space-y-6">
-            <div className="relative w-20 h-20 mx-auto">
-              <div className="absolute inset-0 rounded-full border-2 border-emerald-500/20" />
-              <div className="absolute inset-2 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-              </div>
-            </div>
-            <p className="text-white text-lg font-medium">{growthProgress}</p>
-            <p className="text-zinc-600 text-sm">
-              Isso pode levar de 1 a 3 minutos. A IA está pesquisando dados reais
-              do seu mercado.
-            </p>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-xl mx-auto mt-6">
-              {[
-                { icon: Bot, name: 'Perfil' },
-                { icon: Search, name: 'Mercado' },
-                { icon: BarChart3, name: 'Score' },
-                { icon: ListTodo, name: 'Tarefas' },
-              ].map((step, i) => {
-                const IconComponent = step.icon;
-                return (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 p-3 rounded-xl bg-[#111113] border border-white/[0.06]"
-                  >
-                    <IconComponent className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs text-zinc-500">{step.name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <ParticleLoader progress={growthProgress} />
       )}
 
       {/* Results Stage - Hub or Dimension Detail */}

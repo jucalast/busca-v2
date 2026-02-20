@@ -582,124 +582,155 @@ def discover_business(profile: dict, region: str = "br-pt") -> dict:
 
 def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> str:
     """Format discovery data as readable text to inject into scorer prompts.
-    If dim_key is provided, emphasizes data most relevant to that dimension."""
+    If dim_key is provided, returns ONLY data relevant to that dimension
+    to avoid repetitive analysis across dimensions."""
     if not discovery_data.get("found"):
         return ""
 
-    lines = ["\n🔍 DADOS REAIS ENCONTRADOS SOBRE O NEGÓCIO:"]
+    # ── Dimension-specific filtering ──
+    # Each dimension only gets the discovery sections that matter to it
+    DIM_SECTIONS = {
+        "presenca_digital": ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email", "outras", "problemas"],
+        "competitividade": ["concorrentes", "mercado", "problemas"],
+        "diversificacao_canais": ["site", "whatsapp", "outras", "mercado"],
+        "precificacao": ["concorrentes", "mercado"],
+        "potencial_mercado": ["mercado", "concorrentes"],
+        "maturidade_operacional": ["whatsapp", "site", "google_maps"],
+    }
+
+    # Determine which sections to include
+    if dim_key and dim_key in DIM_SECTIONS:
+        allowed_sections = set(DIM_SECTIONS[dim_key])
+    else:
+        # No filter — include everything (backward compat)
+        allowed_sections = {"instagram", "site", "linkedin", "whatsapp", "google_maps",
+                            "email", "outras", "concorrentes", "mercado", "problemas"}
+
+    lines = [f"\n🔍 DADOS REAIS ENCONTRADOS (foco: {dim_key or 'geral'}):"]
     pd = discovery_data.get("presenca_digital", {})
 
     # ── Instagram ──
-    ig = pd.get("instagram", {})
-    if ig.get("encontrado"):
-        lines.append(f"\n📱 INSTAGRAM:")
-        if ig.get("handle"): lines.append(f"  Handle: {ig['handle']}")
-        if ig.get("bio"): lines.append(f"  Bio: {ig['bio']}")
-        if ig.get("seguidores"): lines.append(f"  Seguidores: {ig['seguidores']}")
-        if ig.get("frequencia_posts"): lines.append(f"  Frequência: {ig['frequencia_posts']}")
-        if ig.get("tipo_conteudo"): lines.append(f"  Tipo de conteúdo: {ig['tipo_conteudo']}")
-        if ig.get("engajamento_estimado"): lines.append(f"  Engajamento: {ig['engajamento_estimado']}")
-        if ig.get("observacoes"): lines.append(f"  Obs: {ig['observacoes']}")
-        if ig.get("fonte"): lines.append(f"  Fonte: {ig['fonte']}")
+    if "instagram" in allowed_sections:
+        ig = pd.get("instagram", {})
+        if ig.get("encontrado"):
+            lines.append(f"\n📱 INSTAGRAM:")
+            if ig.get("handle"): lines.append(f"  Handle: {ig['handle']}")
+            if ig.get("bio"): lines.append(f"  Bio: {ig['bio']}")
+            if ig.get("seguidores"): lines.append(f"  Seguidores: {ig['seguidores']}")
+            if ig.get("frequencia_posts"): lines.append(f"  Frequência: {ig['frequencia_posts']}")
+            if ig.get("tipo_conteudo"): lines.append(f"  Tipo de conteúdo: {ig['tipo_conteudo']}")
+            if ig.get("engajamento_estimado"): lines.append(f"  Engajamento: {ig['engajamento_estimado']}")
+            if ig.get("observacoes"): lines.append(f"  Obs: {ig['observacoes']}")
+            if ig.get("fonte"): lines.append(f"  Fonte: {ig['fonte']}")
 
     # ── Site ──
-    site = pd.get("site", {})
-    if site.get("encontrado"):
-        lines.append(f"\n🌐 SITE:")
-        if site.get("url"): lines.append(f"  URL: {site['url']}")
-        prods = site.get("produtos_listados") or []
-        if prods: lines.append(f"  Produtos listados: {', '.join(prods[:5])}")
-        if site.get("tem_preco_visivel") is not None:
-            lines.append(f"  Preços visíveis: {'Sim' if site['tem_preco_visivel'] else 'Não'}")
-        if site.get("tem_cta") is not None:
-            lines.append(f"  CTA presente: {'Sim' if site['tem_cta'] else 'Não'}")
-        if site.get("qualidade_seo"): lines.append(f"  SEO: {site['qualidade_seo']}")
-        if site.get("observacoes"): lines.append(f"  Obs: {site['observacoes']}")
-        if site.get("fonte"): lines.append(f"  Fonte: {site['fonte']}")
+    if "site" in allowed_sections:
+        site = pd.get("site", {})
+        if site.get("encontrado"):
+            lines.append(f"\n🌐 SITE:")
+            if site.get("url"): lines.append(f"  URL: {site['url']}")
+            prods = site.get("produtos_listados") or []
+            if prods: lines.append(f"  Produtos listados: {', '.join(prods[:5])}")
+            if site.get("tem_preco_visivel") is not None:
+                lines.append(f"  Preços visíveis: {'Sim' if site['tem_preco_visivel'] else 'Não'}")
+            if site.get("tem_cta") is not None:
+                lines.append(f"  CTA presente: {'Sim' if site['tem_cta'] else 'Não'}")
+            if site.get("qualidade_seo"): lines.append(f"  SEO: {site['qualidade_seo']}")
+            if site.get("observacoes"): lines.append(f"  Obs: {site['observacoes']}")
+            if site.get("fonte"): lines.append(f"  Fonte: {site['fonte']}")
 
     # ── LinkedIn ──
-    li = pd.get("linkedin", {})
-    if li.get("encontrado"):
-        lines.append(f"\n💼 LINKEDIN:")
-        if li.get("url"): lines.append(f"  URL: {li['url']}")
-        if li.get("seguidores"): lines.append(f"  Seguidores: {li['seguidores']}")
-        if li.get("descricao"): lines.append(f"  Descrição: {li['descricao']}")
-        if li.get("posts_recentes") is not None:
-            lines.append(f"  Posts recentes: {'Sim' if li['posts_recentes'] else 'Não'}")
-        if li.get("observacoes"): lines.append(f"  Obs: {li['observacoes']}")
+    if "linkedin" in allowed_sections:
+        li = pd.get("linkedin", {})
+        if li.get("encontrado"):
+            lines.append(f"\n💼 LINKEDIN:")
+            if li.get("url"): lines.append(f"  URL: {li['url']}")
+            if li.get("seguidores"): lines.append(f"  Seguidores: {li['seguidores']}")
+            if li.get("descricao"): lines.append(f"  Descrição: {li['descricao']}")
+            if li.get("posts_recentes") is not None:
+                lines.append(f"  Posts recentes: {'Sim' if li['posts_recentes'] else 'Não'}")
+            if li.get("observacoes"): lines.append(f"  Obs: {li['observacoes']}")
 
     # ── WhatsApp ──
-    wpp = pd.get("whatsapp", {})
-    if wpp.get("encontrado"):
-        lines.append(f"\n💬 WHATSAPP BUSINESS:")
-        if wpp.get("numero"): lines.append(f"  Número: {wpp['numero']}")
-        if wpp.get("tem_catalogo") is not None:
-            lines.append(f"  Catálogo: {'Sim' if wpp['tem_catalogo'] else 'Não'}")
-        if wpp.get("usa_whatsapp_business") is not None:
-            lines.append(f"  WhatsApp Business: {'Sim' if wpp['usa_whatsapp_business'] else 'Não'}")
-        if wpp.get("observacoes"): lines.append(f"  Obs: {wpp['observacoes']}")
+    if "whatsapp" in allowed_sections:
+        wpp = pd.get("whatsapp", {})
+        if wpp.get("encontrado"):
+            lines.append(f"\n💬 WHATSAPP BUSINESS:")
+            if wpp.get("numero"): lines.append(f"  Número: {wpp['numero']}")
+            if wpp.get("tem_catalogo") is not None:
+                lines.append(f"  Catálogo: {'Sim' if wpp['tem_catalogo'] else 'Não'}")
+            if wpp.get("usa_whatsapp_business") is not None:
+                lines.append(f"  WhatsApp Business: {'Sim' if wpp['usa_whatsapp_business'] else 'Não'}")
+            if wpp.get("observacoes"): lines.append(f"  Obs: {wpp['observacoes']}")
 
     # ── Google Maps ──
-    gm = pd.get("google_maps", {})
-    if gm.get("encontrado"):
-        lines.append(f"\n⭐ GOOGLE MAPS:")
-        if gm.get("nota"): lines.append(f"  Nota: {gm['nota']}/5")
-        if gm.get("num_avaliacoes"): lines.append(f"  Avaliações: {gm['num_avaliacoes']}")
-        for c in (gm.get("principais_comentarios") or [])[:3]:
-            lines.append(f"  💬 \"{c}\"")
-        if gm.get("fonte"): lines.append(f"  Fonte: {gm['fonte']}")
+    if "google_maps" in allowed_sections:
+        gm = pd.get("google_maps", {})
+        if gm.get("encontrado"):
+            lines.append(f"\n⭐ GOOGLE MAPS:")
+            if gm.get("nota"): lines.append(f"  Nota: {gm['nota']}/5")
+            if gm.get("num_avaliacoes"): lines.append(f"  Avaliações: {gm['num_avaliacoes']}")
+            for c in (gm.get("principais_comentarios") or [])[:3]:
+                lines.append(f"  💬 \"{c}\"")
+            if gm.get("fonte"): lines.append(f"  Fonte: {gm['fonte']}")
 
     # ── E-mail ──
-    email = pd.get("email", {})
-    if email.get("encontrado"):
-        lines.append(f"\n📧 E-MAIL:")
-        if email.get("endereco"): lines.append(f"  Endereço: {email['endereco']}")
+    if "email" in allowed_sections:
+        email = pd.get("email", {})
+        if email.get("encontrado"):
+            lines.append(f"\n📧 E-MAIL:")
+            if email.get("endereco"): lines.append(f"  Endereço: {email['endereco']}")
 
     # ── Outras plataformas ──
-    outras = pd.get("outras_plataformas") or []
-    if outras:
-        lines.append(f"\n🛒 OUTRAS PLATAFORMAS: {', '.join(outras)}")
+    if "outras" in allowed_sections:
+        outras = pd.get("outras_plataformas") or []
+        if outras:
+            lines.append(f"\n🛒 OUTRAS PLATAFORMAS: {', '.join(outras)}")
 
     # ── Competitors ──
-    competitors = discovery_data.get("concorrentes_encontrados", [])
-    if competitors:
-        lines.append(f"\n🎯 CONCORRENTES REAIS ENCONTRADOS:")
-        for c in competitors[:5]:
-            if isinstance(c, dict):
-                comp_line = f"  • {c.get('nome', '?')}"
-                if c.get("instagram"): comp_line += f" (IG: {c['instagram']})"
-                if c.get("site"): comp_line += f" | Site: {c['site']}"
-                if c.get("preco_referencia"): comp_line += f" | Preço: {c['preco_referencia']}"
-                if c.get("diferencial"): comp_line += f" | Diferencial: {c['diferencial']}"
-                if c.get("ponto_fraco"): comp_line += f" | Fraqueza: {c['ponto_fraco']}"
-                canais_c = c.get("canais_digitais") or []
-                if canais_c: comp_line += f" | Canais: {', '.join(canais_c)}"
-                if c.get("fonte"): comp_line += f" | Fonte: {c['fonte']}"
-                lines.append(comp_line)
-            elif isinstance(c, str):
-                lines.append(f"  • {c}")
+    if "concorrentes" in allowed_sections:
+        competitors = discovery_data.get("concorrentes_encontrados", [])
+        if competitors:
+            lines.append(f"\n🎯 CONCORRENTES REAIS ENCONTRADOS:")
+            for c in competitors[:5]:
+                if isinstance(c, dict):
+                    comp_line = f"  • {c.get('nome', '?')}"
+                    if c.get("instagram"): comp_line += f" (IG: {c['instagram']})"
+                    if c.get("site"): comp_line += f" | Site: {c['site']}"
+                    if c.get("preco_referencia"): comp_line += f" | Preço: {c['preco_referencia']}"
+                    if c.get("diferencial"): comp_line += f" | Diferencial: {c['diferencial']}"
+                    if c.get("ponto_fraco"): comp_line += f" | Fraqueza: {c['ponto_fraco']}"
+                    canais_c = c.get("canais_digitais") or []
+                    if canais_c: comp_line += f" | Canais: {', '.join(canais_c)}"
+                    if c.get("fonte"): comp_line += f" | Fonte: {c['fonte']}"
+                    lines.append(comp_line)
+                elif isinstance(c, str):
+                    lines.append(f"  • {c}")
 
     # ── Market data ──
-    market = discovery_data.get("dados_mercado_local", {})
-    if market:
-        lines.append(f"\n📊 MERCADO LOCAL:")
-        if market.get("preco_medio_regiao"):
-            lines.append(f"  Preço médio: {market['preco_medio_regiao']}")
-        for t in (market.get("tendencias") or [])[:3]:
-            lines.append(f"  📈 {t}")
-        for o in (market.get("oportunidades") or [])[:3]:
-            lines.append(f"  💡 {o}")
+    if "mercado" in allowed_sections:
+        market = discovery_data.get("dados_mercado_local", {})
+        if market:
+            lines.append(f"\n📊 MERCADO LOCAL:")
+            if market.get("preco_medio_regiao"):
+                lines.append(f"  Preço médio: {market['preco_medio_regiao']}")
+            for t in (market.get("tendencias") or [])[:3]:
+                lines.append(f"  📈 {t}")
+            for o in (market.get("oportunidades") or [])[:3]:
+                lines.append(f"  💡 {o}")
 
     # ── Problems ──
-    problems = discovery_data.get("problemas_detectados", [])
-    if problems:
-        lines.append(f"\n⚠️ PROBLEMAS DETECTADOS:")
-        for p in problems[:5]:
-            lines.append(f"  • {p}")
+    if "problemas" in allowed_sections:
+        problems = discovery_data.get("problemas_detectados", [])
+        if problems:
+            lines.append(f"\n⚠️ PROBLEMAS DETECTADOS:")
+            for p in problems[:5]:
+                lines.append(f"  • {p}")
 
-    # ── Summary ──
-    resumo = discovery_data.get("resumo_executivo", "")
-    if resumo:
-        lines.append(f"\n📝 RESUMO EXECUTIVO: {resumo}")
+    # ── Summary (only for presenca_digital or when no filter) ──
+    if not dim_key or dim_key == "presenca_digital":
+        resumo = discovery_data.get("resumo_executivo", "")
+        if resumo:
+            lines.append(f"\n📝 RESUMO EXECUTIVO: {resumo}")
 
     return "\n".join(lines)

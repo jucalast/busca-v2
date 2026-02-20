@@ -19,12 +19,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3) -> dict:
-    """Generic Groq API call with retry + exponential backoff + model fallback."""
+def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 2) -> dict:
+    """Generic Groq API call with multi-model fallback across separate TPD quotas."""
     client = Groq(api_key=api_key)
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "llama3-70b-8192",
+    ]
 
-    for model in models:
+    for mi, model in enumerate(models):
         for attempt in range(max_retries):
             try:
                 completion = client.chat.completions.create(
@@ -33,20 +38,33 @@ def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: 
                     temperature=temperature,
                     response_format={"type": "json_object"},
                 )
-                if model != models[0]:
+                if mi > 0:
                     print(f"  ⚡ Usando modelo fallback: {model}", file=sys.stderr)
                 return json.loads(completion.choices[0].message.content)
             except Exception as e:
                 error_msg = str(e)
-                if "429" in error_msg and attempt < max_retries - 1:
+                is_rate_limit = "429" in error_msg
+                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
+
+                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
+
+                if is_model_error and mi < len(models) - 1:
+                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
+                    break
+
+                if is_rate_limit and is_tpd and mi < len(models) - 1:
+                    print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                    break
+                elif is_rate_limit and attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
                     print(f"  ⏳ Rate limit ({model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
                     time.sleep(wait_time)
                     continue
-                elif "429" in error_msg and model != models[-1]:
-                    print(f"  🔄 Rate limit esgotado em {model}. Tentando modelo menor...", file=sys.stderr)
+                elif is_rate_limit and mi < len(models) - 1:
+                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
                     break
                 raise
+    raise Exception("Todos os modelos esgotaram o rate limit diário.")
 
 
 def extract_restrictions(profile: dict) -> dict:
