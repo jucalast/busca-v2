@@ -26,7 +26,7 @@ from chat_consultant import run_chat
 import database as db
 
 # Reuse search functions from cli.py
-from cli import search_duckduckgo, scrape_page, call_groq, BUSINESS_CATEGORIES
+from cli import search_duckduckgo, scrape_page, call_groq
 
 
 import concurrent.futures
@@ -42,13 +42,22 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
     results = search_duckduckgo(query, max_results=5, region=region)
 
     if not results:
+        # Retry with a simpler query: category foco keywords + segment
+        segmento = perfil_data.get('segmento', '')
+        foco_words = cat.get('foco', '').split(',')[0].strip()[:60]
+        fallback_query = f"{foco_words} {segmento}".strip()
+        print(f"    ↪️ Sem resultados, tentando: {fallback_query}", file=sys.stderr)
+        results = search_duckduckgo(fallback_query, max_results=5, region=region)
+
+    if not results:
+        print(f"    ⚠️ Nenhum resultado para {cat_id} mesmo com retry", file=sys.stderr)
         return {
             "id": cat_id,
             "nome": cat.get("nome", ""),
             "icone": cat.get("icone", "📊"),
             "cor": cat.get("cor", "#71717a"),
             "query_usada": query,
-            "resumo": {"info": "Nenhum resultado encontrado."},
+            "resumo": {"visao_geral": f"Sem dados de mercado encontrados para {cat.get('nome',cat_id)}.", "pontos_chave": [], "recomendacoes": []},
             "fontes": []
         }
 
@@ -144,12 +153,13 @@ DADOS DA INTERNET:
     }
 
 DIMENSION_LABELS = {
-    "presenca_digital": "Presenca Digital",
-    "competitividade": "Competitividade e Concorrencia",
-    "diversificacao_canais": "Diversificacao de Canais de Venda",
-    "precificacao": "Precificacao e Margem",
-    "potencial_mercado": "Potencial de Mercado e Tendencias",
-    "maturidade_operacional": "Maturidade Operacional e Processos",
+    "publico_alvo": "Publico-Alvo e Personas",
+    "branding": "Branding e Posicionamento",
+    "identidade_visual": "Identidade Visual",
+    "canais_venda": "Canais de Venda",
+    "trafego_organico": "Trafego Organico",
+    "trafego_pago": "Trafego Pago",
+    "processo_vendas": "Processo de Vendas",
 }
 
 
@@ -269,30 +279,15 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
     if not api_key:
         return {"categories": [], "allSources": [], "error": "No API key"}
 
-    # Use queries from profile if available, otherwise generate from categories
+    # Use queries and categories from LLM-generated profile — no hardcoded fallback
     queries = profile.get("queries_sugeridas", profile.get("queries", {}))
-    categories = profile.get("categorias_relevantes", profile.get("categories", BUSINESS_CATEGORIES))
+    categories = profile.get("categorias_relevantes", profile.get("categories", []))
 
-    # Garantir que sempre temos categorias para buscar
-    if not categories or (isinstance(categories, list) and len(categories) == 0):
-        categories = BUSINESS_CATEGORIES
-        print(f"  ⚠️ Nenhuma categoria fornecida, usando categorias padrão: {categories}", file=sys.stderr)
-    
-    # Convert string categories to proper category objects
-    if isinstance(categories, list) and categories and isinstance(categories[0], str):
-        print(f"  🔄 Convertendo categorias string → objetos: {categories}", file=sys.stderr)
-        categories = [
-            {
-                "id": cat.lower().replace(" ", "_"),
-                "nome": cat.title(),
-                "icone": "📊",
-                "cor": "#71717a",
-                "foco": f"análise de {cat} para o negócio",
-                "nao_falar": "",
-                "prioridade": 5
-            }
-            for cat in categories
-        ]
+    if not categories:
+        raise ValueError(
+            "Nenhuma categoria encontrada no perfil para pesquisa de mercado. "
+            "O profiler deve gerar categorias_relevantes antes do market search."
+        )
 
     perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
     description = f"{perfil_data.get('nome', '')} - {perfil_data.get('segmento', '')} - {perfil_data.get('modelo_negocio', '')} - {perfil_data.get('localizacao', '')}"
@@ -388,15 +383,31 @@ def main():
 
         # Step 2: Market search
         print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
+        cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
+        queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
+        print(f"  📋 Categorias p/ busca: {[c.get('id','?') if isinstance(c,dict) else c for c in (cats_for_search or [])[:8]]}", file=sys.stderr)
+        print(f"  🔍 Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
         market_data = run_market_search(profile, region)
-        print(f"  ✅ Pesquisa completa: {len(market_data.get('categories', []))} categorias", file=sys.stderr)
+        mkt_cats = market_data.get('categories', [])
+        print(f"  ✅ Pesquisa completa: {len(mkt_cats)} categorias", file=sys.stderr)
+        for mc in mkt_cats:
+            mc_resumo = mc.get("resumo", {})
+            has_data = bool(mc_resumo.get("visao_geral") or mc_resumo.get("pontos_chave"))
+            print(f"    📂 id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'✅' if has_data else '❌'}", file=sys.stderr)
 
         # Step 3: Per-dimension scoring with discovery context
         print("📊 Calculando score por dimensão...", file=sys.stderr)
         score_result = run_scorer(profile, market_data, discovery_data=discovery_data)
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
         task_plan = score_result.get("taskPlan", {})
-        print(f"  ✅ Score e tarefas calculados", file=sys.stderr)
+
+        # Detailed scoring log
+        dims = score_data.get("dimensoes", {})
+        total_actions = sum(len(d.get("acoes_imediatas", [])) for d in dims.values())
+        print(f"  ✅ Score geral: {score_data.get('score_geral','?')}/100 | {total_actions} ações totais", file=sys.stderr)
+        for dk, dv in dims.items():
+            n_acoes = len(dv.get("acoes_imediatas", []))
+            print(f"    📊 {dk}: {dv.get('score','?')}/100 ({dv.get('status','?')}) | {n_acoes} ações | meta: {str(dv.get('meta_pilar',''))[:50]}", file=sys.stderr)
 
         # Merge research tasks from chat (if any)
         research_tasks = profile.get("_research_tasks", [])

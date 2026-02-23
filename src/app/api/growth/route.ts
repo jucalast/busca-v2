@@ -121,7 +121,7 @@ export async function POST(request: Request) {
                 region: region || 'br-pt',
                 business_id: business_id || null,
                 user_id: user_id || 'default_user',
-            }, 300000);
+            }, 600000);
 
             return NextResponse.json(result);
         }

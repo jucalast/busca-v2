@@ -165,7 +165,7 @@ ESTRUTURA DO JSON:
         {{
             "id": "task_001",
             "titulo": "Título ULTRA-ESPECÍFICO (ex: Gravar 3 depoimentos em vídeo de clientes)",
-            "categoria": "credibilidade / conversao / canais / precificacao / mercado / operacional",
+            "categoria": "publico_alvo / branding / identidade_visual / canais_venda / trafego_organico / trafego_pago / processo_vendas",
             "impacto": 1-10,
             "esforco": 1-10 (considere que é uma pessoa só com pouco tempo),
             "prioridade_calculada": (impacto × 0.7) + ((10 - esforco) × 0.3),

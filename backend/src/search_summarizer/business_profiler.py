@@ -102,11 +102,12 @@ REGRAS CRÍTICAS:
    - "modelo_operacional": se trabalha "sem estoque", "sob encomenda", "dropshipping" → NÃO recomendar ERP de estoque
    - "capital_disponivel": se "zero", "baixo", "pouco" → NÃO recomendar ferramentas caras
    - "equipe_solo": se trabalha sozinho → NÃO recomendar estratégias complexas que exigem equipe
-3. Gere CATEGORIAS DE ANÁLISE RELEVANTES para ESTE negócio específico:
-   - Se não tem estoque → categoria sobre "Credibilidade e Confiança" em vez de "Gestão de Estoque"
-   - Se já usa Instagram → categoria sobre "Otimização de Conversão" em vez de "Criar Presença Digital"
-   - Se problema é credibilidade → categoria sobre "Prova Social e Garantias"
-4. Gere QUERIES de busca específicas para os PROBLEMAS REAIS do negócio.
+3. Gere CATEGORIAS DE ANÁLISE usando OBRIGATORIAMENTE os IDs abaixo (escolha 4-6 mais relevantes):
+   IDs VÁLIDOS: publico_alvo, concorrentes, canais, marketing_organico, trafego_pago, processo_vendas, credibilidade, identidade_visual
+   - Adapte o "nome" e "foco" para o contexto do negócio
+   - Se não tem estoque → NÃO crie categoria de estoque
+   - Se já usa Instagram → foco em otimização, não criação
+4. Gere QUERIES de busca específicas usando os MESMOS IDs como chave.
 5. Seja preciso e direto — não invente dados, apenas interprete os fornecidos.
 
 ESTRUTURA DO JSON:
@@ -199,145 +200,27 @@ EXEMPLOS DE CATEGORIAS CONTEXTUAIS:
 
 def identify_dynamic_categories(profile: dict) -> list:
     """
-    From a generated profile, extract the ordered list of relevant categories.
-    NOW: Uses restrictions to generate context-aware fallback categories.
+    Extract the ordered list of relevant categories from the LLM-generated profile.
+    No hardcoded fallback — categories always come from real LLM analysis.
     """
     categories = profile.get("categorias_relevantes", [])
-    restricoes = profile.get("restricoes_criticas", {})
 
-    if categories and len(categories) >= 3:
-        # Sort by priority descending
-        categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
-        return categories
+    if not categories:
+        raise ValueError(
+            "O LLM não retornou categorias relevantes no perfil. "
+            "Verifique o prompt do profiler ou os dados de onboarding."
+        )
 
-    # Fallback: generate context-aware categories based on restrictions
-    modelo_op = restricoes.get("modelo_operacional", "")
-    capital = restricoes.get("capital_disponivel", "medio")
-    solo = restricoes.get("equipe_solo", False)
-    canais = restricoes.get("canais_existentes", [])
-    
-    fallback_categories = []
-    
-    # Always include market overview
-    fallback_categories.append({
-        "id": "mercado",
-        "nome": "Panorama do Mercado",
-        "icone": "📊",
-        "cor": "#10b981",
-        "prioridade": 8,
-        "foco": "tamanho do mercado, tendências, oportunidades de nicho",
-        "nao_falar": ""
-    })
-    
-    # Competition is always relevant
-    fallback_categories.append({
-        "id": "concorrentes",
-        "nome": "Mapa de Concorrentes",
-        "icone": "🎯",
-        "cor": "#f59e0b",
-        "prioridade": 7,
-        "foco": "concorrentes diretos, diferenciais, pontos fracos exploráveis",
-        "nao_falar": ""
-    })
-    
-    # Credibility category if model is dropshipping/sob encomenda
-    if modelo_op in ["sob_encomenda", "dropshipping"]:
-        fallback_categories.append({
-            "id": "credibilidade",
-            "nome": "Credibilidade e Confiança",
-            "icone": "👥",
-            "cor": "#8b5cf6",
-            "prioridade": 9,  # High priority for this model
-            "foco": "como construir confiança online, depoimentos, garantias, prova social, formas de pagamento seguras",
-            "nao_falar": "NÃO fale sobre gestão de estoque ou ERP. O negócio trabalha sob encomenda."
-        })
-    else:
-        fallback_categories.append({
-            "id": "publico_alvo",
-            "nome": "Quem Compra de Você",
-            "icone": "👥",
-            "cor": "#8b5cf6",
-            "prioridade": 7,
-            "foco": "perfil de clientes, onde encontrá-los, canais de aquisição",
-            "nao_falar": ""
-        })
-    
-    # Marketing category - adapt based on capital and existing channels
-    has_instagram = any("instagram" in c.lower() for c in canais) if canais else False
-    
-    if capital in ["zero", "baixo"] and solo:
-        fallback_categories.append({
-            "id": "marketing_organico",
-            "nome": "Marketing Orgânico de Baixo Custo",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 8,
-            "foco": "estratégias gratuitas, conteúdo, SEO, parcerias, indicações",
-            "nao_falar": "NÃO sugira anúncios pagos ou ferramentas caras. O negócio tem capital limitado."
-        })
-    elif has_instagram:
-        fallback_categories.append({
-            "id": "otimizacao_conversao",
-            "nome": "Otimização de Conversão",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 8,
-            "foco": "como converter mais seguidores em clientes, Instagram Shopping, copywriting, funil de vendas",
-            "nao_falar": "NÃO sugira 'criar presença no Instagram'. Ele já usa. Foque em OTIMIZAR."
-        })
-    else:
-        fallback_categories.append({
-            "id": "presenca_online",
-            "nome": "Presença Online",
-            "icone": "📱",
-            "cor": "#3b82f6",
-            "prioridade": 6,
-            "foco": "canais digitais, redes sociais, Google Meu Negócio",
-            "nao_falar": ""
-        })
-    
-    # Pricing - always relevant but adapt
-    fallback_categories.append({
-        "id": "precificacao",
-        "nome": "Preços e Margens",
-        "icone": "💎",
-        "cor": "#ec4899",
-        "prioridade": 6,
-        "foco": "precificação competitiva, margem de lucro, posicionamento de valor",
-        "nao_falar": ""
-    })
-    
-    # Sales/Prospecting - adapt for solo entrepreneur
-    if solo:
-        fallback_categories.append({
-            "id": "vendas_solo",
-            "nome": "Vendas para Quem Trabalha Sozinho",
-            "icone": "💰",
-            "cor": "#ef4444",
-            "prioridade": 7,
-            "foco": "técnicas de venda escaláveis para uma pessoa só, automações simples, scripts rápidos",
-            "nao_falar": "NÃO sugira técnicas que exigem equipe de vendas."
-        })
-    else:
-        fallback_categories.append({
-            "id": "como_vender",
-            "nome": "Como Prospectar Clientes",
-            "icone": "💰",
-            "cor": "#ef4444",
-            "prioridade": 6,
-            "foco": "técnicas de prospecção, abordagem, conversão",
-            "nao_falar": ""
-        })
-    
-    # Sort by priority
-    fallback_categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
-    return fallback_categories
+    # Sort by priority descending
+    categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
+    cat_ids = [c.get("id", "?") for c in categories]
+    print(f"  📋 Categorias do LLM ({len(categories)}): {cat_ids}", file=sys.stderr)
+    return categories
 
 
 def run_profiler(onboarding_data: dict) -> dict:
     """
     Main entry point. Takes onboarding data, returns full profile + categories.
-    NOW: Includes restrictions for context-aware recommendations.
     """
     api_key = os.environ.get("GROQ_API_KEY")
 

@@ -501,6 +501,17 @@ JSON:
             all_sources.extend(r.get("sources", []))
         result["fontes_discovery"] = list(dict.fromkeys(all_sources))
         
+        # Log what was found
+        pd = result.get("presenca_digital", {})
+        found_items = []
+        for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
+            if pd.get(canal, {}).get("encontrado"):
+                found_items.append(canal)
+        n_comp = len(result.get("concorrentes_encontrados", []))
+        n_probs = len(result.get("problemas_detectados", []))
+        has_market = bool(result.get("dados_mercado_local", {}).get("preco_medio_regiao"))
+        print(f"  📊 Discovery sintetizado: canais={found_items} | concorrentes={n_comp} | problemas={n_probs} | mercado={'✅' if has_market else '❌'}", file=sys.stderr)
+        
         return result
     except Exception as e:
         print(f"  ❌ Erro ao sintetizar discovery: {e}", file=sys.stderr)
@@ -588,14 +599,15 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
         return ""
 
     # ── Dimension-specific filtering ──
-    # Each dimension only gets the discovery sections that matter to it
+    # Each pillar only gets the discovery sections that matter to it
     DIM_SECTIONS = {
-        "presenca_digital": ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email", "outras", "problemas"],
-        "competitividade": ["concorrentes", "mercado", "problemas"],
-        "diversificacao_canais": ["site", "whatsapp", "outras", "mercado"],
-        "precificacao": ["concorrentes", "mercado"],
-        "potencial_mercado": ["mercado", "concorrentes"],
-        "maturidade_operacional": ["whatsapp", "site", "google_maps"],
+        "publico_alvo": ["mercado", "concorrentes", "problemas"],
+        "branding": ["concorrentes", "mercado", "instagram", "site", "problemas"],
+        "identidade_visual": ["instagram", "site", "concorrentes"],
+        "canais_venda": ["site", "whatsapp", "outras", "instagram", "mercado"],
+        "trafego_organico": ["instagram", "site", "linkedin", "google_maps", "email", "outras", "problemas"],
+        "trafego_pago": ["concorrentes", "mercado", "instagram", "site"],
+        "processo_vendas": ["concorrentes", "mercado", "whatsapp", "problemas", "google_maps"],
     }
 
     # Determine which sections to include
@@ -727,8 +739,8 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
             for p in problems[:5]:
                 lines.append(f"  • {p}")
 
-    # ── Summary (only for presenca_digital or when no filter) ──
-    if not dim_key or dim_key == "presenca_digital":
+    # ── Summary (only for first pillar or when no filter) ──
+    if not dim_key or dim_key in ("publico_alvo", "trafego_organico"):
         resumo = discovery_data.get("resumo_executivo", "")
         if resumo:
             lines.append(f"\n📝 RESUMO EXECUTIVO: {resumo}")

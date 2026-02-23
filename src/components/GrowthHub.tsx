@@ -2,28 +2,34 @@
 
 import React from 'react';
 import {
-    Globe, Target, Share2, DollarSign, TrendingUp, Settings,
-    RotateCcw, ChevronRight, Activity, ArrowUpRight
+    Users, Award, Palette, ShoppingBag, Search, Megaphone, HandCoins,
+    RotateCcw, ChevronRight, Activity, ArrowUpRight, Globe
 } from 'lucide-react';
 
 const DIMENSIONS: Record<string, { icon: React.ComponentType<any>; label: string; color: string }> = {
-    presenca_digital: { icon: Globe, label: 'Presença Digital', color: '#3b82f6' },
-    competitividade: { icon: Target, label: 'Competitividade', color: '#f59e0b' },
-    diversificacao_canais: { icon: Share2, label: 'Canais de Venda', color: '#8b5cf6' },
-    precificacao: { icon: DollarSign, label: 'Precificação', color: '#ec4899' },
-    potencial_mercado: { icon: TrendingUp, label: 'Potencial de Mercado', color: '#10b981' },
-    maturidade_operacional: { icon: Settings, label: 'Operação', color: '#6366f1' },
+    publico_alvo: { icon: Users, label: 'Público-Alvo e Personas', color: '#8b5cf6' },
+    branding: { icon: Award, label: 'Branding e Posicionamento', color: '#f59e0b' },
+    identidade_visual: { icon: Palette, label: 'Identidade Visual', color: '#ec4899' },
+    canais_venda: { icon: ShoppingBag, label: 'Canais de Venda', color: '#3b82f6' },
+    trafego_organico: { icon: Search, label: 'Tráfego Orgânico', color: '#10b981' },
+    trafego_pago: { icon: Megaphone, label: 'Tráfego Pago', color: '#f97316' },
+    processo_vendas: { icon: HandCoins, label: 'Processo de Vendas', color: '#6366f1' },
 };
 
 const TASK_TO_DIMENSION: Record<string, string> = {
-    presenca_digital: 'presenca_digital',
-    competitividade: 'competitividade',
-    canais: 'diversificacao_canais',
-    precificacao: 'precificacao',
-    mercado: 'potencial_mercado',
-    operacional: 'maturidade_operacional',
-    credibilidade: 'presenca_digital',
-    conversao: 'competitividade',
+    publico_alvo: 'publico_alvo',
+    branding: 'branding',
+    identidade_visual: 'identidade_visual',
+    canais_venda: 'canais_venda',
+    canais: 'canais_venda',
+    trafego_organico: 'trafego_organico',
+    trafego_pago: 'trafego_pago',
+    processo_vendas: 'processo_vendas',
+    precificacao: 'processo_vendas',
+    credibilidade: 'branding',
+    conversao: 'processo_vendas',
+    mercado: 'publico_alvo',
+    operacional: 'processo_vendas',
 };
 
 function ScoreRing({ score, size = 200 }: { score: number; size?: number }) {
@@ -125,12 +131,12 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                 {/* Section Heading */}
                 <div className="mb-6">
                     <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em]">
-                        Pontos a trabalhar
+                        Pilares de Vendas
                     </h2>
                 </div>
 
-                {/* Dimension Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* Pillar Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {Object.entries(DIMENSIONS).map(([key, meta]) => {
                         const dim = dimensoes[key] || {};
                         const s = typeof dim.score === 'number' ? dim.score : 50;

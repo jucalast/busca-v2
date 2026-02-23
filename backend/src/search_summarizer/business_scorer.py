@@ -1,14 +1,24 @@
 """
-Business Scorer — Per-dimension focused scoring for deep, specific analysis.
+Business Scorer — 7 Sales Pillars scoring with chain context.
 
-Each of the 6 dimensions is scored INDIVIDUALLY with focused context,
-producing more specific and personalized results than one giant prompt.
+Each of the 7 pillars is scored INDIVIDUALLY in a specific ORDER so that
+upstream pillars feed compact context into downstream ones.
+
+The 7 pillars form an interconnected sales machine:
+  Público-Alvo → Branding → Identidade Visual
+       ↓             ↓            ↓
+     Canais de Venda ←←←←←←←←←←←
+       ↓
+  Tráfego Orgânico → Tráfego Pago
+       ↓                  ↓
+    Processo de Vendas ←←←←
 
 Architecture:
-- Uses llama-3.1-8b-instant exclusively (avoids rate limits, great with focused context)
-- 6 sequential LLM calls with 1.5s delays (rate-limit safe)
-- Each call gets only RELEVANT market data for that dimension
-- Sources tracked per dimension and per action
+- 7 sequential LLM calls with 1.5s delays (rate-limit safe)
+- Chain context: each pillar produces a compact summary (~150 tokens)
+  that is injected into downstream pillars
+- Each pillar has its OWN action plan (tasks live inside the pillar)
+- Multi-model fallback across separate TPD quotas
 """
 
 import json
@@ -22,68 +32,101 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Dimension definitions ──────────────────────────────────────────
+# ── 7 Sales Pillars (ordered for chain context) ─────────────────────
+# Each pillar feeds context to downstream pillars via compact summaries.
+# "upstream" lists which pillars' summaries this one receives.
 DIMENSIONS = {
-    "presenca_digital": {
-        "label": "Presença Digital",
+    "publico_alvo": {
+        "label": "Público-Alvo e Personas",
         "peso": 0.20,
-        "foco": "presença online, redes sociais, site, Google Meu Negócio, SEO local, conteúdo, reputação",
-        "market_keywords": ["marketing", "digital", "instagram", "facebook", "seo", "conteudo",
-                            "presenca", "credibilidade", "otimizacao", "social", "marketing_organico",
-                            "otimizacao_conversao", "presenca_online", "ugc", "engajamento",
-                            "seguidores", "reputacao", "avaliacao"],
-        # Explicit category IDs from profiler that map to this dimension
-        "category_ids": ["marketing_organico", "otimizacao_conversao", "presenca_online",
-                         "credibilidade", "marketing", "presenca_digital"],
+        "ordem": 1,
+        "foco": "cliente ideal detalhado, personas de compra, demografia, comportamento, dores, desejos, onde encontrar o público, poder de compra, jornada de decisão",
+        "market_keywords": ["publico", "persona", "cliente", "consumidor", "demografico",
+                            "comportamento", "perfil", "segmento", "nicho", "alvo",
+                            "audiencia", "comprador", "demanda", "mercado"],
+        "category_ids": ["publico_alvo", "cliente_ideal", "personas", "segmento",
+                         "mercado", "panorama", "potencial_mercado", "tendencias"],
+        "upstream": [],
     },
-    "competitividade": {
-        "label": "Competitividade e Concorrência",
-        "peso": 0.20,
-        "foco": "concorrentes diretos e indiretos, diferencial competitivo, posicionamento, preços dos concorrentes",
-        "market_keywords": ["concorrente", "competit", "diferencial", "posicionamento",
-                            "mapa", "marca", "benchmark", "comparativo"],
-        "category_ids": ["concorrentes", "mapa_concorrentes", "competitividade",
-                         "benchmark", "diferencial"],
+    "branding": {
+        "label": "Branding e Posicionamento",
+        "peso": 0.15,
+        "ordem": 2,
+        "foco": "posicionamento de marca, proposta de valor, tom de voz, mensagem central, diferencial competitivo, análise de concorrentes, percepção de marca",
+        "market_keywords": ["marca", "branding", "posicionamento", "diferencial", "proposta",
+                            "valor", "concorrente", "competit", "benchmark", "imagem",
+                            "mapa", "concorrencia"],
+        "category_ids": ["branding", "posicionamento", "concorrentes", "diferencial",
+                         "competitividade", "marca", "mapa_concorrentes", "benchmark"],
+        "upstream": ["publico_alvo"],
     },
-    "diversificacao_canais": {
+    "identidade_visual": {
+        "label": "Identidade Visual",
+        "peso": 0.10,
+        "ordem": 3,
+        "foco": "consistência visual, qualidade de fotos e vídeos, paleta de cores, tipografia, coerência entre canais, feed do Instagram, materiais gráficos, apresentação profissional",
+        "market_keywords": ["visual", "design", "logo", "imagem", "foto", "estetica",
+                            "cores", "tipografia", "layout", "banner", "feed",
+                            "criativo", "template"],
+        "category_ids": ["identidade_visual", "design", "estetica", "presenca_visual",
+                         "credibilidade"],
+        "upstream": ["publico_alvo", "branding"],
+    },
+    "canais_venda": {
         "label": "Canais de Venda",
         "peso": 0.15,
-        "foco": "canais atuais, dependência de canal único, canais novos viáveis, marketplaces, delivery",
-        "market_keywords": ["canal", "diversificacao", "marketplace", "ecommerce", "delivery",
-                            "loja", "distribuicao", "vendas_solo", "como_vender",
-                            "prospectar", "leads", "whatsapp"],
-        "category_ids": ["vendas_solo", "como_vender", "canais", "diversificacao_canais",
-                         "prospectar", "marketplace"],
+        "ordem": 4,
+        "foco": "canais atuais e otimização, e-commerce, Instagram Shopping, WhatsApp Business, marketplace, loja física, novos canais viáveis, integração entre canais",
+        "market_keywords": ["canal", "venda", "ecommerce", "marketplace", "loja",
+                            "instagram", "whatsapp", "delivery", "distribuicao",
+                            "ponto_venda", "diversificacao", "vendas_solo",
+                            "como_vender", "prospectar"],
+        "category_ids": ["canais", "vendas_solo", "como_vender", "diversificacao_canais",
+                         "marketplace", "ecommerce", "prospectar"],
+        "upstream": ["publico_alvo", "branding"],
     },
-    "precificacao": {
-        "label": "Precificação e Margem",
+    "trafego_organico": {
+        "label": "Tráfego Orgânico",
         "peso": 0.15,
-        "foco": "estratégia de precificação, margem de lucro, preço vs concorrentes, percepção de valor",
-        "market_keywords": ["preco", "precificacao", "margem", "custo", "ticket", "lucro",
-                            "rentabilidade", "faturamento", "receita"],
-        "category_ids": ["precificacao", "precos", "margem", "financeiro"],
+        "ordem": 5,
+        "foco": "SEO local e Google Meu Negócio, marketing de conteúdo, redes sociais orgânico, Reels, Stories, blog, YouTube, engajamento, alcance orgânico, hashtags, frequência de postagem",
+        "market_keywords": ["seo", "conteudo", "organico", "engajamento", "seguidores",
+                            "alcance", "google", "youtube", "reels", "blog", "post",
+                            "stories", "marketing_organico", "presenca_online",
+                            "presenca_digital", "otimizacao"],
+        "category_ids": ["marketing_organico", "seo", "conteudo", "presenca_online",
+                         "engajamento", "presenca_digital", "otimizacao_conversao"],
+        "upstream": ["publico_alvo", "branding", "identidade_visual"],
     },
-    "potencial_mercado": {
-        "label": "Potencial de Mercado",
-        "peso": 0.15,
-        "foco": "tamanho do mercado, tendências, sazonalidade, nichos inexplorados, crescimento do setor",
-        "market_keywords": ["mercado", "tendencia", "potencial", "crescimento", "oportunidade",
-                            "panorama", "nicho", "demanda", "publico_alvo", "cliente_ideal",
-                            "segmento", "tamanho"],
-        "category_ids": ["mercado", "panorama", "publico_alvo", "potencial_mercado",
-                         "tendencias", "oportunidades"],
+    "trafego_pago": {
+        "label": "Tráfego Pago",
+        "peso": 0.10,
+        "ordem": 6,
+        "foco": "anúncios Meta Ads e Google Ads, orçamento de mídia, ROI, segmentação de público, copy de anúncios, criativos, remarketing, funil de anúncio, custo por aquisição",
+        "market_keywords": ["anuncio", "ads", "pago", "midia", "investimento", "roi",
+                            "meta_ads", "google_ads", "facebook_ads", "campanha",
+                            "conversao", "cpc", "cpa", "remarketing"],
+        "category_ids": ["trafego_pago", "anuncios", "ads", "midia_paga",
+                         "campanha", "marketing"],
+        "upstream": ["publico_alvo", "branding", "identidade_visual", "canais_venda"],
     },
-    "maturidade_operacional": {
-        "label": "Maturidade Operacional",
+    "processo_vendas": {
+        "label": "Processo de Vendas",
         "peso": 0.15,
-        "foco": "processos internos, eficiência, logística, gargalos, escalabilidade, fornecedores",
-        "market_keywords": ["operacao", "logistica", "processo", "fornecedor", "estoque",
-                            "entrega", "gestao", "producao", "eficiencia", "escala",
-                            "automacao", "ferramentas"],
-        "category_ids": ["operacional", "logistica", "gestao", "processos",
-                         "fornecedores", "maturidade_operacional"],
+        "ordem": 7,
+        "foco": "funil de vendas, processo de conversão, follow-up, contorno de objeções, scripts de venda, precificação, ticket médio, margem, fechamento, pós-venda, fidelização, upsell",
+        "market_keywords": ["venda", "funil", "conversao", "fechamento", "objecao",
+                            "preco", "precificacao", "margem", "ticket", "proposta",
+                            "negociacao", "pos_venda", "fidelizacao", "upsell",
+                            "script", "follow"],
+        "category_ids": ["processo_vendas", "precificacao", "funil", "conversao",
+                         "vendas", "negociacao", "precos", "margem", "financeiro"],
+        "upstream": ["publico_alvo", "canais_venda", "trafego_organico", "trafego_pago"],
     },
 }
+
+# Sorted order for chain context processing
+DIMENSION_ORDER = sorted(DIMENSIONS.keys(), key=lambda k: DIMENSIONS[k]["ordem"])
 
 
 def _parse_retry_seconds(error_msg: str) -> int:
@@ -123,7 +166,7 @@ def _call_llm(api_key: str, prompt: str, temperature: float = 0.2, max_retries: 
                     messages=[{"role": "user", "content": prompt}],
                     model=model,
                     temperature=temperature,
-                    max_tokens=4096,
+                    max_tokens=1200,
                     response_format={"type": "json_object"},
                 )
                 if mi > 0:
@@ -152,12 +195,14 @@ def _call_llm(api_key: str, prompt: str, temperature: float = 0.2, max_retries: 
                         break
                     raise
                 elif is_rate_limit and attempt < max_retries - 1:
-                    wait = (attempt + 1) * 3
+                    retry_secs = _parse_retry_seconds(error_msg)
+                    wait = retry_secs if retry_secs > 0 else (attempt + 1) * 20
                     print(f"  ⏳ Rate limit (TPM) em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
                     time.sleep(wait)
                     continue
                 elif is_rate_limit and mi < len(models) - 1:
-                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                    print(f"  🔄 Rate limit (TPM) esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                    time.sleep(5)
                     break
                 raise
     raise Exception("Todos os modelos esgotaram o rate limit diário. Tente novamente mais tarde.")
@@ -172,6 +217,7 @@ def _filter_market(dim_key: str, market_data: dict) -> str:
     keywords = dim_cfg["market_keywords"]
     category_ids = dim_cfg.get("category_ids", [])
 
+    available_ids = [cat.get("id", "").lower() for cat in categories]
     relevant = []
     
     # First pass: match by explicit category IDs (highest priority)
@@ -180,18 +226,18 @@ def _filter_market(dim_key: str, market_data: dict) -> str:
         if cat_id in category_ids:
             relevant.append(cat)
     
-    # Second pass: match by keywords in name/id (if not enough)
+    # Second pass: match by keywords in name/id/foco (broader matching)
     if len(relevant) < 2:
         for cat in categories:
             if cat in relevant:
                 continue
-            cat_text = f"{cat.get('id', '')} {cat.get('nome', '')}".lower()
+            cat_text = f"{cat.get('id', '')} {cat.get('nome', '')} {cat.get('foco', '')}".lower()
             if any(kw in cat_text for kw in keywords):
                 relevant.append(cat)
 
     # NO fallback to all data — if nothing matches, LLM gets "Nenhum dado"
     if not relevant:
-        print(f"    ⚠️ No market data matched for {dim_key}", file=sys.stderr)
+        print(f"    ⚠️ No market data matched for {dim_key} (available: {available_ids}, expected: {category_ids[:4]})", file=sys.stderr)
         return ""
 
     text = ""
@@ -277,69 +323,112 @@ def _compute_objective_score(dim_key: str, profile: dict) -> int:
                 return True
         return False
     
-    # canais_venda may be a list or a comma-separated string
     canais_raw_val = perfil.get("canais_venda", "")
     if isinstance(canais_raw_val, list):
         canais_raw = ", ".join(str(c) for c in canais_raw_val).lower()
     else:
         canais_raw = str(canais_raw_val).lower()
     
-    if dim_key == "presenca_digital":
-        if "instagram" in canais_raw: score += 20
-        if "site" in canais_raw or "loja virtual" in canais_raw: score += 15
-        if "google" in canais_raw: score += 10
-        if canais_raw.count(",") >= 1 or "|" in canais_raw: score += 10  # Multiple channels
-        if has("origem_clientes"): score += 10
-        if not any(x in canais_raw for x in ["instagram", "site", "facebook"]): score += 5  # Only offline = low
-        # Cap: pure offline business shouldn't get too high
-        
-    elif dim_key == "competitividade":
-        if has("concorrentes"): score += 20
-        if has("diferencial"): score += 25
+    if dim_key == "publico_alvo":
+        if has("cliente_ideal", "publico_alvo"): score += 30
+        if has("segmento"): score += 15
+        if has("localizacao"): score += 10
         if has("maior_objecao"): score += 10
-        if has("segmento"): score += 10
+        if has("origem_clientes"): score += 15
+        if has("modelo", "modelo_negocio"): score += 10
         
-    elif dim_key == "diversificacao_canais":
+    elif dim_key == "branding":
+        if has("diferencial"): score += 30
+        if has("concorrentes"): score += 20
+        if has("segmento"): score += 10
+        if has("maior_objecao"): score += 10
+        if has("objetivos"): score += 10
+        
+    elif dim_key == "identidade_visual":
+        if "instagram" in canais_raw: score += 20
+        if "site" in canais_raw or "loja virtual" in canais_raw: score += 20
+        if has("instagram_handle"): score += 15
+        if has("site_url"): score += 15
+        if has("diferencial"): score += 10
+        
+    elif dim_key == "canais_venda":
         n_canais = len([c for c in re.split(r"[,|;]", canais_raw) if c.strip()]) if canais_raw else 0
         if n_canais >= 3: score += 30
         elif n_canais >= 2: score += 20
         elif n_canais == 1: score += 10
-        has_online = any(x in canais_raw for x in ["instagram", "site", "whatsapp", "marketplace", "ifood", "online", "ecommerce", "televendas"])
-        has_offline = any(x in canais_raw for x in ["loja", "rua", "físic", "boca", "feira", "presença direta", "presenca direta"])
+        has_online = any(x in canais_raw for x in ["instagram", "site", "whatsapp", "marketplace", "ifood", "online", "ecommerce"])
+        has_offline = any(x in canais_raw for x in ["loja", "rua", "físic", "boca", "feira"])
         if has_online: score += 15
         if has_offline: score += 10
-        if has_online and has_offline: score += 10  # Diversified
+        if has_online and has_offline: score += 10
         
-    elif dim_key == "precificacao":
+    elif dim_key == "trafego_organico":
+        if "instagram" in canais_raw: score += 15
+        if has("instagram_handle"): score += 15
+        if "site" in canais_raw or has("site_url"): score += 15
+        if has("google_maps_url"): score += 10
+        if has("origem_clientes"): score += 10
+        if not any(x in canais_raw for x in ["instagram", "site", "facebook", "google"]): score += 5
+        
+    elif dim_key == "trafego_pago":
+        if has("capital_disponivel"): score += 20
+        capital_val = str(perfil.get("capital_disponivel", "")).lower()
+        if capital_val in ("zero", "baixo", "nenhum", "0"): score += 5
+        elif capital_val: score += 15
+        if has("faturamento_mensal", "faturamento_faixa"): score += 15
+        if has("cliente_ideal", "publico_alvo"): score += 15
+        if has("segmento"): score += 10
+        
+    elif dim_key == "processo_vendas":
         if has("ticket_medio", "ticket_medio_estimado"): score += 20
         if has("margem_lucro"): score += 20
         if has("faturamento_mensal", "faturamento_faixa"): score += 15
-        if has("capital_disponivel"): score += 10
-        
-    elif dim_key == "potencial_mercado":
-        if has("localizacao"): score += 15
-        if has("segmento"): score += 15
-        if has("cliente_ideal", "publico_alvo"): score += 20
-        if has("objetivos"): score += 10
-        
-    elif dim_key == "maturidade_operacional":
-        if has("modelo_operacional"): score += 20
-        if has("num_funcionarios"): score += 15
-        if has("canais_venda"): score += 10
-        if has("modelo", "modelo_negocio"): score += 10
-        if has("tempo_entrega"): score += 10
-        if has("principal_gargalo"): score += 5
+        if has("maior_objecao"): score += 15
+        if has("modelo_operacional"): score += 10
+        if has("origem_clientes"): score += 10
     
     return min(score, 100)
+
+
+def _build_chain_context(dim_key: str, chain_summaries: dict) -> str:
+    """Build compact context from upstream pillars for this dimension.
+    Each upstream summary is ~100-150 tokens, keeping total injection small."""
+    upstream_keys = DIMENSIONS[dim_key].get("upstream", [])
+    if not upstream_keys or not chain_summaries:
+        return ""
+    
+    lines = ["CONTEXTO DOS PILARES ANTERIORES (use para conectar sua análise):"]
+    for uk in upstream_keys:
+        summary = chain_summaries.get(uk)
+        if summary:
+            label = DIMENSIONS[uk]["label"]
+            lines.append(f"• {label}: {summary}")
+    
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _extract_chain_summary(dim_key: str, result: dict) -> str:
+    """Extract a compact summary (~100 tokens) from a scored dimension
+    to pass as context to downstream pillars."""
+    label = DIMENSIONS[dim_key]["label"]
+    score = result.get("score", 50)
+    dado_chave = result.get("dado_chave", "")
+    justificativa = result.get("justificativa", "")
+    
+    # Take first sentence of justificativa + dado_chave
+    just_short = justificativa.split(".")[0] + "." if justificativa else ""
+    
+    return f"Score {score}/100. {just_short} {dado_chave}".strip()[:300]
 
 
 def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
                      market_text: str, dim_sources: list,
                      restricoes: dict, api_key: str,
                      previous_actions: list = None,
-                     discovery_text: str = "") -> dict:
-    """Score a single dimension with focused, specific analysis.
-    Now also receives previous_actions and discovery_text for real business context."""
+                     discovery_text: str = "",
+                     chain_context: str = "") -> dict:
+    """Score a single sales pillar with focused, specific analysis.
+    Now receives chain_context from upstream pillars for interconnected analysis."""
     perfil = profile.get("perfil", profile)
 
     # Build restriction notes for this dimension
@@ -351,36 +440,29 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
     if restricoes.get("modelo_operacional") in ("sob_encomenda", "dropshipping"):
         notes.append(f"Opera {restricoes['modelo_operacional']} — NÃO penalize por falta de estoque.")
     canais = restricoes.get("canais_existentes", [])
-    # Also check raw canais_venda from profile (may be list or string)
     _cv_raw = perfil.get("canais_venda", "")
     if isinstance(_cv_raw, list):
         canais_raw = ", ".join(str(c) for c in _cv_raw).lower()
     else:
         canais_raw = str(_cv_raw).lower()
-    if (canais or canais_raw) and dim_key == "presenca_digital":
+    if (canais or canais_raw) and dim_key in ("canais_venda", "trafego_organico"):
         canais_text = ", ".join(canais) if canais else canais_raw
         notes.append(f"JÁ usa: {canais_text}. Sugira OTIMIZAR o que já tem, não criar do zero.")
 
     restriction_text = "\n".join(f"⚠️ {n}" for n in notes) if notes else ""
 
-    # Build compact profile summary — normalize aliases
     nome = perfil.get('nome', perfil.get('nome_negocio', '?'))
     segmento = perfil.get('segmento', '?')
-    # Normalize canais_venda: may be list or string
     _canais_val = perfil.get('canais_venda', '')
     if isinstance(_canais_val, list):
-        perfil = dict(perfil)  # shallow copy to avoid mutating original
+        perfil = dict(perfil)
         perfil['canais_venda'] = ', '.join(str(c) for c in _canais_val)
     
-    # Cross-dimension dedup: tell LLM what actions were already generated
+    # Cross-dimension dedup
     dedup_block = ""
     if previous_actions:
-        actions_text = "\n".join(f"- {a}" for a in previous_actions[:10])
-        dedup_block = f"""
-
-⛔ AÇÕES JÁ GERADAS EM OUTRAS DIMENSÕES (NÃO REPETIR):
-{actions_text}
-Não sugira ações iguais ou muito similares às listadas acima. Cada ação DEVE ser ÚNICA."""
+        actions_text = "\n".join(f"- {a}" for a in previous_actions[-5:])
+        dedup_block = f"\n⛔ NÃO REPETIR: {actions_text}\nGere ações Únicas sobre {dim_cfg['label']}."
 
     # B2B Specific Context
     b2b_context = ""
@@ -388,13 +470,9 @@ Não sugira ações iguais ou muito similares às listadas acima. Cada ação DE
     seg_val = segmento.upper()
     if "B2B" in modelo_val or "INDUSTRIA" in seg_val or "DISTRIBUIDORA" in seg_val or "ATACADO" in seg_val:
         b2b_context = """
-CONTEXTO B2B (BUSINESS TO BUSINESS):
-Este negócio vende para OUTRAS EMPRESAS.
-- IGNORE estratégias B2C (dancinhas, influencers de varejo, viralização, sorteios).
-- FOQUE em: Vendas consultivas, representantes comerciais, LinkedIn, Google Ads fundo de funil, SEO técnico, participação em feiras, e-mail marketing frio, catálogos digitais, otimização logística de carga, crédito faturado.
-- A "experiência do cliente" aqui é: prazo de entrega, nota fiscal correta, suporte técnico confiável."""
+CONTEXTO B2B: Vende para OUTRAS EMPRESAS. Foque em vendas consultivas, LinkedIn, Google Ads, SEO técnico, feiras, e-mail marketing frio, catálogos. Ignore estratégias B2C."""
 
-    # Build digital presence context block from profile fields
+    # Digital presence context
     digital_ctx_lines = []
     if perfil.get("instagram_handle"):
         digital_ctx_lines.append(f"- Instagram: {perfil['instagram_handle']}")
@@ -408,84 +486,74 @@ Este negócio vende para OUTRAS EMPRESAS.
         digital_ctx_lines.append(f"- E-mail: {perfil['email_contato']}")
     if perfil.get("google_maps_url"):
         digital_ctx_lines.append(f"- Google Maps: {perfil['google_maps_url']}")
-    digital_presence_block = ("\nCANAIS DIGITAIS DECLARADOS PELO USUÁRIO:\n" + "\n".join(digital_ctx_lines)) if digital_ctx_lines else ""
+    digital_presence_block = ("\nCANAIS DIGITAIS DO USUÁRIO:\n" + "\n".join(digital_ctx_lines)) if digital_ctx_lines else ""
 
-    prompt = f"""Analise SOMENTE "{dim_cfg['label']}" para o negócio abaixo. Seja ESPECÍFICO e CONCRETO.
+    # Chain context from upstream pillars
+    chain_block = ""
+    if chain_context:
+        chain_block = f"\n{chain_context[:600]}\n"
 
-NEGÓCIO: {nome} — {segmento}
-- Modelo: {perfil.get('modelo_negocio', perfil.get('modelo', '?'))}
-- Localização: {perfil.get('localizacao', '?')}
-- Ticket médio: {perfil.get('ticket_medio', perfil.get('ticket_medio_estimado', '?'))}
-- Faturamento: {perfil.get('faturamento_mensal', perfil.get('faturamento_faixa', '?'))}
-- Equipe: {perfil.get('num_funcionarios', '?')}
-- Canais atuais: {perfil.get('canais_venda', '?')}
-- Dificuldade: {perfil.get('dificuldades', '?')}
-- Diferencial: {perfil.get('diferencial', '?')}
-- Concorrentes: {perfil.get('concorrentes', '?')}
-- Operação: {perfil.get('modelo_operacional', '?')}
-- Margem: {perfil.get('margem_lucro', '?')}
-- Origem clientes: {perfil.get('origem_clientes', '?')}
-- Objeção principal: {perfil.get('maior_objecao', '?')}
-- Cliente ideal: {perfil.get('cliente_ideal', '?')}
-- Capital disponível: {perfil.get('capital_disponivel', '?')}
-- Tempo de mercado: {perfil.get('tempo_mercado', perfil.get('tempo_operacao', '?'))}
-{digital_presence_block}
-{restriction_text}
-{b2b_context}
+    # Compact profile block — only fields relevant to this pillar
+    _eq = perfil.get('num_funcionarios', '?')
+    _cap = perfil.get('capital_disponivel', '?')
+    _dif_val = perfil.get('diferencial', '?')
+    _orig = perfil.get('origem_clientes', '?')
+    _obj = perfil.get('maior_objecao', '?')
+    _cli = perfil.get('cliente_ideal', '?')
+    _tick = perfil.get('ticket_medio', perfil.get('ticket_medio_estimado', '?'))
 
-FOCO DA ANÁLISE: {dim_cfg['foco']}
+    # Dynamic off-topic guard: extract the business difficulty to explicitly exclude it
+    _dificuldade = perfil.get('dificuldades', '')
+    off_topic_guard = ""
+    if _dificuldade and dim_key not in ("processo_vendas",):
+        off_topic_guard = f"\n⚠️ A dificuldade do negócio é \"{_dificuldade}\" — NÃO use isso como tema das ações. Suas ações são EXCLUSIVAMENTE sobre {dim_cfg['label']}."
 
-{discovery_text if discovery_text.strip() else ""}
+    prompt = f"""Você é consultor especialista EXCLUSIVAMENTE em "{dim_cfg['label']}".
 
-DADOS DE MERCADO ENCONTRADOS:
-{market_text if market_text.strip() else "Nenhum dado disponível para esta dimensão."}
+SEU FOCO EXCLUSIVO: {dim_cfg['foco']}{off_topic_guard}
+Sua análise e TODAS as ações devem ser EXCLUSIVAMENTE sobre {dim_cfg['label']}.
+
+NEGÓCIO: {nome} | {segmento} | {perfil.get('localizacao','?')} | Equipe: {_eq} | Capital: {_cap} | Ticket: {_tick}
+Canais: {perfil.get('canais_venda','?')} | Diferencial: {_dif_val} | Origem clientes: {_orig}
+Objeção: {_obj} | Cliente ideal: {_cli}{digital_presence_block}
+{restriction_text}{b2b_context}{chain_block}
+{discovery_text[:1500] if discovery_text.strip() else ""}
+MERCADO: {market_text[:1000] if market_text.strip() else "Sem dados."}
 {dedup_block}
 
-REGRAS OBRIGATÓRIAS:
-1. Score 0-100. Se não há dados suficientes, use o perfil declarado + score = 50.
-2. Justificativa: cite DADOS CONCRETOS (nomes reais, números, URLs, handles) encontrados.
-3. Cada ação deve ser ULTRA-ESPECÍFICA para {nome} ({segmento}), NÃO genérica.
-4. Cada ação DEVE ser sobre {dim_cfg['label']} — NÃO sobre outros temas.
-5. PROIBIDO: "pesquise", "avalie", "considere", "analise opções" — dê a resposta pronta.
-6. Ações devem ser executáveis ESTA SEMANA por {perfil.get('num_funcionarios', '1 pessoa')}.
-7. Gere de 3 a 5 ações — cada uma DEVE referenciar um dado real encontrado acima.
-8. Se o usuário declarou canais digitais (Instagram, site, etc.), as ações DEVEM ser sobre MELHORAR esses canais específicos, não criar novos do zero.
-9. NÃO invente dados. Só cite dados que apareceram acima ou foram declarados pelo usuário.
+REGRAS:
+1. Score 0-100. Justificativa com DADOS CONCRETOS sobre {dim_cfg['label']}.
+2. 3-5 ações ULTRA-ESPECÍFICAS sobre {dim_cfg['label']}, executáveis esta semana.
+3. PROIBIDO: "pesquise"/"avalie"/"considere" — dê respostas prontas.
+4. meta_pilar = estado IDEAL deste pilar (ex: "Ter 3 canais ativos gerando vendas").
+5. NÃO repita a dificuldade do negócio como meta. A meta é sobre {dim_cfg['label']}.
 
-EXEMPLOS BOM vs RUIM para {nome} ({segmento}):
-- ❌ RUIM: "Otimizar o perfil com palavras-chave" (genérico)
-- ✅ BOM: "No Instagram {perfil.get('instagram_handle', '@perfil')}, adicionar '{segmento} em {perfil.get('localizacao', 'sua cidade')}' na bio — pesquisa mostra que esse termo tem alta busca local"
-- ❌ RUIM: "Crie um site" (usuário já tem site)
-- ✅ BOM: "No site {perfil.get('site_url', 'do negócio')}, adicionar botão de WhatsApp fixo e CTA 'Solicitar orçamento' — dado encontrado mostra que concorrentes diretos já fazem isso e têm mais conversões"
-- ❌ RUIM: "Aumentar credibilidade com depoimentos" (genérico)
-- ✅ BOM: "Pedir para 3 clientes gravarem depoimento em vídeo de 15s e publicar nos Stories — {perfil.get('concorrentes', '').split(',')[0].strip() if perfil.get('concorrentes') else 'concorrente direto'} faz isso e tem engajamento alto"
-
-Retorne JSON:
+JSON:
 {{
     "score": 0-100,
-    "status": "critico / atencao / forte",
-    "justificativa": "2-3 frases com dados CONCRETOS. Cite handles, URLs, números reais.",
+    "status": "critico/atencao/forte",
+    "justificativa": "2-3 frases sobre {dim_cfg['label']} com dados concretos",
     "acoes_imediatas": [
-        {{
-            "acao": "Ação ultra-específica para {nome}: o que fazer + como fazer + resultado esperado. DEVE citar dado real ou canal declarado.",
-            "impacto": "alto / medio / baixo",
-            "prazo": "1 semana / 2 semanas / 1 mês",
-            "custo": "R$ 0 / até R$ 50 / até R$ 100",
-            "fonte": "Qual fonte/dado/canal suporta esta ação"
-        }}
+        {{"acao": "Ação sobre {dim_cfg['label']}: o que + como + resultado", "impacto": "alto/medio/baixo", "prazo": "1 semana/2 semanas/1 mês", "custo": "R$ 0/até R$ 50/até R$ 100", "fonte": "dado de suporte"}}
     ],
-    "fontes_utilizadas": ["URLs ou handles ou fontes usadas nesta análise"],
-    "dado_chave": "O achado MAIS IMPORTANTE — 1 frase com dado concreto e específico"
+    "fontes_utilizadas": ["URLs reais"],
+    "dado_chave": "Achado mais importante sobre {dim_cfg['label']}",
+    "meta_pilar": "Estado ideal de {dim_cfg['label']} para {nome} (NÃO sobre logística/custos)"
 }}"""
+
+    print(f"    📝 Prompt: {len(prompt)} chars", file=sys.stderr)
 
     try:
         result = _call_llm(api_key, prompt)
+        # Log raw LLM response keys and action count
+        print(f"    📦 LLM retornou: {list(result.keys())} | acoes: {len(result.get('acoes_imediatas', []))}", file=sys.stderr)
         # Ensure expected fields
         result.setdefault("score", 50)
         result.setdefault("status", "atencao")
         result.setdefault("justificativa", "")
         result.setdefault("acoes_imediatas", [])
         result.setdefault("dado_chave", "")
+        result.setdefault("meta_pilar", f"Maximizar {dim_cfg['label']} para vender mais")
         
         # ── Combine LLM score with objective score (60/40 blend) ──
         llm_score = result["score"]
@@ -510,14 +578,34 @@ Retorne JSON:
         result["peso"] = dim_cfg["peso"]
         return result
     except Exception as e:
-        print(f"  ❌ Erro ao scorar {dim_key}: {e}", file=sys.stderr)
-        obj_score = _compute_objective_score(dim_key, profile)
-        return {
-            "score": obj_score, "status": "atencao", "peso": dim_cfg["peso"],
-            "justificativa": "Não foi possível analisar esta dimensão com os dados disponíveis.",
-            "acoes_imediatas": [], "fontes_utilizadas": dim_sources[:5], "dado_chave": "",
-            "_score_llm": 50, "_score_objetivo": obj_score,
-        }
+        print(f"  ⚠️ Erro no LLM para {dim_key}: {e}. Tentando prompt mínimo...", file=sys.stderr)
+        # Retry with a minimal prompt using only profile data (no market/discovery)
+        minimal_prompt = f"""Consultor de {dim_cfg['label']}. Analise este pilar para {nome} ({segmento}).
+
+Perfil: Equipe {_eq} | Capital {_cap} | Ticket {_tick} | Canais: {perfil.get('canais_venda','?')} | Cliente ideal: {_cli}
+Foco: {dim_cfg['foco']}
+
+Retorne JSON: {{"score": 0-100, "status": "critico/atencao/forte", "justificativa": "2 frases sobre {dim_cfg['label']}", "acoes_imediatas": [{{"acao": "ação sobre {dim_cfg['label']}", "impacto": "alto", "prazo": "1 semana", "custo": "R$ 0", "fonte": "perfil do negócio"}}], "fontes_utilizadas": [], "dado_chave": "dado sobre {dim_cfg['label']}", "meta_pilar": "estado ideal de {dim_cfg['label']} para {nome}"}}"""
+        try:
+            result = _call_llm(api_key, minimal_prompt)
+            result.setdefault("score", 50)
+            result.setdefault("status", "atencao")
+            result.setdefault("justificativa", "")
+            result.setdefault("acoes_imediatas", [])
+            result.setdefault("dado_chave", "")
+            result.setdefault("meta_pilar", f"Maximizar {dim_cfg['label']} para vender mais")
+            obj_score = _compute_objective_score(dim_key, profile)
+            blended = round(result["score"] * 0.6 + obj_score * 0.4)
+            result["score"] = blended
+            result["_score_llm"] = result["score"]
+            result["_score_objetivo"] = obj_score
+            result["peso"] = dim_cfg["peso"]
+            result["fontes_utilizadas"] = list(dict.fromkeys(result.get("fontes_utilizadas", []) + dim_sources[:5]))
+            print(f"  ✅ Retry {dim_key} OK: {blended}/100", file=sys.stderr)
+            return result
+        except Exception as e2:
+            print(f"  ❌ Retry também falhou para {dim_key}: {e2}", file=sys.stderr)
+            raise RuntimeError(f"Não foi possível scorar o pilar '{dim_cfg['label']}': {e2}") from e2
 
 
 def _dedup_actions_cross_dimension(all_tasks: list) -> list:
@@ -548,7 +636,7 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
             # Jaccard similarity (lowered threshold to catch more duplicates)
             intersection = len(title_words & seen)
             union = len(title_words | seen)
-            if union > 0 and intersection / union > 0.4:
+            if union > 0 and intersection / union > 0.6:
                 is_duplicate = True
                 break
             
@@ -563,23 +651,25 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
             deduped.append(task)
             seen_word_sets.append(title_words)
             seen_normalized_strs.append(title_norm)
+        else:
+            print(f"    🗑️ Dedup removeu [{task.get('categoria','')}]: {task.get('titulo','')[:60]}", file=sys.stderr)
     
     removed = len(all_tasks) - len(deduped)
     if removed > 0:
-        print(f"  🔄 Dedup cross-dimensão: removeu {removed} ações duplicadas", file=sys.stderr)
+        # Log kept tasks per dimension
+        from collections import Counter
+        kept_per_dim = Counter(t.get("categoria", "") for t in deduped)
+        print(f"  🔄 Dedup: {removed} removidas de {len(all_tasks)} | Mantidas: {dict(kept_per_dim)}", file=sys.stderr)
     return deduped
 
 
 def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) -> dict:
     """
-    Main entry point. Scores each dimension individually for deep, focused analysis.
-    Returns score data AND task plan (no separate task_generator needed).
+    Main entry point. Scores each of 7 sales pillars in chain order.
+    Returns score data AND per-pillar task plans.
     
-    Improvements:
-    - Cross-dimension action dedup (previous actions passed to each subsequent dimension)
-    - Blended scoring (60% LLM + 40% objective criteria)
-    - Strict market data filtering (no fallback to all data)
-    - Discovery data injection (real business data from web searches)
+    Chain context: each pillar produces a compact summary that feeds
+    into downstream pillars, creating interconnected analysis.
     """
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -588,34 +678,46 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
     restricoes = extract_restrictions(profile)
     dimensoes = {}
     all_tasks = []
-    # Track action titles for cross-dimension dedup in prompts
     previous_action_titles = []
+    chain_summaries = {}  # compact summaries for chain context
 
-    print("📊 Calculando score por dimensão...", file=sys.stderr)
+    n_pillars = len(DIMENSION_ORDER)
+    print(f"📊 Calculando score por pilar de vendas ({n_pillars} pilares)...", file=sys.stderr)
 
-    for i, (dim_key, dim_cfg) in enumerate(DIMENSIONS.items()):
-        print(f"  [{i+1}/6] {dim_cfg['label']}...", file=sys.stderr)
+    for i, dim_key in enumerate(DIMENSION_ORDER):
+        dim_cfg = DIMENSIONS[dim_key]
+        print(f"  [{i+1}/{n_pillars}] {dim_cfg['label']}...", file=sys.stderr)
 
         market_text = _filter_market(dim_key, market_data)
         dim_sources = _get_all_sources_for_dimension(dim_key, market_data)
 
-        # Format discovery data per-dimension so each scorer gets channel-relevant context
         disc_text = ""
         if discovery_data and discovery_data.get("found"):
             disc_text = format_discovery_for_scorer(discovery_data, dim_key=dim_key)
-            print(f"  📋 Discovery [{dim_key}]: {len(disc_text)} chars", file=sys.stderr)
+            if disc_text:
+                print(f"    📋 Discovery: {len(disc_text)} chars", file=sys.stderr)
+
+        # Build chain context from upstream pillars
+        chain_ctx = _build_chain_context(dim_key, chain_summaries)
+        if chain_ctx:
+            print(f"    🔗 Chain context de: {', '.join(DIMENSIONS[dim_key]['upstream'])}", file=sys.stderr)
 
         result = _score_dimension(
             dim_key, dim_cfg, profile, market_text, dim_sources, restricoes, api_key,
             previous_actions=previous_action_titles,
-            discovery_text=disc_text
+            discovery_text=disc_text,
+            chain_context=chain_ctx
         )
         dimensoes[dim_key] = result
+
+        # Extract chain summary for downstream pillars
+        chain_summaries[dim_key] = _extract_chain_summary(dim_key, result)
 
         # Convert acoes to flat task list and track for dedup
         for j, acao in enumerate(result.get("acoes_imediatas", [])):
             if isinstance(acao, dict):
                 titulo = acao.get("acao", "")
+                descricao = acao.get("descricao", "") or acao.get("resultado", "") or ""
                 all_tasks.append({
                     "id": f"task_{dim_key}_{j+1}",
                     "titulo": titulo,
@@ -626,7 +728,7 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
                     "prazo_sugerido": acao.get("prazo", "1 semana"),
                     "custo_estimado": acao.get("custo", "R$ 0"),
                     "fonte_referencia": acao.get("fonte", ""),
-                    "descricao": acao.get("fonte", ""),
+                    "descricao": descricao,
                 })
                 if titulo:
                     previous_action_titles.append(titulo)
@@ -644,12 +746,16 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
                 previous_action_titles.append(acao)
 
         s = result.get("score", "?")
-        n = len(result.get("acoes_imediatas", []))
-        print(f"    → {s}/100 | {n} ações", file=sys.stderr)
+        acoes = result.get("acoes_imediatas", [])
+        meta = result.get("meta_pilar", "")
+        print(f"    → {s}/100 | {len(acoes)} ações | Meta: {meta[:60]}", file=sys.stderr)
+        for ai, a in enumerate(acoes[:5]):
+            a_title = a.get("acao", a) if isinstance(a, dict) else str(a)
+            print(f"      [{ai+1}] {str(a_title)[:70]}", file=sys.stderr)
 
         # Delay between calls to stay within rate limits
-        if i < len(DIMENSIONS) - 1:
-            time.sleep(1.5)
+        if i < n_pillars - 1:
+            time.sleep(3)
     
     # Post-processing: cross-dimension dedup
     all_tasks = _dedup_actions_cross_dimension(all_tasks)
@@ -666,35 +772,45 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
     score_geral = round(total_s / total_w) if total_w > 0 else 50
 
     if score_geral >= 70:
-        classificacao = "Saudável"
+        classificacao = "Pronto pra Vender"
     elif score_geral >= 55:
-        classificacao = "Estável"
+        classificacao = "Em Construção"
     elif score_geral >= 40:
-        classificacao = "Em Risco"
+        classificacao = "Precisa de Atenção"
     else:
-        classificacao = "Crítico"
+        classificacao = "Urgente"
 
-    # ── Executive summary from dimension data ──
+    # ── Executive summary from pillar data ──
     sorted_dims = sorted(dimensoes.items(), key=lambda x: x[1].get("score", 50))
     weakest_key, weakest = sorted_dims[0]
     strongest_key, strongest = sorted_dims[-1]
 
     resumo = (
-        f"Ponto forte: {DIMENSIONS[strongest_key]['label']} ({strongest.get('score', 50)}/100). "
-        f"Prioridade: {DIMENSIONS[weakest_key]['label']} ({weakest.get('score', 50)}/100). "
+        f"Pilar mais forte: {DIMENSIONS[strongest_key]['label']} ({strongest.get('score', 50)}/100). "
+        f"Pilar prioritário: {DIMENSIONS[weakest_key]['label']} ({weakest.get('score', 50)}/100). "
         f"{weakest.get('dado_chave', '')}"
     )
 
-    # ── Opportunities from weakest dimensions ──
+    # ── Opportunities from weakest pillars ──
     oportunidades = []
     for dk, dd in sorted_dims[:3]:
         if dd.get("dado_chave"):
             oportunidades.append({
-                "titulo": f"Melhorar {DIMENSIONS[dk]['label']}",
+                "titulo": f"Fortalecer {DIMENSIONS[dk]['label']}",
                 "descricao": dd["dado_chave"],
                 "impacto_potencial": "alto" if dd.get("score", 50) < 40 else "medio",
                 "dimensao": dk,
             })
+
+    # ── Per-pillar plans (each dimension's actions = its plan) ──
+    pillar_plans = {}
+    for dk in DIMENSION_ORDER:
+        dd = dimensoes.get(dk, {})
+        pillar_plans[dk] = {
+            "meta": dd.get("meta_pilar", f"Maximizar {DIMENSIONS[dk]['label']}"),
+            "tasks": [t for t in all_tasks if t.get("categoria") == dk],
+            "upstream": DIMENSIONS[dk].get("upstream", []),
+        }
 
     score_output = {
         "score_geral": score_geral,
@@ -702,12 +818,13 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
         "resumo_executivo": resumo,
         "dimensoes": dimensoes,
         "oportunidades": oportunidades,
+        "pillar_plans": pillar_plans,
     }
 
     task_plan = {
         "tasks": all_tasks,
         "resumo_plano": resumo,
-        "meta_principal": f"Priorizar {DIMENSIONS[weakest_key]['label']}",
+        "meta_principal": f"Priorizar {DIMENSIONS[weakest_key]['label']} para destravar vendas",
     }
 
     print(f"  ✅ Score geral: {score_geral}/100 ({classificacao})", file=sys.stderr)

@@ -16,14 +16,6 @@ load_dotenv()
 # Utility Functions
 # ==============================================================================
 
-def mock_summarize(query, error_message="Chave da API Groq não detectada."):
-    return {
-        "aviso": f"Resumo simulado para '{query}'. Motivo: {error_message}",
-        "detalhes": [
-            "A funcionalidade de busca está operando.",
-            "Verifique os logs do servidor para mais detalhes sobre o erro."
-        ],
-    }
 
 def search_duckduckgo(query, max_results=8, region='br-pt'):
     try:
@@ -146,33 +138,20 @@ def call_groq(api_key, prompt, temperature=0.5, max_retries=2, model=None, force
 
 def summarize_with_groq(text, query, api_key):
     if not api_key:
-        return mock_summarize(query, "Chave da API não fornecida.")
+        raise ValueError("Chave da API Groq não configurada. Adicione GROQ_API_KEY no .env.")
 
-    try:
-        prompt = f"""
-        Você é um assistente de pesquisa avançado. Seu objetivo é criar um resumo estruturado e abrangente sobre "{query}" com base no texto fornecido abaixo.
-        
-        Regras de Resposta:
-        1. Retorne APENAS um JSON válido. Não use blocos de código markdown.
-        2. A estrutura do JSON deve ser hierárquica e semântica.
-        3. Use chaves em Português.
-        4. O JSON deve conter uma visão geral, principais pontos, detalhes técnicos (se aplicável), e controvérsias ou opiniões diversas (se houver).
-        5. Seja direto e informativo.
-        
-        Texto Base:
-        {text[:25000]} 
-        """
-        return call_groq(api_key, prompt)
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Erro na API Groq: {error_msg}", file=sys.stderr)
-        if "401" in error_msg:
-            return mock_summarize(query, "Chave da API inválida (401).")
-        if "400" in error_msg:
-            return mock_summarize(query, "Requisição inválida (400).")
-        if "429" in error_msg:
-            return mock_summarize(query, "Muitas requisições (429). Aguarde.")
-        return mock_summarize(query, f"Erro na API: {error_msg}")
+    prompt = f"""Você é um assistente de pesquisa avançado. Crie um resumo estruturado sobre "{query}" com base no texto abaixo.
+
+Regras:
+1. Retorne APENAS JSON válido.
+2. Use chaves em Português.
+3. Inclua: visão geral, principais pontos, detalhes técnicos (se aplicável).
+4. Seja direto e informativo. Cite dados concretos encontrados no texto.
+
+Texto Base:
+{text[:20000]}"""
+
+    return call_groq(api_key, prompt)
 
 def run_simple_search(args):
     """Original simple search mode."""

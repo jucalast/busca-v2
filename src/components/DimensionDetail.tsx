@@ -2,41 +2,53 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-    Globe, Target, Share2, DollarSign, TrendingUp, Settings,
+    Users, Award, Palette, ShoppingBag, Megaphone, HandCoins,
     ArrowLeft, Send, Loader2, ExternalLink, Check, Circle,
-    Sparkles, BookOpen, Lightbulb, Search
+    Sparkles, BookOpen, Lightbulb, Search, Globe
 } from 'lucide-react';
 
 const DIMENSIONS: Record<string, { icon: React.ComponentType<any>; label: string; color: string }> = {
-    presenca_digital: { icon: Globe, label: 'Presença Digital', color: '#3b82f6' },
-    competitividade: { icon: Target, label: 'Competitividade', color: '#f59e0b' },
-    diversificacao_canais: { icon: Share2, label: 'Canais de Venda', color: '#8b5cf6' },
-    precificacao: { icon: DollarSign, label: 'Precificação', color: '#ec4899' },
-    potencial_mercado: { icon: TrendingUp, label: 'Potencial de Mercado', color: '#10b981' },
-    maturidade_operacional: { icon: Settings, label: 'Operação', color: '#6366f1' },
+    publico_alvo: { icon: Users, label: 'Público-Alvo e Personas', color: '#8b5cf6' },
+    branding: { icon: Award, label: 'Branding e Posicionamento', color: '#f59e0b' },
+    identidade_visual: { icon: Palette, label: 'Identidade Visual', color: '#ec4899' },
+    canais_venda: { icon: ShoppingBag, label: 'Canais de Venda', color: '#3b82f6' },
+    trafego_organico: { icon: Search, label: 'Tráfego Orgânico', color: '#10b981' },
+    trafego_pago: { icon: Megaphone, label: 'Tráfego Pago', color: '#f97316' },
+    processo_vendas: { icon: HandCoins, label: 'Processo de Vendas', color: '#6366f1' },
 };
 
 const TASK_TO_DIMENSION: Record<string, string> = {
-    presenca_digital: 'presenca_digital',
-    competitividade: 'competitividade',
-    canais: 'diversificacao_canais',
-    precificacao: 'precificacao',
-    mercado: 'potencial_mercado',
-    operacional: 'maturidade_operacional',
-    credibilidade: 'presenca_digital',
-    conversao: 'competitividade',
+    publico_alvo: 'publico_alvo',
+    branding: 'branding',
+    identidade_visual: 'identidade_visual',
+    canais_venda: 'canais_venda',
+    canais: 'canais_venda',
+    trafego_organico: 'trafego_organico',
+    trafego_pago: 'trafego_pago',
+    processo_vendas: 'processo_vendas',
+    precificacao: 'processo_vendas',
+    credibilidade: 'branding',
+    conversao: 'processo_vendas',
+    mercado: 'publico_alvo',
+    operacional: 'processo_vendas',
 };
 
 const CATEGORY_TO_DIMENSION: Record<string, string> = {
-    credibilidade: 'presenca_digital',
-    marketing: 'presenca_digital',
-    marketing_organico: 'presenca_digital',
-    concorrentes: 'competitividade',
-    precificacao: 'precificacao',
-    canais: 'diversificacao_canais',
-    mercado: 'potencial_mercado',
-    tendencias: 'potencial_mercado',
-    operacional: 'maturidade_operacional',
+    publico_alvo: 'publico_alvo',
+    cliente_ideal: 'publico_alvo',
+    mercado: 'publico_alvo',
+    tendencias: 'publico_alvo',
+    concorrentes: 'branding',
+    credibilidade: 'branding',
+    marketing: 'trafego_organico',
+    marketing_organico: 'trafego_organico',
+    seo: 'trafego_organico',
+    conteudo: 'trafego_organico',
+    anuncios: 'trafego_pago',
+    ads: 'trafego_pago',
+    precificacao: 'processo_vendas',
+    canais: 'canais_venda',
+    operacional: 'processo_vendas',
 };
 
 interface ChatMessage {
@@ -160,6 +172,11 @@ export default function DimensionDetail({
                         </span>
                         {dim.justificativa && (
                             <p className="text-zinc-400 text-sm leading-relaxed">{dim.justificativa}</p>
+                        )}
+                        {dim.meta_pilar && (
+                            <p className="text-zinc-500 text-xs mt-2 italic">
+                                Meta: {dim.meta_pilar}
+                            </p>
                         )}
                     </div>
                 </div>
