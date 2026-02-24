@@ -1,20 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Bot, Search, BarChart3, ListTodo, Loader2 } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
 import ParticleLoader from '@/components/ParticleLoader';
-import GrowthHub from '@/components/GrowthHub';
-import DimensionDetail from '@/components/DimensionDetail';
-import TaskAssistant from '@/components/TaskAssistant';
+import PillarWorkspace from '@/components/PillarWorkspace';
 import GrowthChat from '@/components/GrowthChat';
 import SidebarLayout from '@/components/SidebarLayout';
+import BusinessMindMap from '@/components/BusinessMindMap';
 import AuthForm from '@/components/AuthForm';
 import { useAuth } from '@/contexts/AuthContext';
 
 type GrowthStage = 'onboarding' | 'analyzing' | 'results';
 
 export default function Home() {
-  const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated, logout, aiModel } = useAuth();
 
   // User & Business management
   const [currentBusinessId, setCurrentBusinessId] = useState<string | null>(null);
@@ -25,15 +23,12 @@ export default function Home() {
   const [growthData, setGrowthData] = useState<any>(null);
   const [growthLoading, setGrowthLoading] = useState(false);
   const [growthProgress, setGrowthProgress] = useState('');
+  const [agentThoughts, setAgentThoughts] = useState<string[]>([]);
   const [error, setError] = useState('');
 
-  // Task Assistant state
-  const [assistTask, setAssistTask] = useState<any>(null);
-
-  // Dimension detail state
-  const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
-  const [dimensionChats, setDimensionChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[]; searchQuery?: string }>>>({});
-  const [dimensionLoading, setDimensionLoading] = useState(false);
+  // Mind map state (fed from PillarWorkspace)
+  const [mindMapPillarStates, setMindMapPillarStates] = useState<Record<string, any>>({});
+  const [mindMapCompletedTasks, setMindMapCompletedTasks] = useState<Record<string, Set<string>>>({});
 
   // Pillar agent state
   const [pillarDataMap, setPillarDataMap] = useState<Record<string, any>>({});
@@ -52,7 +47,7 @@ export default function Home() {
       const profileRes = await fetch('/api/growth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'profile', onboardingData: chatProfile }),
+        body: JSON.stringify({ action: 'profile', aiModel, onboardingData: chatProfile }),
       });
 
       const profileResult = await profileRes.json();
@@ -106,36 +101,66 @@ export default function Home() {
     }
   };
 
-  // ─── Growth mode: Run full analysis ───
-  const runAnalysis = async (profileData: any) => {
+  // ─── Growth mode: Run full analysis (SSE streaming) ───
+  const runAnalysis = async (profileData: any, analysisId?: string) => {
     try {
-      setGrowthProgress('Analisando mercado, calculando score e gerando tarefas...');
+      setGrowthProgress('Iniciando análise...');
+      setAgentThoughts([]);
 
       const res = await fetch('/api/growth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'analyze',
+          aiModel,
           profile: profileData.profile || profileData,
           region: 'br-pt',
           business_id: currentBusinessId,
           user_id: user?.id || 'default_user',
+          analysis_id: analysisId, // Pass existing analysis_id for reanalysis cleanup
         }),
       });
 
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || result.erro || 'Falha na análise');
+      if (!res.ok || !res.body) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha na análise');
       }
 
-      // Store business_id from result (newly created or existing)
-      if (result.business_id) {
-        setCurrentBusinessId(result.business_id);
-      }
+      // Consume SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      setGrowthData(result);
-      setGrowthStage('results');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'thought') {
+              setAgentThoughts(prev => [event.text, ...prev].slice(0, 20));
+            } else if (event.type === 'result') {
+              const result = event.data;
+              if (!result.success) throw new Error(result.error || 'Falha na análise');
+              if (result.business_id) setCurrentBusinessId(result.business_id);
+              setGrowthData(result);
+              setGrowthStage('results');
+            } else if (event.type === 'error') {
+              throw new Error(event.message || 'Erro na análise');
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          }
+        }
+      }
 
     } catch (err: any) {
       setError(err.message || 'Erro na análise.');
@@ -165,7 +190,7 @@ export default function Home() {
 
       if (result.success && result.business) {
         const business = result.business;
-        
+
         // Load profile
         setProfile({ profile: business.profile_data });
 
@@ -212,8 +237,6 @@ export default function Home() {
     setCurrentBusinessId(null);
     setProfile(null);
     setGrowthData(null);
-    setSelectedDimension(null);
-    setDimensionChats({});
     setGrowthStage('onboarding');
     setError('');
   };
@@ -221,20 +244,28 @@ export default function Home() {
   // ─── Redo Analysis: Re-run with same profile data ───
   const handleRedoAnalysis = async () => {
     if (!profile) {
-      // No profile data — fall back to creating new business
       handleCreateNewBusiness();
       return;
+    }
+
+    // Clear all task-related state before reanalyzing
+    const currentAnalysisId = growthData?.analysis_id;
+    setMindMapPillarStates({});
+    setMindMapCompletedTasks({});
+    setGrowthData(null); // This will clear PillarWorkspace internal state on next render
+    setAgentThoughts([]);
+    // Clear persisted task state for this analysis
+    if (currentAnalysisId) {
+      localStorage.removeItem(`pillar_workspace_${currentAnalysisId}`);
     }
 
     setGrowthLoading(true);
     setGrowthStage('analyzing');
     setGrowthProgress('Refazendo análise com os mesmos dados...');
     setError('');
-    setSelectedDimension(null);
-    setDimensionChats({});
 
     try {
-      await runAnalysis(profile);
+      await runAnalysis(profile, growthData?.analysis_id);
     } catch (err: any) {
       setError(err.message || 'Erro ao refazer análise.');
       setGrowthLoading(false);
@@ -260,7 +291,6 @@ export default function Home() {
         throw new Error(result.error || 'Falha ao excluir negócio');
       }
 
-      // If deleted business was current, reset to onboarding
       if (businessId === currentBusinessId) {
         handleCreateNewBusiness();
       }
@@ -269,29 +299,16 @@ export default function Home() {
     }
   };
 
-  // ─── Task AI Assist ───
-  const handleGenerateAssist = async (taskId: string) => {
-    const task = growthData?.taskPlan?.tasks?.find((t: any) => t.id === taskId);
-    if (!task) return { success: false, erro: 'Tarefa não encontrada.' };
-
-    const res = await fetch('/api/growth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'assist',
-        task,
-        profile: profile?.profile || profile,
-      }),
-    });
-
-    return await res.json();
-  };
-
-  // ─── Profile summary for display ───
+// ─── Profile summary for display ───
   const getProfileSummary = () => {
     const p = profile?.profile?.perfil || {};
     return `${p.nome || '?'} — ${p.segmento || '?'} — ${p.modelo_negocio || '?'} — ${p.localizacao || '?'}`;
   };
+
+  const handlePillarStateChange = useCallback((states: Record<string, any>, completed: Record<string, Set<string>>) => {
+    setMindMapPillarStates(states);
+    setMindMapCompletedTasks(completed);
+  }, []);
 
   // ─── Pillar Agent: run autonomous agent for a pillar ───
   const handleRunPillarAgent = async (pillarKey: string, userCommand: string) => {
@@ -349,85 +366,7 @@ export default function Home() {
     } catch { /* silent */ }
   };
 
-  // ─── Select dimension and fetch its pillar data ───
-  const handleSelectDimension = async (key: string) => {
-    setSelectedDimension(key);
-
-    // Fetch existing pillar data if not already loaded
-    if (!pillarDataMap[key] && growthData?.business_id) {
-      try {
-        const res = await fetch('/api/growth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get-pillar-data',
-            pillar_key: key,
-            business_id: growthData.business_id,
-          }),
-        });
-        const result = await res.json();
-        if (result.success && result.data) {
-          setPillarDataMap((prev: any) => ({ ...prev, [key]: result.data }));
-        }
-      } catch { /* silent */ }
-    }
-  };
-
-  // ─── Dimension chat handler ───
-  const handleDimensionMessage = async (message: string) => {
-    if (!selectedDimension) return;
-
-    const dimKey = selectedDimension;
-    const currentChat = dimensionChats[dimKey] || [];
-    const newChat = [...currentChat, { role: 'user' as const, content: message }];
-    setDimensionChats(prev => ({ ...prev, [dimKey]: newChat }));
-    setDimensionLoading(true);
-
-    try {
-      const res = await fetch('/api/growth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'dimension-chat',
-          dimension: dimKey,
-          userMessage: message,
-          messages: newChat,
-          context: {
-            profile: profile?.profile || profile,
-            score: growthData?.score || {},
-            marketData: growthData?.marketData || {},
-            taskPlan: growthData?.taskPlan || {},
-          },
-        }),
-      });
-
-      const result = await res.json();
-
-      setDimensionChats(prev => ({
-        ...prev,
-        [dimKey]: [
-          ...(prev[dimKey] || []),
-          {
-            role: 'assistant' as const,
-            content: result.reply || 'Desculpe, não consegui gerar uma resposta.',
-            sources: result.sources || [],
-            searchQuery: result.searchQuery || '',
-          },
-        ],
-      }));
-    } catch (err: any) {
-      setDimensionChats(prev => ({
-        ...prev,
-        [dimKey]: [
-          ...(prev[dimKey] || []),
-          { role: 'assistant' as const, content: 'Erro ao processar a mensagem. Tente novamente.' },
-        ],
-      }));
-    } finally {
-      setDimensionLoading(false);
-    }
-  };
-
+  
   // Show loading while checking auth
   if (authLoading) {
     return (
@@ -445,7 +384,6 @@ export default function Home() {
     return <AuthForm />;
   }
 
-  // ━━━━━ GROWTH MODE WITH SIDEBAR LAYOUT ━━━━━
   const userProf = {
     name: profile?.profile?.perfil?.nome || 'Seu Negócio',
     segment: profile?.profile?.perfil?.segmento || '',
@@ -459,8 +397,18 @@ export default function Home() {
       onCreateNew={handleCreateNewBusiness}
       onDeleteBusiness={handleDeleteBusiness}
       onLogout={logout}
+      rightSidebar={growthStage === 'results' && growthData ? (
+        <BusinessMindMap
+          score={growthData.score}
+          specialists={growthData.specialists || {}}
+          marketData={growthData.marketData || null}
+          pillarStates={mindMapPillarStates}
+          completedTasks={mindMapCompletedTasks}
+          userProfile={userProf}
+        />
+      ) : undefined}
     >
-      {/* Chat Onboarding Stage - Create New Business */}
+      {/* Chat Onboarding Stage */}
       {growthStage === 'onboarding' && !growthLoading && (
         <div className="p-6 md:p-12 h-full flex items-center justify-center">
           <div className="w-full max-w-4xl flex flex-col" style={{ height: 'calc(100vh - 200px)', minHeight: '600px' }}>
@@ -472,40 +420,27 @@ export default function Home() {
         </div>
       )}
 
-      {/* Analyzing Stage - Particle Animation */}
+      {/* Analyzing Stage */}
       {growthStage === 'analyzing' && growthLoading && (
-        <ParticleLoader progress={growthProgress} />
+        <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
       )}
 
-      {/* Results Stage - Hub or Dimension Detail */}
+      {/* Results Stage — Unified */}
       {growthStage === 'results' && growthData && (
-        <>
-          {selectedDimension ? (
-            <DimensionDetail
-              dimensionKey={selectedDimension}
-              data={growthData}
-              userProfile={userProf}
-              chatHistory={dimensionChats[selectedDimension] || []}
-              onBack={() => setSelectedDimension(null)}
-              onSendMessage={handleDimensionMessage}
-              isLoading={dimensionLoading}
-              pillarData={pillarDataMap[selectedDimension] || null}
-              pillarStatus={pillarStatus}
-              onRunAgent={handleRunPillarAgent}
-              isAgentRunning={agentRunning}
-            />
-          ) : (
-            <GrowthHub
-              data={growthData}
-              userProfile={userProf}
-              onSelectDimension={handleSelectDimension}
-              onRedo={handleRedoAnalysis}
-            />
-          )}
-        </>
+        <PillarWorkspace
+          score={growthData.score}
+          specialists={growthData.specialists || {}}
+          analysisId={growthData.analysis_id || null}
+          businessId={growthData.business_id || currentBusinessId}
+          profile={profile}
+          marketData={growthData.marketData || null}
+          userProfile={userProf}
+          onRedo={handleRedoAnalysis}
+          onStateChange={handlePillarStateChange}
+        />
       )}
 
-      {/* Error Message in Growth Mode */}
+      {/* Error */}
       {error && (
         <div className="m-6 p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-200 text-center">
           {error}
@@ -520,16 +455,6 @@ export default function Home() {
             ← Tentar novamente
           </button>
         </div>
-      )}
-
-      {/* Task Assistant Modal */}
-      {assistTask && (
-        <TaskAssistant
-          task={assistTask}
-          profileSummary={getProfileSummary()}
-          onClose={() => setAssistTask(null)}
-          onGenerate={handleGenerateAssist}
-        />
       )}
     </SidebarLayout>
   );

@@ -10,80 +10,16 @@ import json
 import os
 import sys
 import time
-from groq import Groq
+try:
+    from .llm_router import call_llm
+except ImportError:
+    from llm_router import call_llm
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def _parse_retry_wait(error_msg):
-    """Extract wait time in seconds from Groq rate limit error message."""
-    import re as _re
-    match = _re.search(r"try again in (\d+)m([\d.]+)s", error_msg)
-    if match:
-        return int(match.group(1)) * 60 + int(float(match.group(2)))
-    match = _re.search(r"try again in ([\d.]+)s", error_msg)
-    if match:
-        return int(float(match.group(1)))
-    return 0
-
-
-def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 2) -> dict:
-    """Generic Groq API call with multi-model fallback across separate TPD quotas."""
-    client = Groq(api_key=api_key)
-    models = [
-        "llama-3.1-8b-instant",
-        "llama3-8b-8192",
-        "llama3-70b-8192",
-        "llama-3.3-70b-versatile",
-    ]
-
-    for mi, model in enumerate(models):
-        for attempt in range(max_retries):
-            try:
-                completion = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=model,
-                    temperature=temperature,
-                    response_format={"type": "json_object"},
-                )
-                if mi > 0:
-                    print(f"  ⚡ Usando modelo fallback: {model}", file=sys.stderr)
-                return json.loads(completion.choices[0].message.content)
-            except Exception as e:
-                error_msg = str(e)
-                is_rate_limit = "429" in error_msg
-                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
-
-                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
-
-                if is_model_error and mi < len(models) - 1:
-                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
-                    break
-
-                if is_rate_limit and is_tpd:
-                    retry_secs = _parse_retry_wait(error_msg)
-                    if attempt < max_retries - 1 and retry_secs <= 30:
-                        print(f"  ⏳ Rate limit (TPD) em {model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                        time.sleep(retry_secs or 5)
-                        continue
-                    elif mi < len(models) - 1:
-                        print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
-                        break
-                    raise
-                elif is_rate_limit and attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 3
-                    print(f"  ⏳ Rate limit ({model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-                elif is_rate_limit and mi < len(models) - 1:
-                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
-                    break
-                raise
-    raise Exception("Todos os modelos esgotaram o rate limit diário.")
-
-
-def generate_business_profile(onboarding_data: dict, api_key: str) -> dict:
+def generate_business_profile(onboarding_data: dict, api_key: str, model_provider: str = "groq") -> dict:
     """
     Generate a structured business profile from onboarding answers.
     NOW: Extracts constraints and generates context-aware categories.
@@ -102,12 +38,24 @@ REGRAS CRÍTICAS:
    - "modelo_operacional": se trabalha "sem estoque", "sob encomenda", "dropshipping" → NÃO recomendar ERP de estoque
    - "capital_disponivel": se "zero", "baixo", "pouco" → NÃO recomendar ferramentas caras
    - "equipe_solo": se trabalha sozinho → NÃO recomendar estratégias complexas que exigem equipe
-3. Gere CATEGORIAS DE ANÁLISE usando OBRIGATORIAMENTE os IDs abaixo (escolha 4-6 mais relevantes):
-   IDs VÁLIDOS: publico_alvo, concorrentes, canais, marketing_organico, trafego_pago, processo_vendas, credibilidade, identidade_visual
-   - Adapte o "nome" e "foco" para o contexto do negócio
-   - Se não tem estoque → NÃO crie categoria de estoque
-   - Se já usa Instagram → foco em otimização, não criação
-4. Gere QUERIES de busca específicas usando os MESMOS IDs como chave.
+3. Gere EXATAMENTE 7 CATEGORIAS DE ANÁLISE — uma para CADA pilar abaixo (TODOS obrigatórios):
+   IDs FIXOS (use EXATAMENTE estes 7, NÃO invente outros, NÃO omita nenhum):
+     "publico_alvo" — quem compra, personas, segmentos, comportamento de compra
+     "branding" — posicionamento, diferencial, concorrência, proposta de valor
+     "identidade_visual" — presença visual, design, credibilidade, prova social
+     "canais_venda" — canais de venda, distribuição, logística, prospecção
+     "trafego_organico" — SEO, conteúdo, redes sociais orgânico, presença online
+     "trafego_pago" — anúncios, Google Ads, Meta Ads, campanhas pagas
+     "processo_vendas" — funil, conversão, precificação, objeções, pós-venda
+   REGRAS:
+   - SEMPRE gere TODAS as 7 categorias — o sistema precisa de dados de mercado para cada pilar
+   - O campo "id" DEVE ser um dos 7 IDs acima — NUNCA crie IDs novos como "credibilidade_e_confianca"
+   - Adapte "nome" e "foco" para o contexto específico do negócio
+   - Se não tem estoque → coloque logística no foco de "canais_venda"
+   - Se já usa Instagram → foco em otimização dentro de "trafego_organico"
+   - Se credibilidade é problema → coloque no foco de "branding" e/ou "identidade_visual"
+   - Se capital é zero → em "trafego_pago" foque em estratégias orgânicas e gratuitas que compensem
+4. Gere QUERIES de busca usando os MESMOS IDs como chave (EXATAMENTE os mesmos IDs das categorias).
 5. Seja preciso e direto — não invente dados, apenas interprete os fornecidos.
 
 ESTRUTURA DO JSON:
@@ -181,27 +129,71 @@ ESTRUTURA DO JSON:
     ]
 }}
 
-EXEMPLOS DE CATEGORIAS CONTEXTUAIS:
-- Se "sem estoque" + "credibilidade": 
-  → "Credibilidade e Confiança" (foco: depoimentos, garantias, prova social)
-  → "Logística Sob Encomenda" (foco: prazos, fornecedores confiáveis)
-  → NÃO incluir "Gestão de Estoque"
+EXEMPLOS DE COMO ADAPTAR O FOCO (SEMPRE gere TODOS os 7 IDs):
+- Autopeças B2B sem estoque:
+  → id="publico_alvo", nome="Personas B2B Automotivo", foco="perfil de compradores industriais e revendedores"
+  → id="branding", nome="Credibilidade e Confiança", foco="depoimentos, garantias, prova social B2B"
+  → id="identidade_visual", nome="Presença Visual Profissional", foco="catálogo digital, fotos profissionais"
+  → id="canais_venda", nome="Logística e Distribuição", foco="prazos, fornecedores, modelo sob encomenda"
+  → id="trafego_organico", nome="SEO e Conteúdo Técnico", foco="conteúdo técnico, SEO para autopeças"
+  → id="trafego_pago", nome="Anúncios B2B", foco="Google Ads para termos técnicos, LinkedIn Ads"
+  → id="processo_vendas", nome="Funil B2B", foco="prospecção, negociação, contratos recorrentes"
 
-- Se "solo" + "capital zero":
-  → "Marketing Orgânico de Baixo Custo" (foco: conteúdo, SEO, parcerias)
-  → NÃO incluir "Anúncios Pagos" ou "Contratar Equipe"
+- Solo + capital zero:
+  → id="trafego_pago", nome="Alternativas a Tráfego Pago", foco="estratégias gratuitas, parcerias, permutas"
+  (NUNCA omita um pilar — adapte o foco às restrições)
 
-- Se já usa Instagram/WhatsApp:
-  → "Otimização de Conversão no Instagram" (foco: melhorar o que já faz)
-  → NÃO incluir "Criar Presença nas Redes Sociais" (ele já tem)"""
+NUNCA invente IDs como "credibilidade_e_confianca", "logistica_sob_encomenda", "marketing_organico_de_baixo_custo".
+SEMPRE use EXATAMENTE: publico_alvo, branding, identidade_visual, canais_venda, trafego_organico, trafego_pago, processo_vendas."""
 
-    return call_groq(api_key, prompt, temperature=0.2)
+    return call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
+
+
+_VALID_PILLAR_IDS = {
+    "publico_alvo", "branding", "identidade_visual", "canais_venda",
+    "trafego_organico", "trafego_pago", "processo_vendas",
+}
+
+# Maps common LLM-invented IDs back to valid pillar keys
+_ID_REMAP = {
+    "credibilidade": "branding",
+    "credibilidade_e_confianca": "branding",
+    "prova_social": "branding",
+    "confianca": "branding",
+    "concorrentes": "branding",
+    "mapa_concorrentes": "branding",
+    "logistica": "canais_venda",
+    "logistica_sob_encomenda": "canais_venda",
+    "distribuicao": "canais_venda",
+    "canais": "canais_venda",
+    "como_vender": "canais_venda",
+    "prospectar": "canais_venda",
+    "marketing_organico": "trafego_organico",
+    "marketing_organico_de_baixo_custo": "trafego_organico",
+    "presenca_online": "trafego_organico",
+    "otimizacao_conversao_instagram": "trafego_organico",
+    "otimizacao_de_conversao_no_instagram": "trafego_organico",
+    "seo": "trafego_organico",
+    "conteudo": "trafego_organico",
+    "anuncios": "trafego_pago",
+    "ads": "trafego_pago",
+    "midia_paga": "trafego_pago",
+    "precificacao": "processo_vendas",
+    "funil": "processo_vendas",
+    "conversao": "processo_vendas",
+    "mercado": "publico_alvo",
+    "potencial_mercado": "publico_alvo",
+    "personas": "publico_alvo",
+    "cliente_ideal": "publico_alvo",
+    "design": "identidade_visual",
+    "visual": "identidade_visual",
+}
 
 
 def identify_dynamic_categories(profile: dict) -> list:
     """
     Extract the ordered list of relevant categories from the LLM-generated profile.
-    No hardcoded fallback — categories always come from real LLM analysis.
+    Safety net: remaps invalid IDs to the closest valid pillar key.
     """
     categories = profile.get("categorias_relevantes", [])
 
@@ -211,28 +203,134 @@ def identify_dynamic_categories(profile: dict) -> list:
             "Verifique o prompt do profiler ou os dados de onboarding."
         )
 
+    # Remap invalid IDs to valid pillar keys
+    seen_ids = set()
+    fixed = []
+    for cat in categories:
+        cat_id = cat.get("id", "").lower().strip()
+        if cat_id not in _VALID_PILLAR_IDS:
+            new_id = _ID_REMAP.get(cat_id)
+            if not new_id:
+                # Try substring match against remap keys
+                for remap_key, remap_val in _ID_REMAP.items():
+                    if remap_key in cat_id or cat_id in remap_key:
+                        new_id = remap_val
+                        break
+            if new_id:
+                print(f"    🔄 Remapped category ID: '{cat_id}' → '{new_id}'", file=sys.stderr)
+                cat["id"] = new_id
+                cat_id = new_id
+            else:
+                print(f"    ⚠️ Unknown category ID '{cat_id}', keeping as-is", file=sys.stderr)
+
+        # Prevent duplicate pillar IDs (keep highest priority)
+        if cat_id in seen_ids:
+            print(f"    🗑️ Duplicate pillar ID '{cat_id}', skipping", file=sys.stderr)
+            continue
+        seen_ids.add(cat_id)
+        fixed.append(cat)
+
+    # Auto-fill missing pillars with defaults so all 7 always get market data
+    _DEFAULT_PILLAR_META = {
+        "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6",
+                         "foco": "quem compra, personas, segmentos, comportamento de compra"},
+        "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6",
+                     "foco": "posicionamento, diferencial competitivo, proposta de valor"},
+        "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899",
+                              "foco": "presença visual, design, credibilidade, prova social"},
+        "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981",
+                         "foco": "canais de venda, distribuição, logística, prospecção"},
+        "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B",
+                             "foco": "SEO, conteúdo, redes sociais orgânico, presença online"},
+        "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444",
+                         "foco": "anúncios, Google Ads, Meta Ads, campanhas pagas"},
+        "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1",
+                            "foco": "funil, conversão, precificação, objeções, pós-venda"},
+    }
+
+    present_ids = {c.get("id") for c in fixed}
+    for pid, meta in _DEFAULT_PILLAR_META.items():
+        if pid not in present_ids:
+            print(f"    ➕ Auto-adicionando pilar ausente: '{pid}'", file=sys.stderr)
+            fixed.append({
+                "id": pid,
+                "nome": meta["nome"],
+                "icone": meta["icone"],
+                "cor": meta["cor"],
+                "foco": meta["foco"],
+                "prioridade": 3,
+                "justificativa": "Pilar obrigatório — adicionado automaticamente",
+                "nao_falar": "",
+            })
+
     # Sort by priority descending
-    categories.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
-    cat_ids = [c.get("id", "?") for c in categories]
-    print(f"  📋 Categorias do LLM ({len(categories)}): {cat_ids}", file=sys.stderr)
-    return categories
+    fixed.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
+    cat_ids = [c.get("id", "?") for c in fixed]
+    print(f"  📋 Categorias finais ({len(fixed)}): {cat_ids}", file=sys.stderr)
+
+    # Also fix queries_sugeridas keys to match remapped IDs
+    queries = profile.get("queries_sugeridas", {})
+    if queries:
+        new_queries = {}
+        for qk, qv in queries.items():
+            remapped = _ID_REMAP.get(qk.lower().strip(), qk.lower().strip())
+            new_queries[remapped] = qv
+        profile["queries_sugeridas"] = new_queries
+    else:
+        profile.setdefault("queries_sugeridas", {})
+
+    # Generate targeted queries for pillars missing from queries_sugeridas
+    perfil_data = profile.get("perfil", profile)
+    segmento = perfil_data.get("segmento", perfil_data.get("tipo_produto", ""))
+    localizacao = perfil_data.get("localizacao", perfil_data.get("cidade_estado", ""))
+    dificuldade = perfil_data.get("dificuldades", "")[:60]
+
+    _QUERY_TEMPLATES = {
+        "publico_alvo": f"público-alvo ideal {segmento} perfil cliente B2B B2C comportamento compra",
+        "branding": f"posicionamento de marca {segmento} proposta de valor diferencial competitivo",
+        "identidade_visual": f"identidade visual {segmento} paleta cores tipografia guia estilo marca",
+        "canais_venda": f"melhores canais de venda {segmento} e-commerce marketplace whatsapp business",
+        "trafego_organico": f"estratégia tráfego orgânico {segmento} SEO local Google Meu Negócio conteúdo",
+        "trafego_pago": f"anúncios {segmento} Meta Ads Google Ads campanha segmentação ROI",
+        "processo_vendas": f"processo vendas {segmento} funil conversão script objeções precificação",
+    }
+
+    queries = profile["queries_sugeridas"]
+    for pid in _VALID_PILLAR_IDS:
+        if pid not in queries:
+            template = _QUERY_TEMPLATES.get(pid, f"{pid} {segmento}")
+            queries[pid] = template
+            print(f"    🔍 Query gerada para '{pid}': {template[:60]}...", file=sys.stderr)
+
+    # Update profile's categorias_relevantes to match the fixed list
+    profile["categorias_relevantes"] = fixed
+
+    return fixed
 
 
-def run_profiler(onboarding_data: dict) -> dict:
+def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
     """
     Main entry point. Takes onboarding data, returns full profile + categories.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-
-    if not api_key:
-        return {
-            "success": False,
-            "erro": "Chave da API Groq não configurada. Adicione GROQ_API_KEY no arquivo .env."
-        }
+    # Check for appropriate API key based on provider
+    if model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return {
+                "success": False,
+                "erro": "Chave da API Gemini não configurada. Adicione GEMINI_API_KEY no arquivo .env."
+            }
+    else:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return {
+                "success": False,
+                "erro": "Chave da API Groq não configurada. Adicione GROQ_API_KEY no arquivo .env."
+            }
 
     try:
         print("🧠 Gerando perfil de negócio...", file=sys.stderr)
-        profile = generate_business_profile(onboarding_data, api_key)
+        profile = generate_business_profile(onboarding_data, api_key, model_provider)
 
         # Extract restrictions for downstream components
         restricoes = profile.get("restricoes_criticas", {})

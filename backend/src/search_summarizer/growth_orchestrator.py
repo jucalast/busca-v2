@@ -23,6 +23,16 @@ from business_scorer import run_scorer
 from business_discovery import discover_business
 from task_assistant import run_assistant
 from chat_consultant import run_chat
+from macro_planner import generate_macro_plan
+from micro_planner import expand_task, run_task_chat
+from specialist_engine import (
+    generate_business_brief, brief_to_text,
+    generate_pillar_plan, record_action_result,
+    get_pillar_full_state, get_all_pillars_state,
+    generate_specialist_tasks, agent_execute_task,
+    check_pillar_dependencies, expand_task_subtasks,
+    ai_try_user_task, SPECIALISTS,
+)
 import database as db
 
 # Reuse search functions from cli.py
@@ -31,7 +41,7 @@ from cli import search_duckduckgo, scrape_page, call_groq
 
 import concurrent.futures
 
-def process_category(cat, queries, perfil_data, description, restricoes, region, api_key):
+def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
     """Helper function to process a single category in a thread."""
     cat_id = cat.get("id", "")
     query = queries.get(cat_id, f"{cat.get('nome', '')} {perfil_data.get('segmento', '')}")
@@ -137,7 +147,11 @@ DADOS DA INTERNET:
 {aggregated_text[:12000]}"""
 
         # USE FASTER MODEL FOR SUMMARY
-        resumo = call_groq(api_key, prompt, temperature=0.3, model="llama-3.1-8b-instant")
+        try:
+            from .llm_router import call_llm
+        except ImportError:
+            from llm_router import call_llm
+        resumo = call_llm(provider=model_provider, prompt=prompt, temperature=0.3)
     except Exception as e:
         print(f"  ❌ Erro ao resumir {cat.get('nome', '')}: {e}", file=sys.stderr)
         resumo = {"erro": f"Não foi possível gerar resumo: {str(e)[:200]}"}
@@ -270,14 +284,20 @@ Responda de forma direta e util:"""
     }
 
 
-def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
+def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = "groq") -> dict:
     """
     Run targeted market searches in PARALLEL to speed up analysis.
     NOW: Passes restrictions to category processing for context-aware results.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"categories": [], "allSources": [], "error": "No API key"}
+    # Check for appropriate API key based on provider
+    if model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return {"categories": [], "allSources": [], "error": "Gemini API key not configured"}
+    else:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return {"categories": [], "allSources": [], "error": "Groq API key not configured"}
 
     # Use queries and categories from LLM-generated profile — no hardcoded fallback
     queries = profile.get("queries_sugeridas", profile.get("queries", {}))
@@ -320,7 +340,7 @@ def run_market_search(profile: dict, region: str = 'br-pt') -> dict:
     # Parallel execution with max 2 workers to respect rate limits
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_to_cat = {
-            executor.submit(process_category, cat, queries, perfil_data, description, restricoes, region, api_key): cat 
+            executor.submit(process_category, cat, queries, perfil_data, description, restricoes, region, api_key, model_provider): cat 
             for cat in categories
         }
         
@@ -346,6 +366,9 @@ def main():
     parser = argparse.ArgumentParser(description="Growth Orchestrator")
     parser.add_argument("--action", required=True, choices=[
         "profile", "analyze", "assist", "chat", "dimension-chat",
+        "pillar-plan", "approve-plan", "track-result", "pillar-state",
+        "specialist-tasks", "specialist-execute", "all-pillars-state",
+        "expand-subtasks", "ai-try-user-task",
         "list-businesses", "get-business", "create-business", "save-analysis",
         "register", "login", "logout", "validate-session", "delete-business",
         "run-pillar", "pillar-status", "get-pillar-data"
@@ -362,11 +385,14 @@ def main():
     input_file = getattr(args, 'input_file')
     with open(input_file, 'r', encoding='utf-8') as f:
         input_data = json.load(f)
+    
+    # Extract model provider from input data (fallback to environment variable)
+    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "groq")))
 
     # ━━━ Profile Action ━━━
     if args.action == "profile":
         onboarding = input_data.get("onboarding", {})
-        result = run_profiler(onboarding)
+        result = run_profiler(onboarding, model_provider=model_provider)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ Analyze Action (full pipeline) ━━━
@@ -375,6 +401,20 @@ def main():
         region = input_data.get("region", "br-pt")
         business_id = input_data.get("business_id")  # Optional: for persistence
         user_id = input_data.get("user_id", "default_user")
+        analysis_id = input_data.get("analysis_id")  # Optional: for persistence
+
+        # Step 0: Clear existing task data for this analysis (reanalysis support)
+        if analysis_id:
+            print("🗑️ Limpando dados de tarefas anteriores (reanálise)...", file=sys.stderr)
+            try:
+                # Delete specialist plans, executions, and results for this analysis
+                db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
+                db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
+                db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
+                db.conn.commit()
+                print("  ✅ Dados de tarefas anteriores removidos", file=sys.stderr)
+            except Exception as e:
+                print(f"  ⚠️ Erro ao limpar dados anteriores: {e}", file=sys.stderr)
 
         # Step 1: Business Discovery (search for the ACTUAL business online)
         print("🔎 Executando discovery do negócio...", file=sys.stderr)
@@ -383,12 +423,20 @@ def main():
         print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
 
         # Step 2: Market search
+        # Safety: remap + fill categories before market search (belt-and-suspenders)
+        from business_profiler import identify_dynamic_categories
+        try:
+            identify_dynamic_categories(profile)
+            print("  🔄 Safety remap aplicado às categorias", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ Safety remap falhou: {e}", file=sys.stderr)
+
         print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
         cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
         queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
         print(f"  📋 Categorias p/ busca: {[c.get('id','?') if isinstance(c,dict) else c for c in (cats_for_search or [])[:8]]}", file=sys.stderr)
         print(f"  🔍 Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
-        market_data = run_market_search(profile, region)
+        market_data = run_market_search(profile, region, model_provider)
         mkt_cats = market_data.get('categories', [])
         print(f"  ✅ Pesquisa completa: {len(mkt_cats)} categorias", file=sys.stderr)
         for mc in mkt_cats:
@@ -398,7 +446,7 @@ def main():
 
         # Step 3: Per-dimension scoring with discovery context
         print("📊 Calculando score por dimensão...", file=sys.stderr)
-        score_result = run_scorer(profile, market_data, discovery_data=discovery_data)
+        score_result = run_scorer(profile, market_data, discovery_data=discovery_data, model_provider=model_provider)
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
         task_plan = score_result.get("taskPlan", {})
 
@@ -445,6 +493,56 @@ def main():
             analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
+        # Step 5: Generate Compact Business Brief (CBB)
+        analysis_id = analysis.get("id") if 'analysis' in locals() else None
+        brief = None
+        diagnostics_summary = {}
+        if business_id and analysis_id:
+            print(f"\n🧠 [STEP 5] SPECIALIST ENGINE", file=sys.stderr)
+            try:
+                brief = generate_business_brief(
+                    profile,
+                    discovery_data=discovery_data if discovery_found else None,
+                    market_data=market_data
+                )
+                db.save_business_brief(business_id, analysis_id, brief)
+                print(f"  ✅ Business Brief gerado (v1)", file=sys.stderr)
+            except Exception as e:
+                print(f"  ⚠️ Brief generation failed: {e}", file=sys.stderr)
+
+            # Step 6: Save pillar diagnostics from scorer results
+            dims = score_data.get("dimensoes", {})
+            for dk, dv in dims.items():
+                try:
+                    diag_data = {
+                        "score": dv.get("score", 50),
+                        "status": dv.get("status", "atencao"),
+                        "estado_atual": {
+                            "justificativa": dv.get("justificativa", ""),
+                            "dado_chave": dv.get("dado_chave", ""),
+                            "meta_pilar": dv.get("meta_pilar", ""),
+                        },
+                        "gaps": [a.get("acao", str(a)) if isinstance(a, dict) else str(a)
+                                 for a in dv.get("acoes_imediatas", [])],
+                        "oportunidades": [dv.get("dado_chave", "")] if dv.get("dado_chave") else [],
+                        "dados_coletados": {
+                            "score_llm": dv.get("_score_llm", ""),
+                            "score_objetivo": dv.get("_score_objetivo", ""),
+                        },
+                        "fontes": dv.get("fontes_utilizadas", []),
+                        "chain_summary": f"Score {dv.get('score', 50)}/100. {dv.get('justificativa', '')[:200]}",
+                    }
+                    db.save_pillar_diagnostic(analysis_id, dk, diag_data)
+                    diagnostics_summary[dk] = {
+                        "score": dv.get("score", 50),
+                        "status": dv.get("status", "atencao"),
+                        "meta_pilar": dv.get("meta_pilar", ""),
+                        "dado_chave": dv.get("dado_chave", ""),
+                    }
+                except Exception as e:
+                    print(f"  ⚠️ Diagnostic save failed for {dk}: {e}", file=sys.stderr)
+            print(f"  ✅ {len(diagnostics_summary)} diagnósticos de pilar salvos", file=sys.stderr)
+
         # Combine results
         output = {
             "success": True,
@@ -452,8 +550,10 @@ def main():
             "marketData": market_data,
             "score": score_data,
             "taskPlan": task_plan,
+            "specialists": diagnostics_summary,
+            "brief": brief,
             "business_id": business_id,
-            "analysis_id": analysis.get("id") if 'analysis' in locals() else None
+            "analysis_id": analysis_id,
         }
 
         print("--- GROWTH_RESULT ---")
@@ -481,6 +581,215 @@ def main():
 
         print("--- DIMENSION_CHAT_RESULT ---")
         print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Pillar Plan Action (specialist creates professional plan) ━━━
+    elif args.action == "pillar-plan":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        business_id = input_data.get("business_id")
+
+        if not analysis_id or not pillar_key:
+            print("--- PILLAR_PLAN_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            # Load business brief
+            brief = None
+            brief_row = db.get_business_brief(business_id, analysis_id) if business_id else None
+            if brief_row:
+                brief = brief_row["brief_data"]
+            else:
+                # Generate brief on the fly from profile
+                profile = input_data.get("profile", {})
+                brief = generate_business_brief(profile)
+
+            # Load all diagnostics for cross-pillar context
+            all_diags_list = db.get_all_diagnostics(analysis_id)
+            all_diags = {d["pillar_key"]: d for d in all_diags_list}
+
+            result = generate_pillar_plan(
+                analysis_id, pillar_key, brief,
+                diagnostic=all_diags.get(pillar_key),
+                all_diagnostics=all_diags,
+            )
+
+            print("--- PILLAR_PLAN_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Approve Plan Action (user validates specialist plan) ━━━
+    elif args.action == "approve-plan":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        user_notes = input_data.get("user_notes", "")
+
+        if not analysis_id or not pillar_key:
+            print("--- APPROVE_PLAN_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            ok = db.approve_pillar_plan(analysis_id, pillar_key, user_notes)
+            print("--- APPROVE_PLAN_RESULT ---")
+            print(json.dumps({"success": ok, "pillar_key": pillar_key, "status": "approved" if ok else "not_found"}, ensure_ascii=False))
+
+    # ━━━ Track Result Action (record completed action + outcome) ━━━
+    elif args.action == "track-result":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_id = input_data.get("task_id")
+        action_title = input_data.get("action_title", "")
+        outcome = input_data.get("outcome", "")
+        business_impact = input_data.get("business_impact", "")
+
+        if not analysis_id or not pillar_key or not task_id:
+            print("--- TRACK_RESULT_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id, pillar_key, task_id required"}, ensure_ascii=False))
+        else:
+            result = record_action_result(
+                analysis_id, pillar_key, task_id,
+                action_title, outcome, business_impact
+            )
+            print("--- TRACK_RESULT_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Pillar State Action (get full pillar state: diag + plan + results + KPIs) ━━━
+    elif args.action == "pillar-state":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+
+        if not analysis_id or not pillar_key:
+            print("--- PILLAR_STATE_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            state = get_pillar_full_state(analysis_id, pillar_key)
+            print("--- PILLAR_STATE_RESULT ---")
+            print(json.dumps({"success": True, **state}, ensure_ascii=False, indent=2))
+
+    # ━━━ Specialist Tasks Action (generate tasks with AI/user classification) ━━━
+    elif args.action == "specialist-tasks":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        business_id = input_data.get("business_id")
+
+        if not analysis_id or not pillar_key:
+            print("--- SPECIALIST_TASKS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            # Load business brief
+            brief = None
+            brief_row = db.get_business_brief(business_id, analysis_id) if business_id else None
+            if brief_row:
+                brief = brief_row["brief_data"]
+            else:
+                profile = input_data.get("profile", {})
+                brief = generate_business_brief(profile)
+
+            # Load all diagnostics for cross-pillar context
+            all_diags_list = db.get_all_diagnostics(analysis_id)
+            all_diags = {d["pillar_key"]: d for d in all_diags_list}
+
+            # Load saved market data for context reuse
+            market_data = db.get_analysis_market_data(analysis_id)
+
+            result = generate_specialist_tasks(
+                analysis_id, pillar_key, brief,
+                diagnostic=all_diags.get(pillar_key),
+                all_diagnostics=all_diags,
+                market_data=market_data,
+            )
+
+            print("--- SPECIALIST_TASKS_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ Specialist Execute Action (AI agent executes a task) ━━━
+    elif args.action == "specialist-execute":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_id = input_data.get("task_id")
+        task_data = input_data.get("task_data", {})
+        business_id = input_data.get("business_id")
+
+        if not analysis_id or not pillar_key or not task_id:
+            print("--- SPECIALIST_EXECUTE_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id, pillar_key, task_id required"}, ensure_ascii=False))
+        else:
+            # Load business brief
+            brief = None
+            brief_row = db.get_business_brief(business_id, analysis_id) if business_id else None
+            if brief_row:
+                brief = brief_row["brief_data"]
+            else:
+                profile = input_data.get("profile", {})
+                brief = generate_business_brief(profile)
+
+            all_diags_list = db.get_all_diagnostics(analysis_id)
+            all_diags = {d["pillar_key"]: d for d in all_diags_list}
+
+            # Load saved market data for context reuse
+            market_data = db.get_analysis_market_data(analysis_id)
+
+            # Previous results for subtask chaining
+            previous_results = input_data.get("previous_results", None)
+
+            result = agent_execute_task(
+                analysis_id, pillar_key, task_id, task_data, brief,
+                all_diagnostics=all_diags,
+                market_data=market_data,
+                previous_results=previous_results,
+            )
+
+            print("--- SPECIALIST_EXECUTE_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ All Pillars State Action (unified dashboard data) ━━━
+    elif args.action == "all-pillars-state":
+        analysis_id = input_data.get("analysis_id")
+
+        if not analysis_id:
+            print("--- ALL_PILLARS_STATE_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id required"}, ensure_ascii=False))
+        else:
+            pillars = get_all_pillars_state(analysis_id)
+            print("--- ALL_PILLARS_STATE_RESULT ---")
+            print(json.dumps({"success": True, "pillars": pillars}, ensure_ascii=False, indent=2))
+
+    # ━━━ Expand Subtasks Action (break task into micro-steps) ━━━
+    elif args.action == "expand-subtasks":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_data = input_data.get("task_data", {})
+
+        if not analysis_id or not pillar_key:
+            print("--- EXPAND_SUBTASKS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            brief = db.get_business_brief(analysis_id)
+            if not brief:
+                profile_data = input_data.get("profile", {})
+                brief = generate_business_brief(profile_data)
+
+            market_data = db.get_analysis_market_data(analysis_id)
+            result = expand_task_subtasks(analysis_id, pillar_key, task_data, brief, market_data=market_data)
+            print("--- EXPAND_SUBTASKS_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    # ━━━ AI Try User Task Action (AI attempts a user-classified task) ━━━
+    elif args.action == "ai-try-user-task":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_id = input_data.get("task_id")
+        task_data = input_data.get("task_data", {})
+
+        if not analysis_id or not pillar_key or not task_id:
+            print("--- AI_TRY_USER_TASK_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id, pillar_key, task_id required"}, ensure_ascii=False))
+        else:
+            brief = db.get_business_brief(analysis_id)
+            if not brief:
+                profile_data = input_data.get("profile", {})
+                brief = generate_business_brief(profile_data)
+
+            market_data = db.get_analysis_market_data(analysis_id)
+            result = ai_try_user_task(analysis_id, pillar_key, task_id, task_data, brief, market_data=market_data)
+            print("--- AI_TRY_USER_TASK_RESULT ---")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ List Businesses Action ━━━
     elif args.action == "list-businesses":

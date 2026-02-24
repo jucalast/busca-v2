@@ -14,7 +14,7 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,12 +54,12 @@ export default function AuthForm() {
     <div className="min-h-screen bg-[#09090b] flex items-start justify-center">
       <div className="w-full max-w-md px-6 py-16">
         {/* Logo and Header */}
-        <div className="text-center mb-14">
+        <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center mb-10">
-            <Image 
-              src="/logo.png" 
-              alt="Logo" 
-              width={180} 
+            <Image
+              src="/logo.png"
+              alt="Logo"
+              width={180}
               height={180}
               className="rounded-2xl"
               priority
@@ -70,8 +70,29 @@ export default function AuthForm() {
           </h1>
         </div>
 
-        {/* Form */}
-        <div className="p-5 rounded-2xl bg-[#111113] border border-white/[0.06]">
+        {/* Form Container */}
+        <div className="p-5 md:p-8 rounded-2xl bg-[#111113] border border-white/[0.06]">
+
+          {/* Google Login Option */}
+          <button
+            onClick={() => loginWithGoogle()}
+            disabled={loading}
+            type="button"
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-[#09090b] text-white border border-white/[0.06] rounded-xl hover:bg-white/[0.02] transition-colors mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+            Continuar com o Google
+          </button>
+
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white/[0.06]"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase font-medium tracking-widest">
+              <span className="bg-[#111113] px-3 text-zinc-600">Ou use seu E-mail</span>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name field (register only) */}
             {mode === 'register' && (
@@ -151,9 +172,9 @@ export default function AuthForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-white text-black font-semibold text-sm rounded-xl hover:bg-white/90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+              className="w-full py-3 bg-[#18181b] border border-white/[0.06] text-white font-semibold text-sm rounded-xl hover:bg-white/[0.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
             >
-              {loading ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Criar Conta'}
+              {loading ? 'Processando...' : mode === 'login' ? 'Entrar com E-mail' : 'Criar Conta com E-mail'}
             </button>
           </form>
 

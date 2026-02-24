@@ -63,14 +63,31 @@ function ScoreRing({ score, size = 200 }: { score: number; size?: number }) {
     );
 }
 
+function safeRender(value: any): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(safeRender).join('\n');
+    if (typeof value === 'object') {
+        return Object.entries(value)
+            .map(([k, v]) => {
+                const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+                return `${label}: ${safeRender(v)}`;
+            })
+            .join('\n');
+    }
+    return String(value);
+}
+
 interface GrowthHubProps {
     data: any;
     userProfile: { name: string; segment: string };
     onSelectDimension: (key: string) => void;
     onRedo: () => void;
+    onBackToExecution?: () => void;
 }
 
-export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo }: GrowthHubProps) {
+export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo, onBackToExecution }: GrowthHubProps) {
     const score = data.score || {};
     const dimensoes = score.dimensoes || {};
     const scoreGeral = score.score_geral || 0;
@@ -128,6 +145,19 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                     </div>
                 </div>
 
+                {/* Back to Specialists */}
+                {onBackToExecution && (
+                    <div className="mb-6">
+                        <button
+                            onClick={onBackToExecution}
+                            className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                        >
+                            <ArrowUpRight className="w-4 h-4 rotate-[-135deg]" />
+                            Voltar aos Especialistas
+                        </button>
+                    </div>
+                )}
+
                 {/* Section Heading */}
                 <div className="mb-6">
                     <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em]">
@@ -180,7 +210,7 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                                 </div>
 
                                 <p className="text-zinc-600 text-xs line-clamp-2 leading-relaxed">
-                                    {dim.justificativa || 'Clique para ver detalhes e conversar com a IA'}
+                                    {safeRender(dim.justificativa) || 'Clique para ver detalhes e conversar com a IA'}
                                 </p>
 
                                 <div className="flex items-center gap-3 mt-3">

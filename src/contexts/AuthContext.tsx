@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useSession, signIn, signOut } from 'next-auth/react';
 
 interface User {
   id: string;
@@ -8,46 +9,69 @@ interface User {
   name?: string;
 }
 
-interface Session {
+interface CustomSession {
   token: string;
   expires_at: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  session: Session | null;
+  session: CustomSession | null;
+  nextSession: any | null; // Google Session including accessToken
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   validateSession: () => Promise<boolean>;
+  aiModel: string;
+  setAiModel: (model: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // Custom Auth state
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<CustomSession | null>(null);
+  const [isLoadingCustom, setIsLoadingCustom] = useState(true);
 
-  // Load session from localStorage on mount
+  // NextAuth state
+  const { data: nextSessionData, status: nextAuthStatus } = useSession();
+  const isLoadingNextAuth = nextAuthStatus === 'loading';
+  const isNextAuthenticated = nextAuthStatus === 'authenticated';
+
+  // Global AI Model preference
+  const [aiModel, setAiModel] = useState<string>('groq');
+
+  // Load purely custom session from localStorage on mount
   useEffect(() => {
     const loadSession = async () => {
       const storedToken = localStorage.getItem('auth_token');
-      
+
       if (storedToken) {
         const valid = await validateStoredSession(storedToken);
         if (!valid) {
           localStorage.removeItem('auth_token');
         }
       }
-      
-      setIsLoading(false);
+
+      const storedModel = localStorage.getItem('global_ai_model');
+      if (storedModel) {
+        setAiModel(storedModel);
+      }
+
+      setIsLoadingCustom(false);
     };
 
     loadSession();
   }, []);
+
+  // Sync AI Model preference to local storage
+  useEffect(() => {
+    localStorage.setItem('global_ai_model', aiModel);
+  }, [aiModel]);
 
   const validateStoredSession = async (token: string): Promise<boolean> => {
     try {
@@ -82,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const validateSession = async (): Promise<boolean> => {
+    if (isNextAuthenticated) return true;
     if (!session?.token) return false;
     return validateStoredSession(session.token);
   };
@@ -113,6 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async () => {
+    await signIn('google', { callbackUrl: '/' });
+  };
+
   const register = async (email: string, password: string, name?: string) => {
     try {
       const res = await fetch('/api/growth', {
@@ -142,6 +171,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // Fazer signOut de ambos os provedores
+    if (isNextAuthenticated) {
+      await signOut({ callbackUrl: '/' });
+    }
+
     try {
       if (session?.token) {
         await fetch('/api/growth', {
@@ -162,17 +196,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Derive consolidated states
+  const nextAuthUser: User | null = isNextAuthenticated && nextSessionData?.user ? {
+    id: nextSessionData.user.email || 'default_google_user',
+    email: nextSessionData.user.email || '',
+    name: nextSessionData.user.name || undefined,
+  } : null;
+
+  const combinedUser = user || nextAuthUser;
+  const combinedIsAuthenticated = !!user || isNextAuthenticated;
+  const combinedIsLoading = isLoadingCustom || isLoadingNextAuth;
+
   return (
     <AuthContext.Provider
       value={{
-        user,
-        session,
-        isLoading,
-        isAuthenticated: !!user && !!session,
+        user: combinedUser,
+        session, // Mantém a session antiga para hooks antigos se existirem
+        nextSession: nextSessionData,
+        isLoading: combinedIsLoading,
+        isAuthenticated: combinedIsAuthenticated,
         login,
+        loginWithGoogle,
         register,
         logout,
         validateSession,
+        aiModel,
+        setAiModel,
       }}
     >
       {children}

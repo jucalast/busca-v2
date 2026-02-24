@@ -6,8 +6,12 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-from groq import Groq
 from dotenv import load_dotenv
+
+try:
+    from .llm_router import call_llm
+except ImportError:
+    from llm_router import call_llm
 
 # Load environment variables from .env file
 load_dotenv()
@@ -57,88 +61,17 @@ def _parse_retry_wait(error_msg):
         return int(float(match.group(1)))
     return 0
 
-def call_groq(api_key, prompt, temperature=0.5, max_retries=2, model=None, force_json=True):
-    """Generic Groq API call with multi-model fallback across separate TPD quotas.
-    Each model on Groq has independent daily token limits, so switching models
-    gives access to more tokens when one model's quota is exhausted.
-    """
-    client = Groq(api_key=api_key)
-    
-    # Full fallback chain with separate TPD quotas
-    all_models = [
-        "llama-3.3-70b-versatile",   # 100K TPD (best quality)
-        "llama-3.1-8b-instant",      # 500K TPD (fast)
-        "llama3-8b-8192",            # separate quota (Llama 3 original)
-        "llama3-70b-8192",           # separate quota (Llama 3 original 70b)
-    ]
-    
-    # If specific model requested, put it first but keep fallbacks
-    if model:
-        models = [model] + [m for m in all_models if m != model]
-    else:
-        models = all_models
-
-    for mi, current_model in enumerate(models):
-        for attempt in range(max_retries):
-            try:
-                completion_params = {
-                    "messages": [{"role": "user", "content": prompt}],
-                    "model": current_model,
-                    "temperature": temperature,
-                }
-                
-                if force_json:
-                    completion_params["response_format"] = {"type": "json_object"}
-                
-                completion = client.chat.completions.create(**completion_params)
-                
-                if mi > 0:
-                    print(f"  ⚡ Usando modelo fallback: {current_model}", file=sys.stderr)
-                
-                content = completion.choices[0].message.content
-                
-                # Return parsed JSON if force_json, otherwise raw text
-                return json.loads(content) if force_json else content
-                
-            except Exception as e:
-                error_msg = str(e)
-                is_rate_limit = "429" in error_msg
-                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
-                
-                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
-
-                if is_model_error and mi < len(models) - 1:
-                    print(f"  ⚠️ Modelo {current_model} indisponível. Trocando...", file=sys.stderr)
-                    break
-
-                if is_rate_limit and is_tpd:
-                    retry_secs = _parse_retry_wait(error_msg)
-                    if attempt < max_retries - 1 and retry_secs <= 30:
-                        print(f"  ⏳ Rate limit (TPD) em {current_model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                        time.sleep(retry_secs or 5)
-                        continue
-                    elif mi < len(models) - 1:
-                        print(f"  🔄 TPD esgotado em {current_model} (espera: {retry_secs}s). Trocando modelo...", file=sys.stderr)
-                        break
-                    raise
-                elif is_rate_limit and attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 3
-                    print(f"  ⏳ Rate limit ({current_model}). Aguardando {wait_time}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-                elif is_rate_limit and mi < len(models) - 1:
-                    print(f"  🔄 Rate limit esgotado em {current_model}. Trocando modelo...", file=sys.stderr)
-                    break
-                raise
-    raise Exception("Todos os modelos esgotaram o rate limit diário. Tente novamente mais tarde.")
+def call_groq(api_key, prompt, temperature=0.5, max_retries=4, model=None, force_json=True):
+    """Generic Groq API facade that delegates to centralized llm_router."""
+    return call_llm(provider=None, prompt=prompt, temperature=temperature, max_retries=max_retries, json_mode=force_json)
 
 # ==============================================================================
 # Simple Search Mode (original)
 # ==============================================================================
 
-def summarize_with_groq(text, query, api_key):
+def summarize_with_groq(text, query, api_key, model_provider="groq"):
     if not api_key:
-        raise ValueError("Chave da API Groq não configurada. Adicione GROQ_API_KEY no .env.")
+        raise ValueError("Chave da API não configurada. Adicione GROQ_API_KEY ou GEMINI_API_KEY no .env.")
 
     prompt = f"""Você é um assistente de pesquisa avançado. Crie um resumo estruturado sobre "{query}" com base no texto abaixo.
 
@@ -151,9 +84,9 @@ Regras:
 Texto Base:
 {text[:20000]}"""
 
-    return call_groq(api_key, prompt)
+    return call_llm(provider=model_provider, prompt=prompt)
 
-def run_simple_search(args):
+def run_simple_search(args, model_provider="groq"):
     """Original simple search mode."""
     results = search_duckduckgo(args.query, args.max_results, args.region)
     
@@ -173,12 +106,16 @@ def run_simple_search(args):
             if content:
                 aggregated_text += f"Conteúdo extra da Fonte {i+1}: {content}\n"
     
-    groq_api_key = os.environ.get("GROQ_API_KEY")
-    
-    if args.no_groq:
-        summary_data = {"aviso": "Resumo via Groq desativado."}
+    # Check for appropriate API key based on provider
+    if model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
     else:
-        summary_data = summarize_with_groq(aggregated_text, args.query, groq_api_key)
+        api_key = os.environ.get("GROQ_API_KEY")
+    
+    if args.no_groq or not api_key:
+        summary_data = {"aviso": "Resumo via IA desativado."}
+    else:
+        summary_data = summarize_with_groq(aggregated_text, args.query, api_key, model_provider)
 
     return {"structured": summary_data, "sources": sources}
 
@@ -237,8 +174,8 @@ BUSINESS_CATEGORIES = [
     },
 ]
 
-def generate_business_queries(description, api_key):
-    """Use Groq to generate targeted search queries for each business category."""
+def generate_business_queries(description, api_key, model_provider="groq"):
+    """Use AI to generate targeted search queries for each business category."""
     categories_detail = ""
     for cat in BUSINESS_CATEGORIES:
         categories_detail += f'    "{cat["id"]}": {cat["foco"]} (CUIDADO: {cat["nao_falar"]})\n'
@@ -274,9 +211,9 @@ JSON:
         "precificacao": "query"
     }}
 }}"""
-    return call_groq(api_key, prompt, temperature=0.2)
+    return call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
 
-def search_and_summarize_category(category, query, business_description, api_key, region, max_results=6, max_pages=2):
+def search_and_summarize_category(category, query, business_description, api_key, region, max_results=6, max_pages=2, model_provider="groq"):
     """Search and summarize for a single business category."""
     print(f"  [{category['icone']}] Buscando: {query}", file=sys.stderr)
     
@@ -348,7 +285,7 @@ ESTRUTURA DO JSON:
 DADOS DA INTERNET:
 {aggregated_text[:18000]}"""
         
-        resumo = call_groq(api_key, prompt, temperature=0.3)
+        resumo = call_llm(provider=model_provider, prompt=prompt, temperature=0.3)
     except Exception as e:
         print(f"  ❌ Erro ao resumir {category['nome']}: {e}", file=sys.stderr)
         resumo = {"erro": f"Não foi possível gerar resumo: {str(e)[:200]}"}
@@ -363,23 +300,34 @@ DADOS DA INTERNET:
         "fontes": sources
     }
 
-def run_business_analysis(args):
+def run_business_analysis(args, model_provider="groq"):
     """Run multi-category business intelligence analysis."""
     description = args.query
-    api_key = os.environ.get("GROQ_API_KEY")
     
-    if not api_key:
-        return {
-            "businessMode": True,
-            "categories": [],
-            "allSources": [],
-            "erro": "Chave da API Groq não configurada. Adicione GROQ_API_KEY no arquivo .env."
-        }
+    # Check for appropriate API key based on provider
+    if model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return {
+                "businessMode": True,
+                "categories": [],
+                "allSources": [],
+                "erro": "Chave da API Gemini não configurada. Adicione GEMINI_API_KEY no arquivo .env."
+            }
+    else:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return {
+                "businessMode": True,
+                "categories": [],
+                "allSources": [],
+                "erro": "Chave da API Groq não configurada. Adicione GROQ_API_KEY no arquivo .env."
+            }
     
     # Step 1: Generate search queries using AI
     print("🧠 Gerando queries de busca inteligentes...", file=sys.stderr)
     try:
-        query_result = generate_business_queries(description, api_key)
+        query_result = generate_business_queries(description, api_key, model_provider)
         queries = query_result.get("queries", {})
         print(f"  ✅ Queries geradas: {json.dumps(queries, ensure_ascii=False)}", file=sys.stderr)
     except Exception as e:
@@ -401,7 +349,7 @@ def run_business_analysis(args):
         try:
             result = search_and_summarize_category(
                 cat, q, description, api_key, args.region,
-                max_results=6, max_pages=2
+                max_results=6, max_pages=2, model_provider=model_provider
             )
             categories_result.append(result)
             all_sources.extend(result.get("fontes", []))
@@ -443,6 +391,7 @@ def main():
     parser.add_argument("--list-sources", action="store_true")
     parser.add_argument("--no-groq", action="store_true")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--model", type=str, default="groq", choices=["groq", "gemini"], help="AI model provider to use")
 
     args = parser.parse_args()
 
@@ -452,9 +401,9 @@ def main():
         pass
 
     if args.business:
-        output = run_business_analysis(args)
+        output = run_business_analysis(args, args.model)
     else:
-        output = run_simple_search(args)
+        output = run_simple_search(args, args.model)
 
     print("--- Resumo ---")
     print(json.dumps(output, indent=2, ensure_ascii=False))
