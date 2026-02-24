@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Sparkles, Send, Loader2, Check, X, Globe, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SearchSource {
     title: string;
@@ -91,6 +92,7 @@ const SourcesList: React.FC<{ sources: SearchSource[] }> = ({ sources }) => {
 };
 
 const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false }) => {
+    const { aiModel } = useAuth();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
@@ -128,6 +130,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'chat',
+                    aiModel,
                     messages: [],
                     user_message: '',
                     extracted_profile: {},
@@ -164,6 +167,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'chat',
+                    aiModel,
                     messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
                     user_message: text,
                     extracted_profile: extractedProfile,
@@ -243,12 +247,12 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
             restricoes_criticas: {
                 modelo_operacional: extractedProfile.modelo_operacional || null,
                 capital_disponivel: extractedProfile.capital_disponivel || null,
-                equipe_solo: extractedProfile.num_funcionarios === '1' || 
-                             extractedProfile.num_funcionarios === 'solo' ||
-                             extractedProfile.num_funcionarios === 'só eu' ||
-                             extractedProfile.num_funcionarios === 'sozinho' ||
-                             (extractedProfile.num_funcionarios || '').toLowerCase().includes('sozinho') ||
-                             (extractedProfile.num_funcionarios || '').toLowerCase().includes('só eu'),
+                equipe_solo: extractedProfile.num_funcionarios === '1' ||
+                    extractedProfile.num_funcionarios === 'solo' ||
+                    extractedProfile.num_funcionarios === 'só eu' ||
+                    extractedProfile.num_funcionarios === 'sozinho' ||
+                    (extractedProfile.num_funcionarios || '').toLowerCase().includes('sozinho') ||
+                    (extractedProfile.num_funcionarios || '').toLowerCase().includes('só eu'),
                 canais_existentes: extractedProfile.canais_venda || [],
                 principal_gargalo: extractedProfile.principal_gargalo || null,
                 maior_objecao: extractedProfile.maior_objecao || null,
@@ -330,13 +334,12 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                 </div>
                             )}
 
-                            <div className={`rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${
-                                msg.role === 'user'
+                            <div className={`rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${msg.role === 'user'
                                     ? 'bg-white/[0.06] text-white border border-white/[0.08]'
                                     : msg.content === '...'
-                                    ? 'bg-zinc-900/50 text-zinc-500 border border-white/[0.04]'
-                                    : 'bg-zinc-900/50 text-zinc-300 border border-white/[0.04]'
-                            }`}>
+                                        ? 'bg-zinc-900/50 text-zinc-500 border border-white/[0.04]'
+                                        : 'bg-zinc-900/50 text-zinc-300 border border-white/[0.04]'
+                                }`}>
                                 {msg.content === '...' ? (
                                     <div className="flex items-center gap-2.5 py-0.5">
                                         <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
@@ -422,11 +425,10 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                         <button
                             onClick={() => sendMessage()}
                             disabled={!input.trim() || sending}
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                                input.trim() && !sending
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${input.trim() && !sending
                                     ? 'bg-zinc-700 text-white hover:bg-zinc-600 active:scale-95'
                                     : 'bg-zinc-900 text-zinc-600 cursor-not-allowed border border-white/[0.04]'
-                            }`}
+                                }`}
                         >
                             {sending ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />

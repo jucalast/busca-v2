@@ -8,7 +8,7 @@ const execPromise = util.promisify(exec);
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { query, maxResults, maxPages, maxSentences, noGroq, verbose, region, businessMode } = body;
+        const { query, maxResults, maxPages, maxSentences, noGroq, verbose, region, businessMode, modelProvider } = body;
 
         if (!query) {
             return NextResponse.json({ error: 'Query is required' }, { status: 400 });
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
         if (businessMode) cmd += ` --business`;
         if (noGroq) cmd += ` --no-groq`;
         if (verbose) cmd += ` --verbose`;
+        if (modelProvider) cmd += ` --model ${modelProvider}`;
 
         const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
 

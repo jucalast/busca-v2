@@ -1,22 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Bot, Search, BarChart3, ListTodo, Loader2 } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
 import ParticleLoader from '@/components/ParticleLoader';
-import GrowthHub from '@/components/GrowthHub';
-import DimensionDetail from '@/components/DimensionDetail';
-import ExecutionDashboard from '@/components/ExecutionDashboard';
-import TaskDetail from '@/components/TaskDetail';
-import TaskAssistant from '@/components/TaskAssistant';
+import PillarWorkspace from '@/components/PillarWorkspace';
 import GrowthChat from '@/components/GrowthChat';
 import SidebarLayout from '@/components/SidebarLayout';
+import BusinessMindMap from '@/components/BusinessMindMap';
 import AuthForm from '@/components/AuthForm';
 import { useAuth } from '@/contexts/AuthContext';
 
 type GrowthStage = 'onboarding' | 'analyzing' | 'results';
 
 export default function Home() {
-  const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated, logout, aiModel } = useAuth();
 
   // User & Business management
   const [currentBusinessId, setCurrentBusinessId] = useState<string | null>(null);
@@ -30,22 +26,15 @@ export default function Home() {
   const [agentThoughts, setAgentThoughts] = useState<string[]>([]);
   const [error, setError] = useState('');
 
-  // Task Assistant state
-  const [assistTask, setAssistTask] = useState<any>(null);
+  // Mind map state (fed from PillarWorkspace)
+  const [mindMapPillarStates, setMindMapPillarStates] = useState<Record<string, any>>({});
+  const [mindMapCompletedTasks, setMindMapCompletedTasks] = useState<Record<string, Set<string>>>({});
 
-  // Dimension detail state
-  const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
-  const [dimensionChats, setDimensionChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[]; searchQuery?: string }>>>({});
-  const [dimensionLoading, setDimensionLoading] = useState(false);
+  const handlePillarStateChange = useCallback((states: Record<string, any>, completed: Record<string, Set<string>>) => {
+    setMindMapPillarStates(states);
+    setMindMapCompletedTasks(completed);
+  }, []);
 
-  // Execution plan state (Co-Pilot mode)
-  const [viewMode, setViewMode] = useState<'execution' | 'diagnostic'>('execution');
-  const [selectedTask, setSelectedTask] = useState<{ id: string; titulo: string; categoria: string; phaseTitle: string } | null>(null);
-  const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
-  const [expandingTaskId, setExpandingTaskId] = useState<string | null>(null);
-  const [taskChats, setTaskChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[] }>>>({});
-  const [taskChatLoading, setTaskChatLoading] = useState(false);
-  const [completedSubtasks, setCompletedSubtasks] = useState<Record<string, Set<string>>>({});
 
   // ─── Growth mode: Chat profile ready → Run Analysis ───
   const handleChatProfileReady = async (chatProfile: any) => {
@@ -59,7 +48,7 @@ export default function Home() {
       const profileRes = await fetch('/api/growth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'profile', onboardingData: chatProfile }),
+        body: JSON.stringify({ action: 'profile', aiModel, onboardingData: chatProfile }),
       });
 
       const profileResult = await profileRes.json();
@@ -114,7 +103,7 @@ export default function Home() {
   };
 
   // ─── Growth mode: Run full analysis (SSE streaming) ───
-  const runAnalysis = async (profileData: any) => {
+  const runAnalysis = async (profileData: any, analysisId?: string) => {
     try {
       setGrowthProgress('Iniciando análise...');
       setAgentThoughts([]);
@@ -124,10 +113,12 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'analyze',
+          aiModel,
           profile: profileData.profile || profileData,
           region: 'br-pt',
           business_id: currentBusinessId,
           user_id: user?.id || 'default_user',
+          analysis_id: analysisId, // Pass existing analysis_id for reanalysis cleanup
         }),
       });
 
@@ -200,7 +191,7 @@ export default function Home() {
 
       if (result.success && result.business) {
         const business = result.business;
-        
+
         // Load profile
         setProfile({ profile: business.profile_data });
 
@@ -211,14 +202,9 @@ export default function Home() {
             marketData: business.latest_analysis.market_data,
             score: business.latest_analysis.score_data,
             taskPlan: business.latest_analysis.task_data,
-            executionPlan: business.latest_analysis.execution_plan || null,
-            plan_id: business.latest_analysis.plan_id || null,
-            meta: business.latest_analysis.meta || '',
             business_id: businessId,
             analysis_id: business.latest_analysis.id,
           });
-          setSelectedTask(null);
-          setViewMode('execution');
           setGrowthStage('results');
         } else {
           // No analysis yet, go to onboarding to create one
@@ -239,13 +225,6 @@ export default function Home() {
     setCurrentBusinessId(null);
     setProfile(null);
     setGrowthData(null);
-    setSelectedDimension(null);
-    setDimensionChats({});
-    setSelectedTask(null);
-    setTaskDetails({});
-    setTaskChats({});
-    setCompletedSubtasks({});
-    setViewMode('execution');
     setGrowthStage('onboarding');
     setError('');
   };
@@ -253,21 +232,28 @@ export default function Home() {
   // ─── Redo Analysis: Re-run with same profile data ───
   const handleRedoAnalysis = async () => {
     if (!profile) {
-      // No profile data — fall back to creating new business
       handleCreateNewBusiness();
       return;
+    }
+
+    // Clear all task-related state before reanalyzing
+    const currentAnalysisId = growthData?.analysis_id;
+    setMindMapPillarStates({});
+    setMindMapCompletedTasks({});
+    setGrowthData(null); // This will clear PillarWorkspace internal state on next render
+    setAgentThoughts([]);
+    // Clear persisted task state for this analysis
+    if (currentAnalysisId) {
+      localStorage.removeItem(`pillar_workspace_${currentAnalysisId}`);
     }
 
     setGrowthLoading(true);
     setGrowthStage('analyzing');
     setGrowthProgress('Refazendo análise com os mesmos dados...');
     setError('');
-    setSelectedDimension(null);
-    setDimensionChats({});
-    setAgentThoughts([]);
 
     try {
-      await runAnalysis(profile);
+      await runAnalysis(profile, growthData?.analysis_id);
     } catch (err: any) {
       setError(err.message || 'Erro ao refazer análise.');
       setGrowthLoading(false);
@@ -293,201 +279,12 @@ export default function Home() {
         throw new Error(result.error || 'Falha ao excluir negócio');
       }
 
-      // If deleted business was current, reset to onboarding
       if (businessId === currentBusinessId) {
         handleCreateNewBusiness();
       }
     } catch (err: any) {
       throw new Error(err.message || 'Erro ao excluir negócio');
     }
-  };
-
-  // ─── Task AI Assist ───
-  const handleGenerateAssist = async (taskId: string) => {
-    const task = growthData?.taskPlan?.tasks?.find((t: any) => t.id === taskId);
-    if (!task) return { success: false, erro: 'Tarefa não encontrada.' };
-
-    const res = await fetch('/api/growth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'assist',
-        task,
-        profile: profile?.profile || profile,
-      }),
-    });
-
-    return await res.json();
-  };
-
-  // ─── Profile summary for display ───
-  const getProfileSummary = () => {
-    const p = profile?.profile?.perfil || {};
-    return `${p.nome || '?'} — ${p.segmento || '?'} — ${p.modelo_negocio || '?'} — ${p.localizacao || '?'}`;
-  };
-
-  // ─── Dimension chat handler ───
-  const handleDimensionMessage = async (message: string) => {
-    if (!selectedDimension) return;
-
-    const dimKey = selectedDimension;
-    const currentChat = dimensionChats[dimKey] || [];
-    const newChat = [...currentChat, { role: 'user' as const, content: message }];
-    setDimensionChats(prev => ({ ...prev, [dimKey]: newChat }));
-    setDimensionLoading(true);
-
-    try {
-      const res = await fetch('/api/growth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'dimension-chat',
-          dimension: dimKey,
-          userMessage: message,
-          messages: newChat,
-          context: {
-            profile: profile?.profile || profile,
-            score: growthData?.score || {},
-            marketData: growthData?.marketData || {},
-            taskPlan: growthData?.taskPlan || {},
-          },
-        }),
-      });
-
-      const result = await res.json();
-
-      setDimensionChats(prev => ({
-        ...prev,
-        [dimKey]: [
-          ...(prev[dimKey] || []),
-          {
-            role: 'assistant' as const,
-            content: result.reply || 'Desculpe, não consegui gerar uma resposta.',
-            sources: result.sources || [],
-            searchQuery: result.searchQuery || '',
-          },
-        ],
-      }));
-    } catch (err: any) {
-      setDimensionChats(prev => ({
-        ...prev,
-        [dimKey]: [
-          ...(prev[dimKey] || []),
-          { role: 'assistant' as const, content: 'Erro ao processar a mensagem. Tente novamente.' },
-        ],
-      }));
-    } finally {
-      setDimensionLoading(false);
-    }
-  };
-
-  // ─── Execution Plan: Select task → JIT expand with RAG ───
-  const handleSelectTask = async (task: any, phaseTitle: string) => {
-    const taskId = task.id;
-    setSelectedTask({ id: taskId, titulo: task.titulo, categoria: task.categoria, phaseTitle });
-
-    // If already expanded, just show it
-    if (taskDetails[taskId]) return;
-
-    // JIT expand: search + generate sub-tasks
-    setExpandingTaskId(taskId);
-    try {
-      const res = await fetch('/api/growth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'expand-task',
-          task_id: taskId,
-          task_title: task.titulo,
-          categoria: task.categoria,
-          profile: profile?.profile || profile,
-          plan_context: {
-            meta: growthData?.meta || growthData?.executionPlan?.meta || '',
-            phase: phaseTitle,
-          },
-          plan_id: growthData?.plan_id || null,
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        setTaskDetails(prev => ({ ...prev, [taskId]: result }));
-      } else {
-        setError(result.error || 'Erro ao expandir tarefa');
-        setSelectedTask(null);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Erro ao expandir tarefa');
-      setSelectedTask(null);
-    } finally {
-      setExpandingTaskId(null);
-    }
-  };
-
-  // ─── Task-scoped chat handler ───
-  const handleTaskChatMessage = async (message: string) => {
-    if (!selectedTask) return;
-    const taskId = selectedTask.id;
-    const currentChat = taskChats[taskId] || [];
-    const newChat = [...currentChat, { role: 'user' as const, content: message }];
-    setTaskChats(prev => ({ ...prev, [taskId]: newChat }));
-    setTaskChatLoading(true);
-
-    try {
-      const res = await fetch('/api/growth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'task-chat',
-          task_id: taskId,
-          task_title: selectedTask.titulo,
-          user_message: message,
-          messages: newChat,
-          profile: profile?.profile || profile,
-          task_detail: taskDetails[taskId] || {},
-          plan_context: {
-            meta: growthData?.meta || growthData?.executionPlan?.meta || '',
-          },
-          plan_id: growthData?.plan_id || null,
-        }),
-      });
-      const result = await res.json();
-      setTaskChats(prev => ({
-        ...prev,
-        [taskId]: [
-          ...(prev[taskId] || []),
-          {
-            role: 'assistant' as const,
-            content: result.reply || 'Desculpe, não consegui gerar uma resposta.',
-            sources: result.sources || [],
-          },
-        ],
-      }));
-    } catch {
-      setTaskChats(prev => ({
-        ...prev,
-        [taskId]: [
-          ...(prev[taskId] || []),
-          { role: 'assistant' as const, content: 'Erro ao processar. Tente novamente.' },
-        ],
-      }));
-    } finally {
-      setTaskChatLoading(false);
-    }
-  };
-
-  // ─── Toggle subtask completion ───
-  const handleToggleSubtask = (subtaskId: string) => {
-    if (!selectedTask) return;
-    const taskId = selectedTask.id;
-    setCompletedSubtasks(prev => {
-      const current = new Set(prev[taskId] || []);
-      if (current.has(subtaskId)) {
-        current.delete(subtaskId);
-      } else {
-        current.add(subtaskId);
-      }
-      return { ...prev, [taskId]: current };
-    });
   };
 
   // Show loading while checking auth
@@ -507,7 +304,6 @@ export default function Home() {
     return <AuthForm />;
   }
 
-  // ━━━━━ GROWTH MODE WITH SIDEBAR LAYOUT ━━━━━
   const userProf = {
     name: profile?.profile?.perfil?.nome || 'Seu Negócio',
     segment: profile?.profile?.perfil?.segmento || '',
@@ -521,8 +317,18 @@ export default function Home() {
       onCreateNew={handleCreateNewBusiness}
       onDeleteBusiness={handleDeleteBusiness}
       onLogout={logout}
+      rightSidebar={growthStage === 'results' && growthData ? (
+        <BusinessMindMap
+          score={growthData.score}
+          specialists={growthData.specialists || {}}
+          marketData={growthData.marketData || null}
+          pillarStates={mindMapPillarStates}
+          completedTasks={mindMapCompletedTasks}
+          userProfile={userProf}
+        />
+      ) : undefined}
     >
-      {/* Chat Onboarding Stage - Create New Business */}
+      {/* Chat Onboarding Stage */}
       {growthStage === 'onboarding' && !growthLoading && (
         <div className="p-6 md:p-12 h-full flex items-center justify-center">
           <div className="w-full max-w-4xl flex flex-col" style={{ height: 'calc(100vh - 200px)', minHeight: '600px' }}>
@@ -534,77 +340,27 @@ export default function Home() {
         </div>
       )}
 
-      {/* Analyzing Stage - Particle Animation */}
+      {/* Analyzing Stage */}
       {growthStage === 'analyzing' && growthLoading && (
         <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
       )}
 
-      {/* Results Stage */}
+      {/* Results Stage — Unified */}
       {growthStage === 'results' && growthData && (
-        <>
-          {/* Task Detail View (expanded task with sub-tasks + scoped chat) */}
-          {selectedTask ? (
-            <TaskDetail
-              taskId={selectedTask.id}
-              taskTitle={selectedTask.titulo}
-              phaseTitle={selectedTask.phaseTitle}
-              detail={taskDetails[selectedTask.id] || null}
-              isLoading={expandingTaskId === selectedTask.id}
-              chatHistory={taskChats[selectedTask.id] || []}
-              chatLoading={taskChatLoading}
-              onBack={() => setSelectedTask(null)}
-              onSendMessage={handleTaskChatMessage}
-              onToggleSubtask={handleToggleSubtask}
-              completedSubtasks={completedSubtasks[selectedTask.id] || new Set()}
-            />
-          ) : viewMode === 'diagnostic' ? (
-            /* Diagnostic View (GrowthHub + DimensionDetail) */
-            selectedDimension ? (
-              <DimensionDetail
-                dimensionKey={selectedDimension}
-                data={growthData}
-                userProfile={userProf}
-                chatHistory={dimensionChats[selectedDimension] || []}
-                onBack={() => setSelectedDimension(null)}
-                onSendMessage={handleDimensionMessage}
-                isLoading={dimensionLoading}
-              />
-            ) : (
-              <GrowthHub
-                data={growthData}
-                userProfile={userProf}
-                onSelectDimension={(key) => setSelectedDimension(key)}
-                onRedo={handleRedoAnalysis}
-                onBackToExecution={growthData.executionPlan ? () => setViewMode('execution') : undefined}
-              />
-            )
-          ) : (
-            /* Execution Plan View (primary — Co-Pilot mode) */
-            growthData.executionPlan ? (
-              <ExecutionDashboard
-                plan={growthData.executionPlan}
-                score={growthData.score}
-                userProfile={userProf}
-                planId={growthData.plan_id || null}
-                onSelectTask={handleSelectTask}
-                onRedo={handleRedoAnalysis}
-                onViewDiagnostic={() => setViewMode('diagnostic')}
-                expandingTaskId={expandingTaskId}
-              />
-            ) : (
-              /* Fallback: no execution plan, show diagnostic hub */
-              <GrowthHub
-                data={growthData}
-                userProfile={userProf}
-                onSelectDimension={(key) => setSelectedDimension(key)}
-                onRedo={handleRedoAnalysis}
-              />
-            )
-          )}
-        </>
+        <PillarWorkspace
+          score={growthData.score}
+          specialists={growthData.specialists || {}}
+          analysisId={growthData.analysis_id || null}
+          businessId={growthData.business_id || currentBusinessId}
+          profile={profile}
+          marketData={growthData.marketData || null}
+          userProfile={userProf}
+          onRedo={handleRedoAnalysis}
+          onStateChange={handlePillarStateChange}
+        />
       )}
 
-      {/* Error Message in Growth Mode */}
+      {/* Error */}
       {error && (
         <div className="m-6 p-4 rounded-xl bg-red-950/30 border border-red-900/50 text-red-200 text-center">
           {error}
@@ -619,16 +375,6 @@ export default function Home() {
             ← Tentar novamente
           </button>
         </div>
-      )}
-
-      {/* Task Assistant Modal */}
-      {assistTask && (
-        <TaskAssistant
-          task={assistTask}
-          profileSummary={getProfileSummary()}
-          onClose={() => setAssistTask(null)}
-          onGenerate={handleGenerateAssist}
-        />
       )}
     </SidebarLayout>
   );

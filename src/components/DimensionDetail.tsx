@@ -51,6 +51,22 @@ const CATEGORY_TO_DIMENSION: Record<string, string> = {
     operacional: 'processo_vendas',
 };
 
+function safeRender(value: any): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(safeRender).join('\n');
+    if (typeof value === 'object') {
+        return Object.entries(value)
+            .map(([k, v]) => {
+                const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+                return `${label}: ${safeRender(v)}`;
+            })
+            .join('\n');
+    }
+    return String(value);
+}
+
 interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
@@ -171,11 +187,11 @@ export default function DimensionDetail({
                             {statusLabel}
                         </span>
                         {dim.justificativa && (
-                            <p className="text-zinc-400 text-sm leading-relaxed">{dim.justificativa}</p>
+                            <p className="text-zinc-400 text-sm leading-relaxed">{safeRender(dim.justificativa)}</p>
                         )}
                         {dim.meta_pilar && (
                             <p className="text-zinc-500 text-xs mt-2 italic">
-                                Meta: {dim.meta_pilar}
+                                Meta: {safeRender(dim.meta_pilar)}
                             </p>
                         )}
                     </div>
@@ -188,7 +204,7 @@ export default function DimensionDetail({
                             <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                             <div>
                                 <p className="text-[10px] font-semibold text-amber-500/80 uppercase tracking-wide mb-1">Dado-chave</p>
-                                <p className="text-sm text-zinc-300 leading-relaxed">{dim.dado_chave}</p>
+                                <p className="text-sm text-zinc-300 leading-relaxed">{safeRender(dim.dado_chave)}</p>
                             </div>
                         </div>
                     </div>
@@ -220,7 +236,7 @@ export default function DimensionDetail({
                                             {task.titulo}
                                         </p>
                                         {task.descricao && (
-                                            <p className="text-zinc-600 text-xs mt-1 line-clamp-2">{task.descricao}</p>
+                                            <p className="text-zinc-600 text-xs mt-1 line-clamp-2">{safeRender(task.descricao)}</p>
                                         )}
                                         <div className="flex gap-2 mt-1.5">
                                             {task.prazo_sugerido && (
@@ -233,7 +249,7 @@ export default function DimensionDetail({
                                         {task.fonte_referencia && (
                                             <p className="text-[10px] text-zinc-700 mt-1.5 flex items-center gap-1">
                                                 <BookOpen className="w-2.5 h-2.5" />
-                                                {task.fonte_referencia}
+                                                {safeRender(task.fonte_referencia)}
                                             </p>
                                         )}
                                     </div>
@@ -285,7 +301,7 @@ export default function DimensionDetail({
                                     <div key={cat.id} className="p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
                                         <h3 className="text-sm font-semibold text-white mb-2">{cat.nome}</h3>
                                         {resumo.visao_geral && (
-                                            <p className="text-zinc-400 text-sm leading-relaxed mb-3">{resumo.visao_geral}</p>
+                                            <p className="text-zinc-400 text-sm leading-relaxed mb-3">{safeRender(resumo.visao_geral)}</p>
                                         )}
                                         {resumo.pontos_chave && Array.isArray(resumo.pontos_chave) && (
                                             <ul className="space-y-1.5 mb-3">

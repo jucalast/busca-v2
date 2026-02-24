@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import NextAuthProvider from "@/components/NextAuthProvider";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -26,9 +27,11 @@ export default function RootLayout({
         className={`${poppins.variable} font-sans antialiased min-h-screen text-zinc-50`}
         style={{ backgroundColor: '#09090b' }}
       >
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <NextAuthProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </NextAuthProvider>
       </body>
     </html>
   );

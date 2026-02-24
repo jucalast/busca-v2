@@ -27,7 +27,10 @@ from business_discovery import format_discovery_for_scorer
 import re
 import sys
 import time
-from groq import Groq
+try:
+    from .llm_router import call_llm
+except ImportError:
+    from llm_router import call_llm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -83,7 +86,7 @@ DIMENSIONS = {
                             "como_vender", "prospectar"],
         "category_ids": ["canais", "vendas_solo", "como_vender", "diversificacao_canais",
                          "marketplace", "ecommerce", "prospectar"],
-        "upstream": ["publico_alvo", "branding"],
+        "upstream": ["publico_alvo", "branding", "identidade_visual"],
     },
     "trafego_organico": {
         "label": "Tráfego Orgânico",
@@ -96,7 +99,7 @@ DIMENSIONS = {
                             "presenca_digital", "otimizacao"],
         "category_ids": ["marketing_organico", "seo", "conteudo", "presenca_online",
                          "engajamento", "presenca_digital", "otimizacao_conversao"],
-        "upstream": ["publico_alvo", "branding", "identidade_visual"],
+        "upstream": ["publico_alvo", "branding", "identidade_visual", "canais_venda"],
     },
     "trafego_pago": {
         "label": "Tráfego Pago",
@@ -121,7 +124,7 @@ DIMENSIONS = {
                             "script", "follow"],
         "category_ids": ["processo_vendas", "precificacao", "funil", "conversao",
                          "vendas", "negociacao", "precos", "margem", "financeiro"],
-        "upstream": ["publico_alvo", "canais_venda", "trafego_organico", "trafego_pago"],
+        "upstream": ["publico_alvo", "branding", "identidade_visual", "canais_venda", "trafego_organico", "trafego_pago"],
     },
 }
 
@@ -129,119 +132,112 @@ DIMENSIONS = {
 DIMENSION_ORDER = sorted(DIMENSIONS.keys(), key=lambda k: DIMENSIONS[k]["ordem"])
 
 
-def _parse_retry_seconds(error_msg: str) -> int:
-    """Extract wait time in seconds from Groq rate limit error message."""
-    match = re.search(r"try again in (\d+)m([\d.]+)s", error_msg)
-    if match:
-        return int(match.group(1)) * 60 + int(float(match.group(2)))
-    match = re.search(r"try again in ([\d.]+)s", error_msg)
-    if match:
-        return int(float(match.group(1)))
-    return 0
 
 
-def _call_llm(api_key: str, prompt: str, temperature: float = 0.2, max_retries: int = 2) -> dict:
-    """Focused LLM call with multi-model fallback across separate TPD quotas.
-    Each model on Groq has an independent daily token limit, so switching models
-    effectively gives us access to more tokens.
-    
-    Models and approximate free-tier TPD limits:
-    - llama-3.1-8b-instant: 500K TPD (primary — fast, cheap)
-    - llama3-8b-8192: separate quota (Llama 3 original)
-    - llama3-70b-8192: separate quota (Llama 3 original 70b)
-    - llama-3.3-70b-versatile: 100K TPD (last resort — expensive quota)
-    """
-    client = Groq(api_key=api_key)
-    models = [
-        "llama-3.1-8b-instant",
-        "llama3-8b-8192",
-        "llama3-70b-8192",
-        "llama-3.3-70b-versatile",
-    ]
+# Semantic mapping: common terms LLM uses in category names → which pillar(s) they relate to
+# This catches dynamically-generated IDs like "credibilidade_e_confianca" → identidade_visual, branding
+_SEMANTIC_PILLAR_MAP = {
+    "publico_alvo": ["publico", "persona", "cliente", "consumidor", "comprador", "demanda",
+                     "audiencia", "segmento", "nicho", "alvo", "mercado", "potencial",
+                     "perfil_cliente", "b2b", "b2c", "quem_compra", "demografico"],
+    "branding": ["marca", "branding", "posicionamento", "diferencial", "proposta_valor",
+                 "concorrent", "competit", "benchmark", "reputacao", "autoridade",
+                 "credibilidade", "confianca", "prova_social", "depoimento", "garantia"],
+    "identidade_visual": ["visual", "design", "logo", "imagem", "foto", "estetica",
+                          "cores", "tipografia", "feed", "criativo", "template", "banner",
+                          "credibilidade", "confianca", "profissional", "apresentacao"],
+    "canais_venda": ["canal", "venda", "ecommerce", "marketplace", "loja", "instagram",
+                     "whatsapp", "delivery", "distribuicao", "prospectar", "como_vender",
+                     "diversificacao", "ponto_venda", "logistica", "encomenda", "estoque",
+                     "fornecedor", "prazo", "entrega", "frete"],
+    "trafego_organico": ["seo", "conteudo", "organico", "engajamento", "seguidores",
+                         "alcance", "google", "youtube", "reels", "blog", "post",
+                         "stories", "marketing_organico", "presenca_online", "otimizacao",
+                         "conversao_instagram", "baixo_custo", "gratuito"],
+    "trafego_pago": ["anuncio", "ads", "pago", "midia", "investimento", "roi",
+                     "meta_ads", "google_ads", "facebook_ads", "campanha", "cpc", "cpa",
+                     "remarketing", "trafego_pago", "patrocinado"],
+    "processo_vendas": ["processo", "funil", "fechamento", "objecao", "preco",
+                        "precificacao", "margem", "ticket", "proposta", "negociacao",
+                        "pos_venda", "fidelizacao", "upsell", "script", "follow",
+                        "conversao", "crm", "pipeline"],
+}
 
-    for mi, model in enumerate(models):
-        for attempt in range(max_retries):
-            try:
-                completion = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=1200,
-                    response_format={"type": "json_object"},
-                )
-                if mi > 0:
-                    print(f"  ⚡ Scorer usando fallback: {model}", file=sys.stderr)
-                return json.loads(completion.choices[0].message.content)
-            except Exception as e:
-                error_msg = str(e)
-                is_rate_limit = "429" in error_msg
-                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
 
-                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
+def _score_category_relevance(dim_key: str, cat: dict) -> int:
+    """Score how relevant a market category is for a given pillar (0-100).
+    Uses multiple matching strategies for robustness."""
+    dim_cfg = DIMENSIONS[dim_key]
+    category_ids = dim_cfg.get("category_ids", [])
+    keywords = dim_cfg["market_keywords"]
+    semantic_terms = _SEMANTIC_PILLAR_MAP.get(dim_key, [])
 
-                # Model doesn't exist or doesn't support JSON mode — skip immediately
-                if is_model_error and mi < len(models) - 1:
-                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
-                    break
+    cat_id = cat.get("id", "").lower()
+    cat_nome = cat.get("nome", "").lower()
+    cat_foco = cat.get("foco", "").lower()
+    cat_text = f"{cat_id} {cat_nome} {cat_foco}"
+    # Split compound IDs like "credibilidade_e_confianca" into words
+    cat_id_parts = set(cat_id.replace("_", " ").split())
 
-                if is_rate_limit and is_tpd:
-                    retry_secs = _parse_retry_seconds(error_msg)
-                    if attempt < max_retries - 1 and retry_secs <= 30:
-                        print(f"  ⏳ Rate limit (TPD) em {model}. Aguardando {retry_secs}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                        time.sleep(retry_secs or 5)
-                        continue
-                    elif mi < len(models) - 1:
-                        print(f"  🔄 TPD esgotado em {model} (espera: {retry_secs}s). Trocando modelo...", file=sys.stderr)
-                        break
-                    raise
-                elif is_rate_limit and attempt < max_retries - 1:
-                    retry_secs = _parse_retry_seconds(error_msg)
-                    wait = retry_secs if retry_secs > 0 else (attempt + 1) * 20
-                    print(f"  ⏳ Rate limit (TPM) em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                    time.sleep(wait)
-                    continue
-                elif is_rate_limit and mi < len(models) - 1:
-                    print(f"  🔄 Rate limit (TPM) esgotado em {model}. Trocando modelo...", file=sys.stderr)
-                    time.sleep(5)
-                    break
-                raise
-    raise Exception("Todos os modelos esgotaram o rate limit diário. Tente novamente mais tarde.")
+    score = 0
+
+    # Pass 1: Exact category ID match (highest confidence)
+    if cat_id in category_ids:
+        score += 50
+
+    # Pass 2: Bidirectional substring on category IDs
+    # e.g. "credibilidade" in "credibilidade_e_confianca" or vice versa
+    for expected_id in category_ids:
+        if expected_id in cat_id or cat_id in expected_id:
+            score += 30
+            break
+        # Also check if expected_id parts overlap with cat_id parts
+        expected_parts = set(expected_id.replace("_", " ").split())
+        if expected_parts & cat_id_parts:
+            score += 20
+            break
+
+    # Pass 3: Keyword matching in full text (name, id, foco)
+    kw_hits = sum(1 for kw in keywords if kw in cat_text)
+    score += min(kw_hits * 8, 30)  # up to 30 points
+
+    # Pass 4: Semantic term matching (catches LLM creative naming)
+    sem_hits = sum(1 for term in semantic_terms if term in cat_text)
+    score += min(sem_hits * 6, 25)  # up to 25 points
+
+    return min(score, 100)
 
 
 def _filter_market(dim_key: str, market_data: dict) -> str:
-    """Extract only relevant market data for a specific dimension.
-    Uses explicit category ID mapping + keyword fallback.
-    Does NOT fall back to all data — returns empty string if no match."""
+    """Extract relevant market data for a specific dimension.
+    Uses multi-pass relevance scoring: exact IDs, bidirectional substring,
+    keywords, and semantic mapping. Threshold: score >= 15."""
     categories = market_data.get("categories", [])
-    dim_cfg = DIMENSIONS[dim_key]
-    keywords = dim_cfg["market_keywords"]
-    category_ids = dim_cfg.get("category_ids", [])
-
-    available_ids = [cat.get("id", "").lower() for cat in categories]
-    relevant = []
-    
-    # First pass: match by explicit category IDs (highest priority)
-    for cat in categories:
-        cat_id = cat.get("id", "").lower()
-        if cat_id in category_ids:
-            relevant.append(cat)
-    
-    # Second pass: match by keywords in name/id/foco (broader matching)
-    if len(relevant) < 2:
-        for cat in categories:
-            if cat in relevant:
-                continue
-            cat_text = f"{cat.get('id', '')} {cat.get('nome', '')} {cat.get('foco', '')}".lower()
-            if any(kw in cat_text for kw in keywords):
-                relevant.append(cat)
-
-    # NO fallback to all data — if nothing matches, LLM gets "Nenhum dado"
-    if not relevant:
-        print(f"    ⚠️ No market data matched for {dim_key} (available: {available_ids}, expected: {category_ids[:4]})", file=sys.stderr)
+    if not categories:
         return ""
 
+    # Score every category for this pillar
+    scored = []
+    for cat in categories:
+        rel_score = _score_category_relevance(dim_key, cat)
+        if rel_score >= 15:
+            scored.append((rel_score, cat))
+
+    # Sort by relevance descending
+    scored.sort(key=lambda x: x[0], reverse=True)
+    relevant = [cat for _, cat in scored[:3]]
+
+    if not relevant:
+        available_ids = [cat.get("id", "").lower() for cat in categories]
+        print(f"    ⚠️ No market data matched for {dim_key} (available: {available_ids})", file=sys.stderr)
+        return ""
+
+    matched_ids = [cat.get("id", "") for cat in relevant]
+    matched_scores = [s for s, _ in scored[:3]]
+    print(f"    📊 Market match for {dim_key}: {list(zip(matched_ids, matched_scores))}", file=sys.stderr)
+
     text = ""
-    for cat in relevant[:3]:
+    for cat in relevant:
         resumo = cat.get("resumo", {})
         fontes = cat.get("fontes", [])
         text += f"\n── {cat.get('nome', '')} ──\n"
@@ -267,18 +263,13 @@ def _filter_market(dim_key: str, market_data: dict) -> str:
 def _get_all_sources_for_dimension(dim_key: str, market_data: dict) -> list:
     """Collect all source URLs from market categories relevant to this dimension."""
     categories = market_data.get("categories", [])
-    dim_cfg = DIMENSIONS[dim_key]
-    keywords = dim_cfg["market_keywords"]
-    category_ids = dim_cfg.get("category_ids", [])
     sources = []
 
     for cat in categories:
-        cat_id = cat.get("id", "").lower()
-        cat_text = f"{cat_id} {cat.get('nome', '')}".lower()
-        if cat_id in category_ids or any(kw in cat_text for kw in keywords):
+        rel_score = _score_category_relevance(dim_key, cat)
+        if rel_score >= 15:
             sources.extend(cat.get("fontes", []))
 
-    # NO fallback to all sources
     return list(dict.fromkeys(sources))  # Deduplicate preserving order
 
 
@@ -426,7 +417,8 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
                      restricoes: dict, api_key: str,
                      previous_actions: list = None,
                      discovery_text: str = "",
-                     chain_context: str = "") -> dict:
+                     chain_context: str = "",
+                     model_provider: str = "groq") -> dict:
     """Score a single sales pillar with focused, specific analysis.
     Now receives chain_context from upstream pillars for interconnected analysis."""
     perfil = profile.get("perfil", profile)
@@ -508,9 +500,22 @@ CONTEXTO B2B: Vende para OUTRAS EMPRESAS. Foque em vendas consultivas, LinkedIn,
     if _dificuldade and dim_key not in ("processo_vendas",):
         off_topic_guard = f"\n⚠️ A dificuldade do negócio é \"{_dificuldade}\" — NÃO use isso como tema das ações. Suas ações são EXCLUSIVAMENTE sobre {dim_cfg['label']}."
 
+    # Per-pillar scope boundaries to prevent cross-pillar bleed
+    _ESCOPO_PILAR = {
+        "publico_alvo": "APENAS: pesquisa de público, personas, segmentação, jornada do cliente, dores e desejos.\nPROIBIDO: criar perfis em redes, fazer posts, montar funis de e-mail, criar conteúdo, configurar canais.",
+        "branding": "APENAS: posicionamento de marca, proposta de valor, tom de voz, análise competitiva, diferenciação.\nPROIBIDO: criar logos, fazer posts, criar calendário editorial, configurar canais, montar campanhas.",
+        "identidade_visual": "APENAS: paleta de cores, tipografia, estilo visual, templates, guia de estilo.\nPROIBIDO: publicar conteúdo, criar calendário, fazer SEO, configurar redes sociais, montar campanhas.",
+        "canais_venda": "APENAS: mapear canais de venda, ativar novos canais, otimizar canais existentes, integrar canais.\nPROIBIDO: criar conteúdo/posts, fazer SEO, montar campanhas pagas, definir personas.",
+        "trafego_organico": "APENAS: SEO local, Google Meu Negócio, calendário editorial, estratégia de conteúdo orgânico.\nPROIBIDO: definir personas, definir tom de voz, criar identidade visual, configurar novos canais, fazer ads.",
+        "trafego_pago": "APENAS: campanhas Meta Ads/Google Ads, segmentação de público para ads, copies de anúncio, orçamento.\nPROIBIDO: fazer SEO, criar conteúdo orgânico, definir identidade visual, configurar canais.",
+        "processo_vendas": "APENAS: funil de vendas, scripts, contorno de objeções, precificação, follow-up, pós-venda.\nPROIBIDO: criar conteúdo para redes, fazer SEO, montar campanhas, definir identidade visual.",
+    }
+    escopo_text = _ESCOPO_PILAR.get(dim_key, "")
+
     prompt = f"""Você é consultor especialista EXCLUSIVAMENTE em "{dim_cfg['label']}".
 
 SEU FOCO EXCLUSIVO: {dim_cfg['foco']}{off_topic_guard}
+{escopo_text}
 Sua análise e TODAS as ações devem ser EXCLUSIVAMENTE sobre {dim_cfg['label']}.
 
 NEGÓCIO: {nome} | {segmento} | {perfil.get('localizacao','?')} | Equipe: {_eq} | Capital: {_cap} | Ticket: {_tick}
@@ -544,7 +549,7 @@ JSON:
     print(f"    📝 Prompt: {len(prompt)} chars", file=sys.stderr)
 
     try:
-        result = _call_llm(api_key, prompt)
+        result = call_llm(provider=model_provider, prompt=prompt)
         # Log raw LLM response keys and action count
         print(f"    📦 LLM retornou: {list(result.keys())} | acoes: {len(result.get('acoes_imediatas', []))}", file=sys.stderr)
         # Ensure expected fields
@@ -587,7 +592,7 @@ Foco: {dim_cfg['foco']}
 
 Retorne JSON: {{"score": 0-100, "status": "critico/atencao/forte", "justificativa": "2 frases sobre {dim_cfg['label']}", "acoes_imediatas": [{{"acao": "ação sobre {dim_cfg['label']}", "impacto": "alto", "prazo": "1 semana", "custo": "R$ 0", "fonte": "perfil do negócio"}}], "fontes_utilizadas": [], "dado_chave": "dado sobre {dim_cfg['label']}", "meta_pilar": "estado ideal de {dim_cfg['label']} para {nome}"}}"""
         try:
-            result = _call_llm(api_key, minimal_prompt)
+            result = call_llm(provider=model_provider, prompt=minimal_prompt)
             result.setdefault("score", 50)
             result.setdefault("status", "atencao")
             result.setdefault("justificativa", "")
@@ -663,7 +668,7 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
     return deduped
 
 
-def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) -> dict:
+def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, model_provider: str = "groq") -> dict:
     """
     Main entry point. Scores each of 7 sales pillars in chain order.
     Returns score data AND per-pillar task plans.
@@ -671,9 +676,15 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
     Chain context: each pillar produces a compact summary that feeds
     into downstream pillars, creating interconnected analysis.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "erro": "Chave da API Groq não configurada."}
+    # Check for appropriate API key based on provider
+    if model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return {"success": False, "erro": "Chave da API Gemini não configurada."}
+    else:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return {"success": False, "erro": "Chave da API Groq não configurada."}
 
     restricoes = extract_restrictions(profile)
     dimensoes = {}
@@ -706,7 +717,8 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None) ->
             dim_key, dim_cfg, profile, market_text, dim_sources, restricoes, api_key,
             previous_actions=previous_action_titles,
             discovery_text=disc_text,
-            chain_context=chain_ctx
+            chain_context=chain_ctx,
+            model_provider=model_provider
         )
         dimensoes[dim_key] = result
 

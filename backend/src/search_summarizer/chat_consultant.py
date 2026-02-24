@@ -21,7 +21,10 @@ import time
 import re
 import unicodedata
 
-from groq import Groq
+try:
+    from .llm_router import call_llm
+except ImportError:
+    from llm_router import call_llm
 from dotenv import load_dotenv
 
 
@@ -498,72 +501,6 @@ def _parse_retry_wait_chat(error_msg: str) -> int:
     return 0
 
 
-def call_groq_single(api_key: str, messages: list, temperature: float = 0.4,
-                     max_retries: int = 2, json_mode: bool = True,
-                     prefer_small: bool = False) -> str:
-    """
-    Groq chat completion with multi-model fallback across separate TPD quotas.
-    Returns raw content string.
-    If prefer_small=True, starts with the small model to save rate limit.
-    """
-    client = Groq(api_key=api_key)
-
-    if prefer_small:
-        models = [
-            "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "llama3-70b-8192",
-            "llama-3.3-70b-versatile",
-        ]
-    else:
-        models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "llama3-70b-8192",
-        ]
-
-    kwargs = {}
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    for mi, model in enumerate(models):
-        for attempt in range(max_retries):
-            try:
-                completion = client.chat.completions.create(
-                    messages=messages,
-                    model=model,
-                    temperature=temperature,
-                    **kwargs,
-                )
-                content = completion.choices[0].message.content
-                if mi > 0:
-                    print(f"  ⚡ Chat usando fallback: {model}", file=sys.stderr)
-                return content
-            except Exception as e:
-                error_msg = str(e)
-                is_rate_limit = "429" in error_msg
-                is_tpd = "tokens per day" in error_msg.lower() or "TPD" in error_msg
-
-                is_model_error = "400" in error_msg and ("does not exist" in error_msg or "not supported" in error_msg or "decommissioned" in error_msg or "The model" in error_msg)
-
-                if is_model_error and mi < len(models) - 1:
-                    print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
-                    break
-
-                if is_rate_limit and is_tpd and mi < len(models) - 1:
-                    print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
-                    break
-                elif is_rate_limit and attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2
-                    print(f"  ⏳ Rate limit ({model}). Aguardando {wait_time}s...", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-                elif is_rate_limit and mi < len(models) - 1:
-                    print(f"  🔄 Rate limit esgotado em {model}. Trocando modelo...", file=sys.stderr)
-                    break
-                raise
-    raise Exception("Todos os modelos esgotaram o rate limit diário.")
 
 
 def should_search_proactively(user_message: str, messages: list, extracted_profile: dict) -> dict:
@@ -953,7 +890,7 @@ Retorne JSON:
     # Add current user message
     chat_messages.append({"role": "user", "content": user_message})
 
-    raw = call_groq_single(api_key, chat_messages, temperature=0.5)
+    raw = call_llm(provider=None, messages=chat_messages, temperature=0.5, json_mode=True)
     
     # DEBUG: Log raw LLM response (first 500 chars)
     print(f"  🤖 LLM raw response: {raw if raw else 'None'}", file=sys.stderr)
@@ -1640,6 +1577,10 @@ def run_chat(input_data: dict) -> dict:
     base_ready = required_done and priority_count >= 5
     ready = user_wants_finish or base_ready
 
+    # User explicitly wants a full list of questions
+    user_wants_list = any(x in user_message.lower() for x in 
+        ["manda tudo", "mande tudo", "lista", "todas as perguntas", "tudo de uma vez", "manda logo tudo", "manda as perguntas"])
+    
     # ━━━ Unified field collection and reply appendix ━━━
     if user_wants_finish:
         if reply:
@@ -1665,6 +1606,15 @@ def run_chat(input_data: dict) -> dict:
             reply += "Marquei uma tarefa pra aprofundar isso depois. Faz sentido pra você?"
         elif not reply:
             reply = "O que você acha da sugestão?"
+    elif user_wants_list and all_remaining:
+        # User wants all remaining questions at once
+        lines = ["Claro! Para gerar a melhor análise possível, me passe o máximo destas informações que você tiver:\n"]
+        for f in all_remaining:
+            prompt = FIELD_PROMPTS_ALL.get(f, f"Sobre {FIELD_LABELS_PT.get(f, f)}?")
+            lines.append(f"- **{FIELD_LABELS_PT.get(f, f).title()}**: {prompt}")
+        
+        reply = "\n".join(lines)
+        reply += "\n\nPode responder tudo junto em uma mensagem só!"
     elif not required_done:
         # Missing required fields - ask next one
         missing_field = fields_missing[0]
