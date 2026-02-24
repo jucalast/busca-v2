@@ -66,6 +66,10 @@ interface DimensionDetailProps {
     onBack: () => void;
     onSendMessage: (message: string) => Promise<void>;
     isLoading: boolean;
+    pillarData?: any;
+    pillarStatus?: Record<string, any>;
+    onRunAgent?: (pillarKey: string, userCommand: string) => Promise<void>;
+    isAgentRunning?: boolean;
 }
 
 export default function DimensionDetail({
@@ -76,6 +80,10 @@ export default function DimensionDetail({
     onBack,
     onSendMessage,
     isLoading,
+    pillarData,
+    pillarStatus,
+    onRunAgent,
+    isAgentRunning,
 }: DimensionDetailProps) {
     const [inputValue, setInputValue] = useState('');
     const [actionStates, setActionStates] = useState<Record<string, boolean>>({});

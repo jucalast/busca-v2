@@ -35,6 +35,11 @@ export default function Home() {
   const [dimensionChats, setDimensionChats] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string; sources?: string[]; searchQuery?: string }>>>({});
   const [dimensionLoading, setDimensionLoading] = useState(false);
 
+  // Pillar agent state
+  const [pillarDataMap, setPillarDataMap] = useState<Record<string, any>>({});
+  const [pillarStatus, setPillarStatus] = useState<Record<string, any>>({});
+  const [agentRunning, setAgentRunning] = useState(false);
+
   // ─── Growth mode: Chat profile ready → Run Analysis ───
   const handleChatProfileReady = async (chatProfile: any) => {
     setGrowthLoading(true);
@@ -175,6 +180,19 @@ export default function Home() {
             analysis_id: business.latest_analysis.id,
           });
           setGrowthStage('results');
+
+          // Fetch pillar agent status for this business
+          try {
+            const psRes = await fetch('/api/growth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'pillar-status', business_id: businessId }),
+            });
+            const psResult = await psRes.json();
+            if (psResult.success && psResult.pillars) {
+              setPillarStatus(psResult.pillars);
+            }
+          } catch { /* silent */ }
         } else {
           // No analysis yet, go to onboarding to create one
           setGrowthStage('onboarding');
@@ -273,6 +291,86 @@ export default function Home() {
   const getProfileSummary = () => {
     const p = profile?.profile?.perfil || {};
     return `${p.nome || '?'} — ${p.segmento || '?'} — ${p.modelo_negocio || '?'} — ${p.localizacao || '?'}`;
+  };
+
+  // ─── Pillar Agent: run autonomous agent for a pillar ───
+  const handleRunPillarAgent = async (pillarKey: string, userCommand: string) => {
+    if (!growthData?.business_id) return;
+    setAgentRunning(true);
+    setError('');
+
+    try {
+      const res = await fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'run-pillar',
+          pillar_key: pillarKey,
+          business_id: growthData.business_id,
+          profile: profile?.profile || profile,
+          user_command: userCommand,
+        }),
+      });
+
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Erro ao executar agente');
+
+      // Save pillar data locally
+      setPillarDataMap((prev: any) => ({
+        ...prev,
+        [pillarKey]: { structured_output: result.data, sources: result.sources },
+      }));
+
+      // Refresh pillar status
+      await fetchPillarStatus();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao executar agente do pilar.');
+    } finally {
+      setAgentRunning(false);
+    }
+  };
+
+  // ─── Pillar Status: check which pillars are completed ───
+  const fetchPillarStatus = async () => {
+    if (!growthData?.business_id) return;
+    try {
+      const res = await fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'pillar-status',
+          business_id: growthData.business_id,
+        }),
+      });
+      const result = await res.json();
+      if (result.success && result.pillars) {
+        setPillarStatus(result.pillars);
+      }
+    } catch { /* silent */ }
+  };
+
+  // ─── Select dimension and fetch its pillar data ───
+  const handleSelectDimension = async (key: string) => {
+    setSelectedDimension(key);
+
+    // Fetch existing pillar data if not already loaded
+    if (!pillarDataMap[key] && growthData?.business_id) {
+      try {
+        const res = await fetch('/api/growth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'get-pillar-data',
+            pillar_key: key,
+            business_id: growthData.business_id,
+          }),
+        });
+        const result = await res.json();
+        if (result.success && result.data) {
+          setPillarDataMap((prev: any) => ({ ...prev, [key]: result.data }));
+        }
+      } catch { /* silent */ }
+    }
   };
 
   // ─── Dimension chat handler ───
@@ -391,12 +489,16 @@ export default function Home() {
               onBack={() => setSelectedDimension(null)}
               onSendMessage={handleDimensionMessage}
               isLoading={dimensionLoading}
+              pillarData={pillarDataMap[selectedDimension] || null}
+              pillarStatus={pillarStatus}
+              onRunAgent={handleRunPillarAgent}
+              isAgentRunning={agentRunning}
             />
           ) : (
             <GrowthHub
               data={growthData}
               userProfile={userProf}
-              onSelectDimension={(key) => setSelectedDimension(key)}
+              onSelectDimension={handleSelectDimension}
               onRedo={handleRedoAnalysis}
             />
           )}

@@ -107,6 +107,22 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at)')
     
+    # Pillar data - structured output from pillar agents
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pillar_data (
+            id TEXT PRIMARY KEY,
+            business_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            structured_output TEXT NOT NULL,
+            sources TEXT,
+            user_command TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(business_id, pillar_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_pillar_data_business ON pillar_data (business_id, pillar_key)')
+    
     conn.commit()
     conn.close()
 
@@ -733,6 +749,87 @@ def get_dimension_chat(analysis_id: str, dimension: str) -> Optional[Dict]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"]
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Pillar Data Operations (structured output from pillar agents)
+# ═══════════════════════════════════════════════════════════════════
+
+def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict, sources: list = None, user_command: str = "") -> bool:
+    """Save or update structured output for a pillar."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    output_json = json.dumps(structured_output, ensure_ascii=False)
+    sources_json = json.dumps(sources or [], ensure_ascii=False)
+    
+    cursor.execute('''
+        INSERT INTO pillar_data (id, business_id, pillar_key, structured_output, sources, user_command, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(business_id, pillar_key) DO UPDATE SET
+            structured_output = excluded.structured_output,
+            sources = excluded.sources,
+            user_command = excluded.user_command,
+            updated_at = excluded.updated_at
+    ''', (str(uuid.uuid4()), business_id, pillar_key, output_json, sources_json, user_command, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_pillar_data(business_id: str, pillar_key: str) -> Optional[dict]:
+    """Get structured output for a specific pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT structured_output, sources, user_command, created_at, updated_at
+        FROM pillar_data
+        WHERE business_id = ? AND pillar_key = ?
+    ''', (business_id, pillar_key))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "structured_output": json.loads(row["structured_output"]),
+        "sources": json.loads(row["sources"] or "[]"),
+        "user_command": row["user_command"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def get_all_pillar_data(business_id: str) -> dict:
+    """Get all pillar data for a business."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT pillar_key, structured_output, sources, user_command, created_at, updated_at
+        FROM pillar_data
+        WHERE business_id = ?
+        ORDER BY pillar_key
+    ''', (business_id,))
+    
+    result = {}
+    for row in cursor.fetchall():
+        result[row["pillar_key"]] = {
+            "structured_output": json.loads(row["structured_output"]),
+            "sources": json.loads(row["sources"] or "[]"),
+            "user_command": row["user_command"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+    
+    conn.close()
+    return result
 
 
 # Initialize database on module import

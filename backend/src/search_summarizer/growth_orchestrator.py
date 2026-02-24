@@ -347,7 +347,8 @@ def main():
     parser.add_argument("--action", required=True, choices=[
         "profile", "analyze", "assist", "chat", "dimension-chat",
         "list-businesses", "get-business", "create-business", "save-analysis",
-        "register", "login", "logout", "validate-session", "delete-business"
+        "register", "login", "logout", "validate-session", "delete-business",
+        "run-pillar", "pillar-status", "get-pillar-data"
     ])
     parser.add_argument("--input-file", required=True, help="Path to JSON input file")
     args = parser.parse_args()
@@ -636,6 +637,64 @@ def main():
             except Exception as e:
                 print("--- DELETE_BUSINESS_RESULT ---")
                 print(json.dumps({"success": False, "error": f"Erro ao excluir: {str(e)}"}, ensure_ascii=False, indent=2))
+
+    # ━━━ Run Pillar Agent Action ━━━
+    elif args.action == "run-pillar":
+        pillar_key = input_data.get("pillar_key")
+        business_id = input_data.get("business_id")
+        profile = input_data.get("profile", {})
+        user_command = input_data.get("user_command", "")
+        
+        if not pillar_key or not business_id:
+            print("--- RUN_PILLAR_RESULT ---")
+            print(json.dumps({"success": False, "error": "pillar_key and business_id are required"}, ensure_ascii=False))
+        else:
+            try:
+                from pillar_agent import run_pillar_agent
+                result = run_pillar_agent(pillar_key, business_id, profile, user_command)
+                print("--- RUN_PILLAR_RESULT ---")
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            except Exception as e:
+                print("--- RUN_PILLAR_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
+    # ━━━ Pillar Status Action ━━━
+    elif args.action == "pillar-status":
+        business_id = input_data.get("business_id")
+        
+        if not business_id:
+            print("--- PILLAR_STATUS_RESULT ---")
+            print(json.dumps({"success": False, "error": "business_id is required"}, ensure_ascii=False))
+        else:
+            try:
+                from pillar_agent import get_pillar_status
+                status = get_pillar_status(business_id)
+                print("--- PILLAR_STATUS_RESULT ---")
+                print(json.dumps({"success": True, "pillars": status}, ensure_ascii=False, indent=2))
+            except Exception as e:
+                print("--- PILLAR_STATUS_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
+    # ━━━ Get Pillar Data Action ━━━
+    elif args.action == "get-pillar-data":
+        business_id = input_data.get("business_id")
+        pillar_key = input_data.get("pillar_key")
+        
+        if not business_id or not pillar_key:
+            print("--- GET_PILLAR_DATA_RESULT ---")
+            print(json.dumps({"success": False, "error": "business_id and pillar_key are required"}, ensure_ascii=False))
+        else:
+            try:
+                data = db.get_pillar_data(business_id, pillar_key)
+                if data:
+                    print("--- GET_PILLAR_DATA_RESULT ---")
+                    print(json.dumps({"success": True, "data": data}, ensure_ascii=False, indent=2))
+                else:
+                    print("--- GET_PILLAR_DATA_RESULT ---")
+                    print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
+            except Exception as e:
+                print("--- GET_PILLAR_DATA_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

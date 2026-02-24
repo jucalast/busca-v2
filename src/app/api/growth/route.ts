@@ -61,6 +61,9 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
             'logout': '--- LOGOUT_RESULT ---',
             'validate-session': '--- VALIDATE_SESSION_RESULT ---',
             'delete-business': '--- DELETE_BUSINESS_RESULT ---',
+            'run-pillar': '--- RUN_PILLAR_RESULT ---',
+            'pillar-status': '--- PILLAR_STATUS_RESULT ---',
+            'get-pillar-data': '--- GET_PILLAR_DATA_RESULT ---',
         };
         const marker = markerMap[action] || null;
 
@@ -287,6 +290,51 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('delete-business', {
                 business_id,
             }, 30000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Run Pillar Agent ━━━
+        if (action === 'run-pillar') {
+            const { pillar_key, user_command } = body;
+            if (!pillar_key || !business_id) {
+                return NextResponse.json({ error: 'pillar_key and business_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('run-pillar', {
+                pillar_key,
+                business_id,
+                profile: profile || {},
+                user_command: user_command || '',
+            }, 180000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Pillar Status ━━━
+        if (action === 'pillar-status') {
+            if (!business_id) {
+                return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('pillar-status', {
+                business_id,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Get Pillar Data ━━━
+        if (action === 'get-pillar-data') {
+            const { pillar_key } = body;
+            if (!pillar_key || !business_id) {
+                return NextResponse.json({ error: 'pillar_key and business_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('get-pillar-data', {
+                pillar_key,
+                business_id,
+            }, 15000);
 
             return NextResponse.json(result);
         }
