@@ -891,7 +891,7 @@ export default function PillarWorkspace({
                                                                     className={`flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all ${isAutoExec ? 'opacity-0 animate-[fadeIn_0.4s_ease_forwards]' : ''}`}
                                                                     style={isAutoExec ? { animationDelay: `${si * 300 + 500}ms` } : undefined}>
                                                                     {faviconUrl ? (
-                                                                        <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" />
+                                                                        <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                                                     ) : (
                                                                         <Globe className="w-3 h-3 text-zinc-500" />
                                                                     )}
@@ -990,7 +990,7 @@ export default function PillarWorkspace({
                                 <a key={si} href={url} target="_blank" rel="noopener noreferrer"
                                     className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all">
                                     {faviconUrl ? (
-                                        <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" />
+                                        <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                     ) : (
                                         <Globe className="w-3 h-3 text-zinc-500" />
                                     )}
@@ -1178,7 +1178,7 @@ export default function PillarWorkspace({
                                         <a key={si} href={url} target="_blank" rel="noopener noreferrer"
                                             className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all">
                                             {faviconUrl ? (
-                                                <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" />
+                                                <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                             ) : (
                                                 <Globe className="w-3 h-3 text-zinc-500" />
                                             )}
