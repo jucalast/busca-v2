@@ -9,6 +9,7 @@ import {
     RefreshCw, Play, FileText, ListTree, Wand2, Target,
     Layers, ArrowRight, Zap, Globe, Package, Loader, Download
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { useSession, signIn } from 'next-auth/react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -74,19 +75,21 @@ function safeRender(value: any): string {
 }
 
 // ─── Google Docs Export (API Native Flow) ───
-async function openInGoogleDocs(deliverable: any, pillarLabel: string, session: any, setLoadingDoc: (id: string | null) => void) {
+async function openInGoogleDocs(deliverable: any, pillarLabel: string, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
     if (!session || !session.accessToken) {
         // Usuário não logado com o Google, forçamos o login primeiro
         await signIn('google');
         return;
     }
 
-    setLoadingDoc(deliverable.id || 'export');
+    const docId = deliverable.id || fallbackId || 'export';
+    setLoadingDoc(docId);
 
     const title = safeRender(deliverable.entregavel_titulo || 'Entregável');
-    const content = safeRender(deliverable.conteudo_completo || deliverable.conteudo);
-    const comoAplicar = safeRender(deliverable.como_aplicar || '');
-    const impacto = safeRender(deliverable.impacto_estimado || '');
+    const rawContent = safeRender(deliverable.conteudo_completo || deliverable.conteudo);
+    const content = cleanMarkdown(rawContent);
+    const comoAplicar = cleanMarkdown(safeRender(deliverable.como_aplicar || ''));
+    const impacto = cleanMarkdown(safeRender(deliverable.impacto_estimado || ''));
     const sources = deliverable.sources || deliverable.fontes_consultadas || [];
 
     let plainText = ``;
@@ -124,6 +127,69 @@ async function openInGoogleDocs(deliverable: any, pillarLabel: string, session: 
     } finally {
         setLoadingDoc(null);
     }
+}
+
+// ─── Markdown content renderer ───
+export function cleanMarkdown(raw: string): string {
+    if (!raw) return '';
+    let s = raw;
+
+    // Remove formatting fences the LLM often adds (e.g. ```markdown ... ```)
+    // Works even if the fence is in the middle of the text.
+    s = s.replace(/```(markdown|md)?[\s\n]*/gi, '');
+    s = s.replace(/```[\s\n]*/g, '');
+
+    return s.trim();
+}
+
+function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
+    const raw = typeof content === 'string' ? content : safeRender(content);
+    const text = cleanMarkdown(raw);
+    return (
+        <div className={`markdown-content ${className}`}>
+            <ReactMarkdown
+                components={{
+                    h1: ({ children }) => <h1 className="text-sm font-bold text-zinc-400 mt-3 mb-1.5">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-[13px] font-bold text-zinc-400 mt-2.5 mb-1">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-xs font-semibold text-zinc-500 mt-2 mb-1">{children}</h3>,
+                    h4: ({ children }) => <h4 className="text-[11px] font-semibold text-zinc-500 mt-1.5 mb-0.5">{children}</h4>,
+                    p: ({ children }) => <p className="text-[11px] text-zinc-500 leading-relaxed mb-1.5">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+                    li: ({ children }) => <li className="text-[11px] text-zinc-500 leading-relaxed">{children}</li>,
+                    strong: ({ children }) => <strong className="font-semibold text-zinc-400">{children}</strong>,
+                    em: ({ children }) => <em className="italic text-zinc-500">{children}</em>,
+                    a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-400 underline underline-offset-2">
+                            {children}
+                        </a>
+                    ),
+                    blockquote: ({ children }) => (
+                        <blockquote className="border-l-2 border-zinc-700 pl-3 my-1.5 text-zinc-600 italic">{children}</blockquote>
+                    ),
+                    code: ({ children, className: codeClass }) => {
+                        const isInline = !codeClass;
+                        return isInline
+                            ? <code className="bg-zinc-800 text-zinc-400 px-1 py-0.5 rounded text-[10px] font-mono">{children}</code>
+                            : <code className="block bg-zinc-900 text-zinc-400 p-2 rounded-lg text-[10px] font-mono my-1.5 overflow-x-auto">{children}</code>;
+                    },
+                    pre: ({ children }) => <pre className="bg-zinc-900 rounded-lg my-1.5 overflow-x-auto">{children}</pre>,
+                    hr: () => <hr className="border-zinc-800 my-2" />,
+                    table: ({ children }) => (
+                        <div className="overflow-x-auto my-1.5">
+                            <table className="min-w-full text-[10px] border-collapse">{children}</table>
+                        </div>
+                    ),
+                    thead: ({ children }) => <thead className="bg-zinc-800/50">{children}</thead>,
+                    th: ({ children }) => <th className="text-left text-zinc-400 font-semibold px-2 py-1 border border-zinc-700/50">{children}</th>,
+                    td: ({ children }) => <td className="text-zinc-500 px-2 py-1 border border-zinc-800/50">{children}</td>,
+                }}
+            >
+                {text}
+            </ReactMarkdown>
+        </div>
+    );
 }
 
 // ─── Streaming text reveal ───
@@ -231,9 +297,7 @@ function DeliverableCard({ deliverable, color, session, loadingState, setLoading
 
             {expanded && (
                 <div className="px-4 pb-4">
-                    <div className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
-                        {content || 'Resumo final concluído.'}
-                    </div>
+                    <MarkdownContent content={content || 'Resumo final concluído.'} />
                 </div>
             )}
         </div>
@@ -303,7 +367,7 @@ export default function PillarWorkspace({
     const [taskDeliverables, setTaskDeliverables] = useState<Record<string, any>>({});
     const [taskSubtasks, setTaskSubtasks] = useState<Record<string, any>>({});
     const [completedTasks, setCompletedTasks] = useState<Record<string, Set<string>>>({});
-    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+    const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
     const [showKPIs, setShowKPIs] = useState(false);
     const [error, setError] = useState('');
     // Auto-execution state: expand → execute sequentially
@@ -333,7 +397,7 @@ export default function PillarWorkspace({
             setTaskDeliverables({});
             setTaskSubtasks({});
             setCompletedTasks({});
-            setExpandedTaskId(null);
+            setExpandedTaskIds(new Set());
             setSelectedPillar(null);
             setLoadingPillar(null);
             setExecutingTask(null);
@@ -426,7 +490,7 @@ export default function PillarWorkspace({
     // ─── Select pillar ───
     const handleSelectPillar = useCallback(async (key: string) => {
         setSelectedPillar(key);
-        setExpandedTaskId(null);
+        setExpandedTaskIds(new Set());
         setError('');
         if (pillarStates[key]?.plan) return;
 
@@ -469,8 +533,9 @@ export default function PillarWorkspace({
 
     // ─── AI executes task ───
     const handleAIExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
-        setExecutingTask(task.id);
-        setExpandedTaskId(task.id);
+        const tid = `${pillarKey}_${task.id}`;
+        setExecutingTask(tid);
+        setExpandedTaskIds(prev => new Set(prev).add(tid));
         setError('');
         try {
             const result = await apiCall('specialist-execute', {
@@ -479,10 +544,12 @@ export default function PillarWorkspace({
                 business_id: businessId, profile: profile?.profile || profile,
             });
             if (result.success && result.execution) {
-                setTaskDeliverables(prev => ({ ...prev, [task.id]: result.execution }));
+                const executionData = { ...result.execution, id: result.execution.id || task.id };
+                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
                 setCompletedTasks(prev => {
                     const s = new Set(prev[pillarKey] || []);
                     s.add(task.id);
+                    s.add(tid);
                     return { ...prev, [pillarKey]: s };
                 });
             } else { setError(result.error || 'Erro na execução'); }
@@ -493,8 +560,9 @@ export default function PillarWorkspace({
 
     // ─── Expand subtasks ───
     const handleExpandSubtasks = useCallback(async (pillarKey: string, task: TaskItem) => {
-        setExpandingTask(task.id);
-        setExpandedTaskId(task.id);
+        const tid = `${pillarKey}_${task.id}`;
+        setExpandingTask(tid);
+        setExpandedTaskIds(prev => new Set(prev).add(tid));
         setError('');
         try {
             const result = await apiCall('expand-subtasks', {
@@ -502,7 +570,7 @@ export default function PillarWorkspace({
                 task_data: task, profile: profile?.profile || profile,
             });
             if (result.success && result.subtasks) {
-                setTaskSubtasks(prev => ({ ...prev, [task.id]: result.subtasks }));
+                setTaskSubtasks(prev => ({ ...prev, [tid]: result.subtasks }));
             } else { setError(result.error || 'Erro ao expandir'); }
         } catch (err: any) { setError(err.message || 'Erro'); }
         finally { setExpandingTask(null); }
@@ -510,9 +578,9 @@ export default function PillarWorkspace({
 
     // ─── Auto-execute: reuse existing subtasks or expand first, then execute each sequentially ───
     const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
-        const tid = task.id;
+        const tid = `${pillarKey}_${task.id}`;
         setAutoExecuting(tid);
-        setExpandedTaskId(tid);
+        setExpandedTaskIds(prev => new Set(prev).add(tid));
         setAutoExecStep(0);
         setAutoExecTotal(0);
         setAutoExecLog([]);
@@ -630,6 +698,7 @@ export default function PillarWorkspace({
 
                 const combinedSources = allResults.flatMap(r => r.sources || r.fontes_consultadas || []);
                 const combinedDeliverable = {
+                    id: tid,
                     entregavel_titulo: task.entregavel_ia || task.titulo,
                     entregavel_tipo: 'plano_completo',
                     conteudo: resumo,
@@ -643,6 +712,7 @@ export default function PillarWorkspace({
                 setTaskDeliverables(prev => ({ ...prev, [tid]: combinedDeliverable }));
                 setCompletedTasks(prev => {
                     const s = new Set(prev[pillarKey] || []);
+                    s.add(task.id);
                     s.add(tid);
                     return { ...prev, [pillarKey]: s };
                 });
@@ -667,6 +737,7 @@ export default function PillarWorkspace({
 
     // ─── User completes task ───
     const handleUserComplete = useCallback(async (pillarKey: string, task: TaskItem) => {
+        const tid = `${pillarKey}_${task.id}`;
         try {
             await apiCall('track-result', {
                 analysis_id: analysisId, pillar_key: pillarKey,
@@ -676,14 +747,14 @@ export default function PillarWorkspace({
             setCompletedTasks(prev => {
                 const s = new Set(prev[pillarKey] || []);
                 s.add(task.id);
+                s.add(tid);
                 return { ...prev, [pillarKey]: s };
             });
         } catch { /* ignore */ }
     }, [analysisId, apiCall]);
 
     // ─── Task action buttons ───
-    const TaskActions = ({ task, pillarKey, isDone }: { task: TaskItem; pillarKey: string; isDone: boolean }) => {
-        const tid = task.id;
+    const TaskActions = ({ task, pillarKey, tid, isDone }: { task: TaskItem; pillarKey: string; tid: string; isDone: boolean }) => {
         const isExecuting = executingTask === tid;
         const isExpanding = expandingTask === tid;
         const isAutoExec = autoExecuting === tid;
@@ -796,11 +867,11 @@ export default function PillarWorkspace({
                                                     </p>
                                                 )}
                                                 {result.conteudo && (
-                                                    <div className="text-[11px] text-zinc-500 italic leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto scrollbar-hide">
+                                                    <div className="max-h-48 overflow-y-auto scrollbar-hide">
                                                         {isAutoExec && i === autoExecStep - 2 ? (
                                                             <StreamingText text={safeRender(result.conteudo)} speed={6} />
                                                         ) : (
-                                                            safeRender(result.conteudo)
+                                                            <MarkdownContent content={safeRender(result.conteudo)} />
                                                         )}
                                                     </div>
                                                 )}
@@ -1161,16 +1232,25 @@ export default function PillarWorkspace({
                     {/* ALL TASKS — unified, sequential */}
                     <section className="mb-6 space-y-3">
                         {tarefas.map((task, i) => {
-                            const isDone = done.has(task.id);
+                            const tid = `${selectedPillar}_${task.id}`;
+                            const isDone = done.has(task.id) || done.has(tid);
                             const isAI = task.executavel_por_ia;
-                            const isExpanded = expandedTaskId === task.id;
+                            const isExpanded = expandedTaskIds.has(tid);
 
                             const toggleExpand = () => {
-                                setExpandedTaskId(prev => prev === task.id ? null : task.id);
+                                setExpandedTaskIds(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(tid)) {
+                                        next.delete(tid);
+                                    } else {
+                                        next.add(tid);
+                                    }
+                                    return next;
+                                });
                             };
 
-                            const deliverable = taskDeliverables[task.id];
-                            const subtasksList = taskSubtasks[task.id]?.subtarefas || autoExecSubtasks[task.id] || [];
+                            const deliverable = taskDeliverables[tid];
+                            const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
                             const subtasksCount = subtasksList.length;
 
                             return (
@@ -1215,10 +1295,10 @@ export default function PillarWorkspace({
                                             {!isExpanded && (deliverable || subtasksCount > 0) && (
                                                 <div className="flex flex-wrap items-center gap-3 mt-1.5 mb-2">
                                                     {deliverable && (
-                                                        <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc); }} disabled={loadingDoc === (deliverable.id || 'export')}
+                                                        <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc, task.id); }} disabled={loadingDoc === (deliverable.id || task.id || 'export')}
                                                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'text-zinc-400 hover:text-zinc-200 cursor-pointer'}`}>
-                                                            {loadingDoc === (deliverable.id || 'export') ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> : <img src="/docs.png" alt="" className="w-4 h-4" />}
-                                                            {loadingDoc === (deliverable.id || 'export') ? 'Gerando Doc...' : !session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
+                                                            {loadingDoc === (deliverable.id || task.id || 'export') ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> : <img src="/docs.png" alt="" className="w-4 h-4" />}
+                                                            {loadingDoc === (deliverable.id || task.id || 'export') ? 'Gerando Doc...' : !session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
                                                         </button>
                                                     )}
                                                     {subtasksCount > 0 && (
@@ -1263,7 +1343,7 @@ export default function PillarWorkspace({
                                                     </div>
 
                                                     {/* Action buttons + deliverables + subtasks */}
-                                                    <TaskActions task={task} pillarKey={selectedPillar} isDone={isDone} />
+                                                    <TaskActions task={task} pillarKey={selectedPillar} tid={tid} isDone={isDone} />
                                                 </>
                                             )}
                                         </div>

@@ -198,10 +198,9 @@ def identify_dynamic_categories(profile: dict) -> list:
     categories = profile.get("categorias_relevantes", [])
 
     if not categories:
-        raise ValueError(
-            "O LLM não retornou categorias relevantes no perfil. "
-            "Verifique o prompt do profiler ou os dados de onboarding."
-        )
+        print("  ⚠️ Nenhuma categoria no perfil. Gerando 7 pilares padrão...", file=sys.stderr)
+        # Instead of crashing, generate all 7 defaults so the pipeline can continue
+        categories = []
 
     # Remap invalid IDs to valid pillar keys
     seen_ids = set()
@@ -319,6 +318,13 @@ def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
             return {
                 "success": False,
                 "erro": "Chave da API Gemini não configurada. Adicione GEMINI_API_KEY no arquivo .env."
+            }
+    elif model_provider == "openrouter":
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            return {
+                "success": False,
+                "erro": "Chave da API OpenRouter não configurada. Adicione OPENROUTER_API_KEY no arquivo .env."
             }
     else:
         api_key = os.environ.get("GROQ_API_KEY")

@@ -154,6 +154,7 @@ export default function SidebarLayout({
             >
               <option value="groq">Modelo: Groq (Llama)</option>
               <option value="gemini">Modelo: Google Gemini</option>
+              <option value="openrouter">Modelo: OpenRouter</option>
             </select>
             <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
               <ChevronDown className="h-4 w-4 text-zinc-500" />

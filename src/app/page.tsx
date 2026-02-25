@@ -162,8 +162,13 @@ export default function Home() {
         }
       }
 
+      // If stream ended but we never got a result, that's an error
+      // (growthStage would have been set to 'results' inside the loop if we got one)
+
     } catch (err: any) {
       setError(err.message || 'Erro na análise.');
+      // If we never got results, go back to onboarding so the screen isn't blank
+      setGrowthStage(prev => prev === 'analyzing' ? 'onboarding' : prev);
     } finally {
       setGrowthLoading(false);
       setGrowthProgress('');
@@ -299,7 +304,7 @@ export default function Home() {
     }
   };
 
-// ─── Profile summary for display ───
+  // ─── Profile summary for display ───
   const getProfileSummary = () => {
     const p = profile?.profile?.perfil || {};
     return `${p.nome || '?'} — ${p.segmento || '?'} — ${p.modelo_negocio || '?'} — ${p.localizacao || '?'}`;
@@ -366,7 +371,7 @@ export default function Home() {
     } catch { /* silent */ }
   };
 
-  
+
   // Show loading while checking auth
   if (authLoading) {
     return (

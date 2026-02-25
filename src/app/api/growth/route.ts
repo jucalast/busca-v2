@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { exec, spawn } from 'child_process';
 import path from 'path';
 import util from 'util';
@@ -115,8 +116,9 @@ function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480000): R
 
     return new ReadableStream({
         start(controller) {
+            const encoder = new TextEncoder();
             const send = (obj: object) => {
-                try { controller.enqueue(`data: ${JSON.stringify(obj)}\n\n`); } catch { /* stream closed */ }
+                try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); } catch { /* stream closed */ }
             };
 
             const child = spawn(pythonCommand, [scriptPath, '--action', 'analyze', '--input-file', tmpPath], {

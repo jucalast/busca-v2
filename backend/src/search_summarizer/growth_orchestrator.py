@@ -294,6 +294,10 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             return {"categories": [], "allSources": [], "error": "Gemini API key not configured"}
+    elif model_provider == "openrouter":
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            return {"categories": [], "allSources": [], "error": "OpenRouter API key not configured"}
     else:
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
@@ -304,10 +308,19 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
     categories = profile.get("categorias_relevantes", profile.get("categories", []))
 
     if not categories:
-        raise ValueError(
-            "Nenhuma categoria encontrada no perfil para pesquisa de mercado. "
-            "O profiler deve gerar categorias_relevantes antes do market search."
-        )
+        print("  ⚠️ Nenhuma categoria no perfil. Usando 7 pilares padrão para market search.", file=sys.stderr)
+        from business_profiler import _VALID_PILLAR_IDS
+        _DEFAULT_META = {
+            "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6", "foco": "quem compra, segmentos, comportamento"},
+            "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6", "foco": "posicionamento, diferencial, proposta de valor"},
+            "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899", "foco": "presença visual, design, credibilidade"},
+            "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981", "foco": "canais de venda, distribuição, prospecção"},
+            "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B", "foco": "SEO, conteúdo, redes sociais"},
+            "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444", "foco": "anúncios, Google Ads, Meta Ads"},
+            "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1", "foco": "funil, conversão, precificação"},
+        }
+        categories = [{"id": pid, **meta, "prioridade": 5, "justificativa": "Pilar padrão", "nao_falar": ""} for pid, meta in _DEFAULT_META.items()]
+        profile["categorias_relevantes"] = categories
 
     perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
     description = f"{perfil_data.get('nome', '')} - {perfil_data.get('segmento', '')} - {perfil_data.get('modelo_negocio', '')} - {perfil_data.get('localizacao', '')}"
@@ -417,9 +430,11 @@ def main():
                 print(f"  ⚠️ Erro ao limpar dados anteriores: {e}", file=sys.stderr)
 
         # Step 1: Business Discovery (search for the ACTUAL business online)
+        print("THOUGHT: Executando discovery do negócio...")
         print("🔎 Executando discovery do negócio...", file=sys.stderr)
-        discovery_data = discover_business(profile, region)
+        discovery_data = discover_business(profile, region, model_provider=model_provider)
         discovery_found = discovery_data.get("found", False)
+        print(f"THOUGHT: Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}")
         print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
 
         # Step 2: Market search
@@ -430,7 +445,17 @@ def main():
             print("  🔄 Safety remap aplicado às categorias", file=sys.stderr)
         except Exception as e:
             print(f"  ⚠️ Safety remap falhou: {e}", file=sys.stderr)
+            # Ensure categories exist even if remap fails
+            if not profile.get("categorias_relevantes"):
+                print("  🔧 Gerando categorias padrão como fallback...", file=sys.stderr)
+                from business_profiler import identify_dynamic_categories as _idc_fallback
+                profile["categorias_relevantes"] = []  # Will be filled with defaults
+                try:
+                    _idc_fallback(profile)
+                except Exception:
+                    pass  # identify_dynamic_categories now handles empty lists gracefully
 
+        print("THOUGHT: Executando pesquisa de mercado...")
         print("🔍 Executando pesquisa de mercado...", file=sys.stderr)
         cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
         queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
@@ -438,6 +463,7 @@ def main():
         print(f"  🔍 Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
         market_data = run_market_search(profile, region, model_provider)
         mkt_cats = market_data.get('categories', [])
+        print(f"THOUGHT: Pesquisa de mercado concluída no ramo do negócio.")
         print(f"  ✅ Pesquisa completa: {len(mkt_cats)} categorias", file=sys.stderr)
         for mc in mkt_cats:
             mc_resumo = mc.get("resumo", {})
@@ -445,6 +471,7 @@ def main():
             print(f"    📂 id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'✅' if has_data else '❌'}", file=sys.stderr)
 
         # Step 3: Per-dimension scoring with discovery context
+        print("THOUGHT: Calculando score por dimensão...")
         print("📊 Calculando score por dimensão...", file=sys.stderr)
         score_result = run_scorer(profile, market_data, discovery_data=discovery_data, model_provider=model_provider)
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
@@ -477,11 +504,13 @@ def main():
 
         # Step 3: Persist to database
         if business_id:
+            print("THOUGHT: Salvando análise no banco de dados...")
             print("💾 Salvando análise...", file=sys.stderr)
             analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
         else:
             # Create new business if no business_id provided
+            print("THOUGHT: Criando novo negócio...")
             print("💾 Criando novo negócio...", file=sys.stderr)
             db.get_or_create_user(user_id)
             perfil = profile.get("perfil", profile)
@@ -498,6 +527,7 @@ def main():
         brief = None
         diagnostics_summary = {}
         if business_id and analysis_id:
+            print("THOUGHT: Sintetizando Business Brief...")
             print(f"\n🧠 [STEP 5] SPECIALIST ENGINE", file=sys.stderr)
             try:
                 brief = generate_business_brief(

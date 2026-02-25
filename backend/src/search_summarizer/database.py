@@ -123,6 +123,98 @@ def init_db():
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pillar_data_business ON pillar_data (business_id, pillar_key)')
     
+    # Business briefs - compact business brief per analysis
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS business_briefs (
+            id TEXT PRIMARY KEY,
+            business_id TEXT NOT NULL,
+            analysis_id TEXT NOT NULL,
+            brief_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(business_id, analysis_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_briefs_business ON business_briefs (business_id, analysis_id)')
+    
+    # Pillar diagnostics - per-pillar diagnostic data from scorer
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pillar_diagnostics (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            diagnostic_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(analysis_id, pillar_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_diagnostics_analysis ON pillar_diagnostics (analysis_id, pillar_key)')
+    
+    # Specialist plans - pillar execution plans
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS specialist_plans (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            plan_data TEXT NOT NULL,
+            status TEXT DEFAULT 'draft',
+            user_notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(analysis_id, pillar_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_specialist_plans ON specialist_plans (analysis_id, pillar_key)')
+    
+    # Specialist executions
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS specialist_executions (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            result_data TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL
+        )
+    ''')
+    
+    # Specialist results
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS specialist_results (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            action_title TEXT,
+            status TEXT DEFAULT 'pending',
+            outcome TEXT,
+            business_impact TEXT,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    
+    # Pillar KPIs
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pillar_kpis (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            kpi_name TEXT NOT NULL,
+            kpi_value TEXT,
+            kpi_target TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(analysis_id, pillar_key, kpi_name)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_pillar_kpis ON pillar_kpis (analysis_id, pillar_key)')
+    
+    # Migration: add status column to specialist_results if missing
+    try:
+        cursor.execute("ALTER TABLE specialist_results ADD COLUMN status TEXT DEFAULT 'pending'")
+    except Exception:
+        pass  # Column already exists
+    
     conn.commit()
     conn.close()
 
@@ -830,6 +922,526 @@ def get_all_pillar_data(business_id: str) -> dict:
     
     conn.close()
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Business Brief Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> bool:
+    """Save or update business brief for specialist engine."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
+    
+    cursor.execute('''
+        INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(business_id, analysis_id) DO UPDATE SET
+            brief_data = excluded.brief_data,
+            created_at = excluded.created_at
+    ''', (str(uuid.uuid4()), business_id, analysis_id, brief_json, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[str] = None) -> Optional[Dict]:
+    """Get business brief. Supports both (business_id, analysis_id) and (analysis_id) signatures."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if analysis_id:
+        # Called as get_business_brief(business_id, analysis_id)
+        cursor.execute('''
+            SELECT brief_data, created_at FROM business_briefs
+            WHERE business_id = ? AND analysis_id = ?
+        ''', (business_id_or_analysis_id, analysis_id))
+    else:
+        # Called as get_business_brief(analysis_id) — search by analysis_id only
+        cursor.execute('''
+            SELECT brief_data, created_at FROM business_briefs
+            WHERE analysis_id = ?
+        ''', (business_id_or_analysis_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    brief_data = row["brief_data"]
+    try:
+        brief_data = json.loads(brief_data)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    
+    return {
+        "brief_data": brief_data,
+        "created_at": row["created_at"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Pillar Diagnostic Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
+    """Save or update diagnostic data for a pillar."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
+    
+    cursor.execute('''
+        INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
+            diagnostic_data = excluded.diagnostic_data,
+            updated_at = excluded.updated_at
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, diag_json, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_all_diagnostics(analysis_id: str) -> List[Dict]:
+    """Get all pillar diagnostics for an analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT pillar_key, diagnostic_data, created_at, updated_at
+        FROM pillar_diagnostics
+        WHERE analysis_id = ?
+    ''', (analysis_id,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    result = []
+    for row in rows:
+        diag = json.loads(row["diagnostic_data"])
+        diag["pillar_key"] = row["pillar_key"]
+        diag["created_at"] = row["created_at"]
+        diag["updated_at"] = row["updated_at"]
+        result.append(diag)
+    
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Analysis Market Data & Specialist Plan Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
+    """Get market data from a saved analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT market_data FROM analyses WHERE id = ?', (analysis_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    try:
+        return json.loads(row["market_data"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
+    """Approve a specialist plan for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('''
+        UPDATE specialist_plans
+        SET status = 'approved', user_notes = ?, updated_at = ?
+        WHERE analysis_id = ? AND pillar_key = ?
+    ''', (user_notes, now, analysis_id, pillar_key))
+    
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    
+    return success
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Business Brief Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> bool:
+    """Save or update a business brief for a given analysis."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
+    
+    cursor.execute('''
+        INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(business_id, analysis_id) DO UPDATE SET
+            brief_data = excluded.brief_data
+    ''', (str(uuid.uuid4()), business_id, analysis_id, brief_json, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[str] = None) -> Optional[Dict]:
+    """Get business brief. Supports two call signatures:
+    - get_business_brief(business_id, analysis_id) — lookup by both keys
+    - get_business_brief(analysis_id) — lookup by analysis_id only
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if analysis_id is not None:
+        # Called as get_business_brief(business_id, analysis_id)
+        cursor.execute('''
+            SELECT * FROM business_briefs
+            WHERE business_id = ? AND analysis_id = ?
+        ''', (business_id_or_analysis_id, analysis_id))
+    else:
+        # Called as get_business_brief(analysis_id)
+        cursor.execute('''
+            SELECT * FROM business_briefs
+            WHERE analysis_id = ?
+        ''', (business_id_or_analysis_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    brief_raw = row["brief_data"]
+    try:
+        brief_data = json.loads(brief_raw)
+    except (json.JSONDecodeError, TypeError):
+        brief_data = brief_raw
+    
+    return {
+        "id": row["id"],
+        "business_id": row["business_id"],
+        "analysis_id": row["analysis_id"],
+        "brief_data": brief_data,
+        "created_at": row["created_at"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Pillar Diagnostic Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
+    """Save or update diagnostic data for a pillar."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
+    
+    cursor.execute('''
+        INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
+            diagnostic_data = excluded.diagnostic_data,
+            updated_at = excluded.updated_at
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, diag_json, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_all_diagnostics(analysis_id: str) -> List[Dict]:
+    """Get all pillar diagnostics for an analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT * FROM pillar_diagnostics
+        WHERE analysis_id = ?
+    ''', (analysis_id,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    results = []
+    for row in rows:
+        try:
+            diag = json.loads(row["diagnostic_data"])
+        except (json.JSONDecodeError, TypeError):
+            diag = {}
+        results.append({
+            "id": row["id"],
+            "analysis_id": row["analysis_id"],
+            "pillar_key": row["pillar_key"],
+            "diagnostic_data": diag,
+            **diag,  # Spread diagnostic data at top level for easy access
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"]
+        })
+    
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Analysis Market Data Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
+    """Get market data from a saved analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT market_data FROM analyses
+        WHERE id = ?
+    ''', (analysis_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    try:
+        return json.loads(row["market_data"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Specialist Plan Operations
+# ═══════════════════════════════════════════════════════════════════
+
+def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
+    """Approve a specialist plan for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('''
+        UPDATE specialist_plans
+        SET status = 'approved', user_notes = ?, updated_at = ?
+        WHERE analysis_id = ? AND pillar_key = ?
+    ''', (user_notes, now, analysis_id, pillar_key))
+    
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    
+    return success
+
+
+def get_pillar_diagnostic(analysis_id: str, pillar_key: str) -> Optional[Dict]:
+    """Get diagnostic data for a single pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT diagnostic_data, created_at, updated_at
+        FROM pillar_diagnostics
+        WHERE analysis_id = ? AND pillar_key = ?
+    ''', (analysis_id, pillar_key))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    try:
+        diag = json.loads(row["diagnostic_data"])
+    except (json.JSONDecodeError, TypeError):
+        diag = {}
+    
+    return diag
+
+
+def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: str = "draft") -> bool:
+    """Save or update a specialist plan for a pillar."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    plan_json = json.dumps(plan_data, ensure_ascii=False) if not isinstance(plan_data, str) else plan_data
+    
+    cursor.execute('''
+        INSERT INTO specialist_plans (id, analysis_id, pillar_key, plan_data, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
+            plan_data = excluded.plan_data,
+            status = excluded.status,
+            updated_at = excluded.updated_at
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, plan_json, status, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_pillar_plan(analysis_id: str, pillar_key: str) -> Optional[Dict]:
+    """Get the specialist plan for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT plan_data, status, user_notes, created_at, updated_at
+        FROM specialist_plans
+        WHERE analysis_id = ? AND pillar_key = ?
+    ''', (analysis_id, pillar_key))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    try:
+        plan_data = json.loads(row["plan_data"])
+    except (json.JSONDecodeError, TypeError):
+        plan_data = {}
+    
+    return {
+        "plan_data": plan_data,
+        "status": row["status"],
+        "user_notes": row["user_notes"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"]
+    }
+
+
+def save_execution_result(
+    analysis_id: str, pillar_key: str, task_id: str, action_title: str,
+    status: str = "completed", outcome: str = "", business_impact: str = ""
+) -> Dict:
+    """Save an execution result for a pillar task."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    result_id = str(uuid.uuid4())
+    
+    cursor.execute('''
+        INSERT INTO specialist_results (id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (result_id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": result_id,
+        "analysis_id": analysis_id,
+        "pillar_key": pillar_key,
+        "task_id": task_id,
+        "action_title": action_title,
+        "status": status,
+        "outcome": outcome,
+        "business_impact": business_impact,
+        "created_at": now
+    }
+
+
+def get_pillar_results(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
+    """Get all execution results for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, task_id, action_title, status, outcome, business_impact, created_at
+        FROM specialist_results
+        WHERE analysis_id = ? AND pillar_key = ?
+        ORDER BY created_at
+    ''', (analysis_id, pillar_key))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return None
+    
+    return [{
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "action_title": row["action_title"],
+        "status": row["status"],
+        "outcome": row["outcome"],
+        "business_impact": row["business_impact"],
+        "created_at": row["created_at"]
+    } for row in rows]
+
+
+def save_pillar_kpi(
+    analysis_id: str, pillar_key: str,
+    kpi_name: str, kpi_value: str, kpi_target: str = ""
+) -> bool:
+    """Save or update a KPI for a pillar."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    
+    cursor.execute('''
+        INSERT INTO pillar_kpis (id, analysis_id, pillar_key, kpi_name, kpi_value, kpi_target, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(analysis_id, pillar_key, kpi_name) DO UPDATE SET
+            kpi_value = excluded.kpi_value,
+            kpi_target = excluded.kpi_target
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, kpi_name, kpi_value, kpi_target, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_pillar_kpis(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
+    """Get all KPIs for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT kpi_name, kpi_value, kpi_target, created_at
+        FROM pillar_kpis
+        WHERE analysis_id = ? AND pillar_key = ?
+    ''', (analysis_id, pillar_key))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return None
+    
+    return [{
+        "kpi_name": row["kpi_name"],
+        "kpi_value": row["kpi_value"],
+        "kpi_target": row["kpi_target"],
+        "created_at": row["created_at"]
+    } for row in rows]
 
 
 # Initialize database on module import
