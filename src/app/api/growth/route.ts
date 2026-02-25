@@ -77,6 +77,9 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
             'run-pillar': '--- RUN_PILLAR_RESULT ---',
             'pillar-status': '--- PILLAR_STATUS_RESULT ---',
             'get-pillar-data': '--- GET_PILLAR_DATA_RESULT ---',
+            'stop-task': '--- STOP_TASK_RESULT ---',
+            'redo-task': '--- REDO_TASK_RESULT ---',
+            'redo-subtasks': '--- REDO_SUBTASKS_RESULT ---',
         };
         const marker = markerMap[action] || null;
 
@@ -681,6 +684,45 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-pillar-data', {
                 pillar_key,
                 business_id,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Stop Task ━━━
+        if (action === 'stop-task') {
+            // Frontend handles abort via AbortController, backend just acknowledges
+            const result = await runOrchestrator('stop-task', {}, 5000);
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Redo Task ━━━
+        if (action === 'redo-task') {
+            const { analysis_id, pillar_key, task_id } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('redo-task', {
+                analysis_id,
+                pillar_key,
+                task_id,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Redo Subtasks ━━━
+        if (action === 'redo-subtasks') {
+            const { analysis_id, pillar_key, task_id } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('redo-subtasks', {
+                analysis_id,
+                pillar_key,
+                task_id,
             }, 15000);
 
             return NextResponse.json(result);

@@ -58,7 +58,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
             {/* Trigger */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2.5 h-9 px-4 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 hover:ring-1 hover:ring-zinc-600 transition-all duration-200 cursor-pointer"
+                className="flex items-center gap-2.5 h-9 px-4 rounded-lg bg-transparent hover:bg-white/5 hover:ring-1 hover:ring-zinc-600 transition-all duration-200 cursor-pointer"
             >
                 <Image
                     src={selected.logo}

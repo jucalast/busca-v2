@@ -1444,5 +1444,56 @@ def get_pillar_kpis(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
     } for row in rows]
 
 
+def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str):
+    """Delete specialist execution data for a specific task."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete from specialist_executions table
+        cursor.execute('''
+            DELETE FROM specialist_executions
+            WHERE analysis_id = ? AND pillar_key = ? AND id = ?
+        ''', (analysis_id, pillar_key, task_id))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_specialist_result(analysis_id: str, pillar_key: str, task_id: str):
+    """Delete specialist result data for a specific task."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete from specialist_results table
+        cursor.execute('''
+            DELETE FROM specialist_results
+            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+        ''', (analysis_id, pillar_key, task_id))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_specialist_subtasks(analysis_id: str, pillar_key: str, task_id: str):
+    """Delete subtasks data for a specific task (from executions table)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete subtask executions (they have IDs like taskId_st1, taskId_st2, etc.)
+        cursor.execute('''
+            DELETE FROM specialist_executions
+            WHERE analysis_id = ? AND pillar_key = ? AND id LIKE ?
+        ''', (analysis_id, pillar_key, f"{task_id}_st%"))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # Initialize database on module import
 init_db()

@@ -1035,6 +1035,53 @@ def main():
                 print("--- GET_PILLAR_DATA_RESULT ---")
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
 
+    # ━━━ Stop Task Action ━━━
+    elif args.action == "stop-task":
+        # Frontend handles abort via AbortController, backend just acknowledges
+        print("--- STOP_TASK_RESULT ---")
+        print(json.dumps({"success": True, "message": "Task execution stopped"}, ensure_ascii=False))
+
+    # ━━━ Redo Task Action ━━━
+    elif args.action == "redo-task":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_id = input_data.get("task_id")
+        
+        if not analysis_id or not pillar_key or not task_id:
+            print("--- REDO_TASK_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id, pillar_key, and task_id are required"}, ensure_ascii=False))
+        else:
+            try:
+                # Delete execution data for this specific task
+                db.delete_specialist_execution(analysis_id, pillar_key, task_id)
+                db.delete_specialist_result(analysis_id, pillar_key, task_id)
+                
+                print("--- REDO_TASK_RESULT ---")
+                print(json.dumps({"success": True, "message": "Task data cleared for redo"}, ensure_ascii=False))
+            except Exception as e:
+                print("--- REDO_TASK_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
+    # ━━━ Redo Subtasks Action ━━━
+    elif args.action == "redo-subtasks":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        task_id = input_data.get("task_id")
+        
+        if not analysis_id or not pillar_key or not task_id:
+            print("--- REDO_SUBTASKS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id, pillar_key, and task_id are required"}, ensure_ascii=False))
+        else:
+            try:
+                # Delete only subtasks data, keep main task execution
+                db.delete_specialist_subtasks(analysis_id, pillar_key, task_id)
+                
+                print("--- REDO_SUBTASKS_RESULT ---")
+                print(json.dumps({"success": True, "message": "Subtasks data cleared for regeneration"}, ensure_ascii=False))
+            except Exception as e:
+                print("--- REDO_SUBTASKS_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     main()

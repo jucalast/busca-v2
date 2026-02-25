@@ -153,10 +153,11 @@ DADOS ESPECIALISTAS DA INTERNET (use como base):
 REGRAS:
 1. Crie 4-7 sub-tarefas EXECUTÁVEIS e ORDENADAS
 2. Cada sub-tarefa deve ser uma AÇÃO CONCRETA com ferramenta específica
-3. Inclua tempo estimado por sub-tarefa
-4. Cite dados reais das fontes quando disponível
-5. Se capital zero: apenas ferramentas gratuitas
-6. Cada sub-tarefa deve ser completável em 30min-2h
+3. Use "docs" para tarefas de documentos, textos, planos e análises
+4. Inclua tempo estimado por sub-tarefa
+5. Cite dados reais das fontes quando disponível
+6. Se capital zero: apenas ferramentas gratuitas
+7. Cada sub-tarefa deve ser completável em 30min-2h
 
 JSON OBRIGATÓRIO:
 {{

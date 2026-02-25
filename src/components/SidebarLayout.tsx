@@ -130,11 +130,11 @@ export default function SidebarLayout({
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#09090b] overflow-hidden">
+    <div className="relative h-screen bg-[#09090b] overflow-hidden">
       {/* Top Bar - Full Width */}
-      <header className="h-20 bg-[#111113] flex items-center justify-between px-6 flex-shrink-0 shadow-[0_1px_0_0_rgba(255,255,255,0.03)]">
+      <header className="absolute inset-x-0 top-0 h-20 flex items-center justify-between px-6 z-20 bg-[#09090b]/90 backdrop-blur-sm border-b border-white/5">
         {/* Logo */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 relative z-10">
           <img
             src="/logo.png"
             alt="Logo"
@@ -143,20 +143,21 @@ export default function SidebarLayout({
         </div>
 
         {/* Global AI Model Selector */}
-        <div className="flex items-center gap-3 px-4">
+        <div className="flex items-center gap-3 px-4 relative z-10">
           <ModelSelector value={aiModel} onChange={setAiModel} />
         </div>
       </header>
 
       {/* Bottom Area - Sidebar + Main Content */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="absolute inset-x-0 top-20 bottom-0">
+        <div className="flex h-full overflow-hidden relative">
         {/* Sidebar */}
         <aside
           className={`${sidebarOpen ? 'w-80' : 'w-0'
             } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden`}
         >
           {/* New Business Button */}
-          <div className="p-4 flex-shrink-0">
+          <div className="p-4 flex-shrink-0 relative z-20">
             <button
               onClick={onCreateNew}
               className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 hover:bg-white/[0.04] rounded-xl transition-all"
@@ -244,7 +245,7 @@ export default function SidebarLayout({
                           <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
                         </button>
                         {openMenuId === business.id && (
-                          <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl shadow-xl overflow-hidden z-50">
+                          <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl overflow-hidden z-50">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -278,78 +279,79 @@ export default function SidebarLayout({
           </div>
         </aside>
 
-        {/* Confirm Delete Dialog */}
-        <ConfirmDialog
-          isOpen={deleteDialog.isOpen}
-          title="Excluir negócio"
-          message={`Tem certeza que deseja excluir "${deleteDialog.businessName}"? Esta ação não pode ser desfeita e todos os dados serão perdidos permanentemente.`}
-          confirmText="Excluir"
-          cancelText="Cancelar"
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteDialog({ isOpen: false, businessId: '', businessName: '' })}
-          isDangerous
-        />
+          {/* Confirm Delete Dialog */}
+          <ConfirmDialog
+            isOpen={deleteDialog.isOpen}
+            title="Excluir negócio"
+            message={`Tem certeza que deseja excluir "${deleteDialog.businessName}"? Esta ação não pode ser desfeita e todos os dados serão perdidos permanentemente.`}
+            confirmText="Excluir"
+            cancelText="Cancelar"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteDialog({ isOpen: false, businessId: '', businessName: '' })}
+            isDangerous
+          />
 
-        {/* Toggle Button - Floating between sidebar and content */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className={`absolute top-4 z-20 w-8 h-8 bg-zinc-800/60 hover:bg-zinc-700 rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[19rem]' : 'left-3'
-            }`}
-        >
-          {sidebarOpen ? (
-            <X className="w-4 h-4 text-zinc-400" />
-          ) : (
-            <Menu className="w-4 h-4 text-zinc-400" />
-          )}
-        </button>
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Content */}
-          <main className="flex-1 overflow-y-auto">
-            {error && (
-              <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
-                {error}
-              </div>
+          {/* Toggle Button - Floating between sidebar and content */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className={`absolute top-4 z-20 w-8 h-8 bg-zinc-800/60 hover:bg-zinc-700 rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[19rem]' : 'left-3'
+              }`}
+          >
+            {sidebarOpen ? (
+              <X className="w-4 h-4 text-zinc-400" />
+            ) : (
+              <Menu className="w-4 h-4 text-zinc-400" />
             )}
-            {children}
-          </main>
-        </div>
+          </button>
 
-        {/* Right Sidebar - Business Mind Map */}
-        {rightSidebar && (
-          <>
-            {/* Backdrop overlay */}
-            {rightSidebarOpen && (
-              <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
-                onClick={() => setRightSidebarOpen(false)}
-              />
-            )}
-            {/* Toggle button */}
-            <button
-              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-              className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
-                }`}
-            >
-              {rightSidebarOpen ? (
-                <X className="w-4 h-4 text-zinc-400" />
-              ) : (
-                <>
-                  <Brain className="w-4 h-4 text-violet-400" />
-                  <span className="text-[11px] font-semibold text-zinc-400 hidden md:inline">Mapa</span>
-                </>
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col">
+            {/* Content */}
+            <main className="flex-1 overflow-y-auto">
+              {error && (
+                <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
+                  {error}
+                </div>
               )}
-            </button>
-            {/* Sidebar panel */}
-            <aside
-              className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
-                }`}
-            >
-              {rightSidebar}
-            </aside>
-          </>
-        )}
+              {children}
+            </main>
+          </div>
+
+          {/* Right Sidebar - Business Mind Map */}
+          {rightSidebar && (
+            <>
+              {/* Backdrop overlay */}
+              {rightSidebarOpen && (
+                <div
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
+                  onClick={() => setRightSidebarOpen(false)}
+                />
+              )}
+              {/* Toggle button */}
+              <button
+                onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+                className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
+                  }`}
+              >
+                {rightSidebarOpen ? (
+                  <X className="w-4 h-4 text-zinc-400" />
+                ) : (
+                  <>
+                    <Brain className="w-4 h-4 text-violet-400" />
+                    <span className="text-[11px] font-semibold text-zinc-400 hidden md:inline">Mapa</span>
+                  </>
+                )}
+              </button>
+              {/* Sidebar panel */}
+              <aside
+                className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
+                  }`}
+              >
+                {rightSidebar}
+              </aside>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -926,9 +926,10 @@ ENTREGÁVEIS OBRIGATÓRIOS deste pilar (suas tarefas DEVEM produzir estes):
 
 {all_research}
 
-COMO {spec['cargo'].upper()}, crie TAREFAS que produzam os ENTREGÁVEIS OBRIGATÓRIOS acima.
+COMO {spec['cargo'].upper()}, crie TAREFAS FOCADAS EM CRIAR E PRODUZIR OS ENTREGÁVEIS OBRIGATÓRIOS acima.
+PARE de criar tarefas de "Pesquisar", "Coletar dados", "Analisar", "Identificar". A IA já fez a pesquisa e os dados de mercado já estão disponíveis! Suas tarefas devem ser exclusivas de AÇÃO PRÁTICA E CRIAÇÃO (ex: "Criar o Documento de Persona detalhado com dores e desejos", "Descrever o Mapa da Jornada do cliente B2B", "Escrever o Script de Vendas").
 
-REGRA DE CASCATA: É OBRIGATÓRIO (CRÍTICO) usar os dados ricos e os entregáveis completos fornecidos pelos especialistas anteriores. Se a Persona, Tom de Voz ou Posicionamento já foram definidos (upstream), USE esses dados exatos e aplique-os. NÃO INVENTE NADA NOVO que concorra com o que já foi produzido.
+REGRA DE CASCATA: É OBRIGATÓRIO (CRÍTICO) usar os dados fornecidos. Se a Persona, Tom de Voz ou Posicionamento já foram definidos pelos pilares anteriores (upstream), USE esses dados exatos e NÃO INVENTE NADA NOVO que concorra. No entanto, se o seu pilar é o responsável por CRIAR esse dado pela primeira vez (ex: Publico-Alvo criando a Persona), então VOCÊ DEVE INVENTAR E CRIAR o documento profundamente do zero usando a inteligência da pesquisa!
 
 CLASSIFICAÇÃO OBRIGATÓRIA para cada tarefa:
 - "executavel_por_ia": true → IA pode GERAR (textos, estratégias, planos, análises, scripts, calendários, templates)
@@ -936,7 +937,7 @@ CLASSIFICAÇÃO OBRIGATÓRIA para cada tarefa:
 
 REGRAS:
 1. 4-8 tarefas CONCRETAS e SEQUENCIAIS — TODAS dentro do escopo deste pilar
-2. Cada tarefa deve contribuir para pelo menos 1 entregável obrigatório
+2. Use "docs" para tarefas de documentos, textos, planos e análises
 3. Para tarefas IA: descreva exatamente o entregável (ex: "documento de persona completo com dados demográficos")
 4. Para tarefas usuário: dê instruções passo-a-passo claras
 5. NÃO repita ações já concluídas
@@ -1178,9 +1179,13 @@ ENTREGÁVEL ESPERADO: {entregavel}
 
 {all_research}
 
-REGRA DE CASCATA (MANDATÓRIA): É ESTRITAMENTE OBRIGATÓRIO sugar todos os detalhes, contextos e variáveis definidos pelos especialistas anteriores fornecidos acima (ex: Persona detalhada, Tom de Voz rico, Mapa Visual, Canais). INJETE esses dados ricos diretamente no seu texto/entregável final. NUNCA gere conteúdo genérico ignorando o que o pilar anterior produziu.
+REGRA DE CASCATA (MANDATÓRIA): É ESTRITAMENTE OBRIGATÓRIO sugar todos os detalhes e variáveis já definidos (ex: Persona, Tom de Voz). INJETE esses dados diretamente no entregável final. Se o seu pilar for o primeiro a definir isso (ex: Público-Alvo), então CRIE AGORA do zero.
 
 COMO {spec['cargo'].upper()}, EXECUTE esta tarefa AGORA.
+PARE DE APENAS RESUMIR OS DADOS DE MERCADO. A pesquisa e os dados de mercado fornecidos (incluindo "all_research") são apenas a BASE BÁSICA. Você deve CRIAR INEDITAMENTE o conteúdo final pedido. 
+Se a tarefa pede uma Persona, INVENTE um NOME, IDADE, CARGO, construa uma narrativa de vida, dores e objeções profundas. 
+Se for uma estratégia, detalhe o passo a passo de O QUE FAZER e COMO FAZER. 
+NÃO ESCREVA textos genéricos como "A empresa X faz isso, a concorrência faz aquilo". ISSO É CHATO. CRIE O ENTREGÁVEL REAL PARA O USUÁRIO APLICAR HOJE!
 Gere o ENTREGÁVEL COMPLETO, pronto para uso imediato pelo negócio.
 Mantenha-se ESTRITAMENTE dentro do escopo do seu pilar.
 

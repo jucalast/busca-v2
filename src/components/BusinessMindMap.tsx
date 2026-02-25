@@ -206,18 +206,16 @@ export default function BusinessMindMap({
     const svgLines: React.ReactNode[] = [];
 
     pillarNodes.forEach(p => {
-        // Line calculation logic
-        // Center node is at (0, 0) logically, size is ~140x140. Edge is ~70px out. 
-        // We'll draw from center, but markerEnd places marker at the very tip of the line.
         const direction = p.pos.side === 'left' ? -1 : 1;
 
-        // As you can see in the screenshot, the line on the left side is traversing ABOVE the icon. 
-        // We really need to stop it far away from the icon so it doesn't cross it! 
-        // For right side, pos.x is where the node starts (icon is on the left). 
-        // For left side, pos.x is where the node ENDS (icon is on the right). 
-        // The line from center goes from (0,0) to the node. 
-        // Left node is at x < 0. Center is at x = 0.
-        const targetX = p.pos.x - (direction * 60);
+        // The node box is 200px wide.
+        // Left side nodes go from (p.pos.x - 200) to p.pos.x
+        // Right side nodes go from p.pos.x to (p.pos.x + 200)
+
+        // Center line stops 30px away from the icon's edge.
+        // Left node's right edge is at p.pos.x, so target is p.pos.x + 30.
+        // Right node's left edge is at p.pos.x, so target is p.pos.x - 30.
+        const targetX = p.pos.x - (direction * 30);
         const targetY = p.pos.y;
 
         // Center → pillar line
@@ -234,18 +232,17 @@ export default function BusinessMindMap({
 
         // Pillar → sub-items lines (if expanded)
         if (p.isExpanded && p.subItems.length > 0) {
-            // Base X for sub items
-            const subXBase = p.pos.x + direction * 230; // Further away to avoid overlaps 
+            // subXBase is where the lines end and HTML items start
+            const subXBase = p.pos.side === 'left' ? p.pos.x - 300 : p.pos.x + 300;
 
-            // Start line exactly near the `>` chevron indicator at the edge of the pillar box
-            // Aumentando de 165 para 180 para iniciar "mais pra frente da setinha"
-            const startSubX = p.pos.x + direction * 180;
+            // Start line exactly 10px outside the far edge of the pillar box.
+            // Far edge of left node is p.pos.x - 220. Start at p.pos.x - 230.
+            // Far edge of right node is p.pos.x + 220. Start at p.pos.x + 230.
+            const startSubX = p.pos.side === 'left' ? p.pos.x - 230 : p.pos.x + 230;
 
             p.subItems.forEach((sub, si) => {
                 const subY = p.pos.y - ((p.subItems.length - 1) * 28) / 2 + si * 28;
 
-                // Pull back the end of the line so the circle connects exactly to the edge of the subItem content
-                // Removemos o offset (- direction * 8) para que alinhe exatamente nas bolinhas/icones do item
                 const targetSubX = subXBase;
 
                 svgLines.push(
@@ -404,8 +401,10 @@ export default function BusinessMindMap({
                             <button
                                 className="mindmap-node absolute flex items-center gap-2.5 group"
                                 style={{
-                                    left: p.pos.x - (p.pos.side === 'left' ? 170 : 10),
+                                    left: p.pos.side === 'left' ? p.pos.x - 220 : p.pos.x,
+                                    width: 220,
                                     top: p.pos.y - 22,
+                                    justifyContent: p.pos.side === 'left' ? 'flex-end' : 'flex-start',
                                     transition: 'transform 0.2s ease',
                                     transform: isHovered ? 'scale(1.06)' : 'scale(1)',
                                 }}
@@ -416,18 +415,20 @@ export default function BusinessMindMap({
                                 {/* For left-side pillars: label first, then icon */}
                                 {p.pos.side === 'left' && (
                                     <div className="text-right min-w-0 flex-1">
-                                        <div className="flex items-center justify-end gap-1.5">
+                                        <div className="flex items-center justify-between w-full gap-1.5">
                                             <ChevronRight
-                                                className="w-3 h-3 text-zinc-600 transition-transform duration-300"
+                                                className="w-3 h-3 flex-shrink-0 text-zinc-600 transition-transform duration-300"
                                                 style={{ transform: p.isExpanded ? 'rotate(180deg)' : 'rotate(180deg) scaleX(-1)' }}
                                             />
-                                            {pillarScore > 0 && (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                                                    style={{ color: scoreColor(pillarScore), backgroundColor: scoreBg(pillarScore) }}>
-                                                    {pillarScore}
-                                                </span>
-                                            )}
-                                            <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap">{p.meta.label}</span>
+                                            <div className="flex items-center justify-end gap-1.5 min-w-0">
+                                                {pillarScore > 0 && (
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0"
+                                                        style={{ color: scoreColor(pillarScore), backgroundColor: scoreBg(pillarScore) }}>
+                                                        {pillarScore}
+                                                    </span>
+                                                )}
+                                                <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
+                                            </div>
                                         </div>
                                         {p.tarefas.length > 0 && (
                                             <div className="flex items-center justify-end gap-1.5 mt-0.5">
@@ -450,17 +451,19 @@ export default function BusinessMindMap({
 
                                 {/* For right-side pillars: icon first, then label */}
                                 {p.pos.side === 'right' && (
-                                    <div className="text-left min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap">{p.meta.label}</span>
-                                            {pillarScore > 0 && (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                                                    style={{ color: scoreColor(pillarScore), backgroundColor: scoreBg(pillarScore) }}>
-                                                    {pillarScore}
-                                                </span>
-                                            )}
+                                    <div className="text-left min-w-0 flex-1">
+                                        <div className="flex items-center justify-between w-full gap-1.5">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
+                                                {pillarScore > 0 && (
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0"
+                                                        style={{ color: scoreColor(pillarScore), backgroundColor: scoreBg(pillarScore) }}>
+                                                        {pillarScore}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <ChevronRight
-                                                className="w-3 h-3 text-zinc-600 transition-transform duration-300"
+                                                className="w-3 h-3 flex-shrink-0 text-zinc-600 transition-transform duration-300"
                                                 style={{ transform: p.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
                                             />
                                         </div>
@@ -480,27 +483,30 @@ export default function BusinessMindMap({
                             {/* ─── Sub-items (vertical list extending outward) ─── */}
                             {p.isExpanded && p.subItems.length > 0 && (() => {
                                 // Match the subXBase calculation
-                                const subX = p.pos.x + direction * 230;
-                                const startY = p.pos.y - ((p.subItems.length - 1) * 28) / 2;
+                                const subX = p.pos.side === 'left' ? p.pos.x - 300 : p.pos.x + 300;
 
                                 return (
                                     <div
                                         className="absolute"
                                         style={{
-                                            left: p.pos.side === 'left' ? subX - 260 : subX,
-                                            top: startY - 8,
+                                            left: p.pos.side === 'left' ? subX - 316 : subX + 16,
+                                            width: 300,
+                                            top: 0,
                                             pointerEvents: 'none'
                                         }}
                                     >
                                         {p.subItems.map((sub, si) => {
+                                            const subY = p.pos.y - ((p.subItems.length - 1) * 28) / 2 + si * 28;
                                             const SubIcon = sub.icon;
                                             return (
                                                 <div
                                                     key={`${p.key}-s-${si}`}
-                                                    className="mindmap-node flex items-center gap-1.5 py-1 opacity-0 animate-[fadeSlideIn_0.3s_ease_forwards]"
+                                                    className="mindmap-node absolute flex items-center gap-1.5 opacity-0 animate-[fadeSlideIn_0.3s_ease_forwards]"
                                                     style={{
                                                         animationDelay: `${si * 40}ms`,
                                                         justifyContent: p.pos.side === 'left' ? 'flex-end' : 'flex-start',
+                                                        top: subY - 10,
+                                                        width: '100%',
                                                     }}
                                                 >
                                                     {p.pos.side === 'left' && (

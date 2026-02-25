@@ -101,7 +101,7 @@ REGRAS DE GERAÇÃO DE TAREFAS:
    - A prioridade máxima vai para o problema REAL relatado pelo usuário
 
 3. RESPEITE AS RESTRIÇÕES:
-   - Se capital zero: apenas ferramentas gratuitas (Instagram Shopping, WhatsApp Business, Canva)
+   - Se capital zero: apenas ferramentas gratuitas (Instagram Shopping, WhatsApp Business, docs)
    - Se solo: cada tarefa deve levar no máximo 2-4 horas para completar
    - Se sem estoque: NÃO mencione estoque, ERP, inventário
 
