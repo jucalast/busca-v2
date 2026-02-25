@@ -1476,7 +1476,12 @@ export default function PillarWorkspace({
                                     <div className="flex items-center gap-2 mb-3 px-4">
                                         <Target className="w-4 h-4" style={{ color: meta.color }} />
                                         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Entregáveis</span>
-                                        <span className="text-[9px] text-zinc-600 ml-auto">{entregaveis.filter((e: any) => e.status === 'concluido').length}/{entregaveis.length}</span>
+                                        <span className="text-[9px] text-zinc-600 ml-auto">
+                                            {entregaveis.filter((e: any) =>
+                                                e.status === 'concluido' ||
+                                                (e.tarefa_origem && (done.has(e.tarefa_origem) || done.has(`${selectedPillar}_${e.tarefa_origem}`)))
+                                            ).length}/{entregaveis.length}
+                                        </span>
                                     </div>
 
                                     {/* Cards em leque com perspectiva */}
@@ -1485,7 +1490,9 @@ export default function PillarWorkspace({
                                             const entregavel = entregaveis[originalIndex];
                                             if (!entregavel) return null;
 
-                                            const isCompleted = entregavel.status === 'concluido';
+                                            const isCompleted = entregavel.status === 'concluido' ||
+                                                (entregavel.tarefa_origem && (done.has(entregavel.tarefa_origem) || done.has(`${selectedPillar}_${entregavel.tarefa_origem}`)));
+
                                             const totalCards = entregaveisOrder.length;
                                             const middleIndex = Math.floor(totalCards / 2);
 
@@ -1514,21 +1521,28 @@ export default function PillarWorkspace({
                                             const isMiddleCard = displayIndex === middleIndex;
                                             const zIndex = isMiddleCard ? 100 : (totalCards - Math.abs(displayIndex - middleIndex));
 
+                                            const cardBgClass = isMiddleCard
+                                                ? 'bg-zinc-800 shadow-2xl shadow-black/80'
+                                                : 'bg-zinc-900 hover:bg-[#202024] shadow-xl shadow-black/50';
+
+                                            const titleClass = isCompleted
+                                                ? 'text-zinc-500 line-through'
+                                                : (isMiddleCard ? 'text-white' : 'text-zinc-400');
+
                                             return (
                                                 <div
                                                     key={entregavel.id || originalIndex}
-                                                    className="absolute w-96 p-3 bg-zinc-800 rounded-xl shadow-2xl shadow-black/70 overflow-hidden cursor-pointer transition-all duration-150 hover:scale-105"
+                                                    className={`absolute w-96 p-3 rounded-xl overflow-hidden cursor-pointer transition-all duration-150 hover:scale-105 ${cardBgClass}`}
                                                     style={{
                                                         transform: `translateX(${translateX}px) rotate(${angle}deg) translateY(${Math.abs(angle) * 0.5}px) translateZ(${zIndex * 10}px)`,
                                                         zIndex: zIndex,
-                                                        opacity: isCompleted ? 0.4 : 1,
                                                     }}
                                                     onClick={() => handleReorderEntregaveis(originalIndex)}
                                                 >
                                                     {/* Header com ícone da ferramenta */}
                                                     <div className="flex items-center gap-2.5 mb-2">
                                                         <div className="relative">
-                                                            <img src={toolInfo.icon} alt={toolInfo.name} className="w-7 h-7 rounded object-contain shrink-0 opacity-60 grayscale" />
+                                                            <img src={toolInfo.icon} alt={toolInfo.name} className={`w-7 h-7 rounded object-contain shrink-0 ${isMiddleCard ? '' : 'opacity-60 grayscale'}`} />
                                                             {isCompleted && (
                                                                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
                                                                     <Check className="w-2.5 h-2.5 text-white" />
@@ -1536,10 +1550,10 @@ export default function PillarWorkspace({
                                                             )}
                                                         </div>
                                                         <div className="flex-1 flex items-center gap-2 text-left min-w-0 whitespace-nowrap">
-                                                            <span className={`text-[13px] font-medium ${isCompleted ? 'text-zinc-500 line-through' : 'text-zinc-300'}`}>
+                                                            <span className={`text-[13px] font-medium ${titleClass}`}>
                                                                 {safeRender(entregavel.titulo)}
                                                             </span>
-                                                            <span className={`text-[11px] ${toolInfo.color}`}>
+                                                            <span className={`text-[11px] ${toolInfo.color} ${isMiddleCard ? '' : 'opacity-70'}`}>
                                                                 {toolInfo.name}
                                                             </span>
                                                         </div>
@@ -1700,6 +1714,7 @@ export default function PillarWorkspace({
                                                                         'Gerando...' :
                                                                         (!session?.accessToken ? 'Login c/ Google' : `Abrir no ${toolInfo.name}`);
                                                                 })()}
+                                                                {isDone && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-0.5" />}
                                                             </button>
                                                         )}
                                                         {subtasksCount > 0 && (
