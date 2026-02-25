@@ -77,7 +77,7 @@ const SourcesList: React.FC<{ sources: SearchSource[] }> = ({ sources }) => {
                             href={s.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-start gap-1.5 px-2 py-1 rounded-md bg-zinc-900/50 border border-white/[0.04] hover:border-zinc-600/30 transition-all group"
+                            className="flex items-start gap-1.5 px-2 py-1 rounded-lg bg-zinc-800/40 hover:bg-zinc-800/70 transition-all group"
                         >
                             <ExternalLink className="w-3 h-3 text-zinc-600 mt-0.5 shrink-0 group-hover:text-zinc-400" />
                             <span className="text-[11px] text-zinc-500 group-hover:text-zinc-300 line-clamp-1 transition-colors">
@@ -325,7 +325,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                             {/* Search badge — shown above the message */}
                             {msg.searching && msg.searchQuery && (
                                 <div className="flex items-center gap-1.5 mb-2 px-1">
-                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10">
                                         <Globe className="w-3 h-3 text-amber-400" />
                                         <span className="text-[11px] text-amber-400/80 font-medium">
                                             Pesquisou na web
@@ -335,10 +335,10 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                             )}
 
                             <div className={`rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${msg.role === 'user'
-                                    ? 'bg-white/[0.06] text-white border border-white/[0.08]'
-                                    : msg.content === '...'
-                                        ? 'bg-zinc-900/50 text-zinc-500 border border-white/[0.04]'
-                                        : 'bg-zinc-900/50 text-zinc-300 border border-white/[0.04]'
+                                ? 'bg-white/[0.06] text-white'
+                                : msg.content === '...'
+                                    ? 'bg-zinc-900/50 text-zinc-500'
+                                    : 'bg-zinc-900/50 text-zinc-300'
                                 }`}>
                                 {msg.content === '...' ? (
                                     <div className="flex items-center gap-2.5 py-0.5">
@@ -365,7 +365,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                     <button
                                         onClick={handleConfirmResearch}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                                            bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
+                                            bg-emerald-500/10 text-emerald-400
                                             hover:bg-emerald-500/20 transition-all active:scale-95"
                                     >
                                         <Check className="w-3.5 h-3.5" />
@@ -374,7 +374,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                     <button
                                         onClick={handleRejectResearch}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                                            bg-zinc-500/10 text-zinc-400 border border-zinc-500/20
+                                            bg-zinc-500/10 text-zinc-400
                                             hover:bg-zinc-500/20 transition-all active:scale-95"
                                     >
                                         <X className="w-3.5 h-3.5" />
@@ -394,7 +394,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
             </div>
 
             {/* Input area */}
-            <div className="border-t border-white/[0.04] px-6 py-4">
+            <div className="border-t border-zinc-800/50 px-6 py-4">
                 {readyForAnalysis && !loading && (
                     <button
                         onClick={handleGenerateAnalysis}
@@ -420,14 +420,14 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                             placeholder="Digite sua mensagem..."
                             disabled={sending}
-                            className="flex-1 bg-zinc-900/50 hover:bg-zinc-900 focus:bg-zinc-900 rounded-xl px-4 py-3 text-white text-sm placeholder-zinc-600 outline-none transition-all border border-white/[0.04] focus:border-zinc-500/30 disabled:opacity-50"
+                            className="flex-1 bg-zinc-800/40 hover:bg-zinc-800/60 focus:bg-zinc-800/60 rounded-xl px-4 py-3 text-white text-sm placeholder-zinc-600 outline-none transition-all disabled:opacity-50"
                         />
                         <button
                             onClick={() => sendMessage()}
                             disabled={!input.trim() || sending}
                             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${input.trim() && !sending
-                                    ? 'bg-zinc-700 text-white hover:bg-zinc-600 active:scale-95'
-                                    : 'bg-zinc-900 text-zinc-600 cursor-not-allowed border border-white/[0.04]'
+                                ? 'bg-zinc-700 text-white hover:bg-zinc-600 active:scale-95'
+                                : 'bg-zinc-800/40 text-zinc-600 cursor-not-allowed'
                                 }`}
                         >
                             {sending ? (

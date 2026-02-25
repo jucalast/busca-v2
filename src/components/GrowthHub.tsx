@@ -179,7 +179,7 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                             <button
                                 key={key}
                                 onClick={() => onSelectDimension(key)}
-                                className="text-left p-5 rounded-2xl bg-[#111113] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200 group"
+                                className="text-left p-5 rounded-2xl bg-[#111113] hover:bg-white/[0.04] transition-all duration-200 group"
                             >
                                 <div className="flex items-center justify-between mb-3">
                                     <div
@@ -236,7 +236,7 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                 <div className="flex justify-center mt-14">
                     <button
                         onClick={onRedo}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-zinc-500 hover:text-zinc-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] transition-all text-sm"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-zinc-500 hover:text-zinc-300 bg-zinc-800/40 hover:bg-zinc-800 transition-all text-sm"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
                         Refazer Analise

@@ -147,7 +147,7 @@ export default function PillarPlan({
 
                 {/* Progress */}
                 {planStatus === 'approved' && (
-                    <div className="mb-6 p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                    <div className="mb-6 p-4 rounded-xl bg-[#111113]">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-zinc-500">Progresso de execução</span>
                             <span className="text-xs font-mono text-zinc-400">{completedCount}/{totalActions}</span>
@@ -178,12 +178,12 @@ export default function PillarPlan({
                                 value={approveNotes}
                                 onChange={(e) => setApproveNotes(e.target.value)}
                                 placeholder="Observações opcionais..."
-                                className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500/30"
+                                className="flex-1 bg-zinc-800/40 rounded-xl px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
                             />
                             <button
                                 onClick={() => onApprove(approveNotes)}
                                 disabled={approving}
-                                className="px-5 py-2 rounded-xl text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/20 transition-all disabled:opacity-50"
+                                className="px-5 py-2 rounded-xl text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all disabled:opacity-50"
                             >
                                 {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aprovar Plano'}
                             </button>
@@ -206,7 +206,7 @@ export default function PillarPlan({
                                     className={`rounded-xl border transition-all ${isDone
                                         ? 'bg-emerald-500/5 border-emerald-500/15'
                                         : 'bg-[#111113] border-white/[0.06]'
-                                    }`}>
+                                        }`}>
                                     <div className="flex items-start gap-3 p-4">
                                         {/* Completion toggle */}
                                         {planStatus === 'approved' ? (
@@ -269,7 +269,7 @@ export default function PillarPlan({
 
                                             {/* Outcome from execution */}
                                             {isDone && executionResults.find(r => r.task_id === action.id) && (
-                                                <div className="mt-2 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                                                <div className="mt-2 p-2 rounded-lg bg-emerald-500/5">
                                                     <p className="text-[11px] text-emerald-400">
                                                         {executionResults.find(r => r.task_id === action.id)?.outcome || 'Concluído'}
                                                     </p>
@@ -292,14 +292,14 @@ export default function PillarPlan({
                                                 value={outcomeText}
                                                 onChange={(e) => setOutcomeText(e.target.value)}
                                                 placeholder="Ex: Criei o perfil no Google Meu Negócio"
-                                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none mb-2"
+                                                className="w-full bg-zinc-800/40 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 mb-2"
                                             />
                                             <input
                                                 type="text"
                                                 value={impactText}
                                                 onChange={(e) => setImpactText(e.target.value)}
                                                 placeholder="Impacto no negócio (opcional): Ex: +15 visualizações/dia"
-                                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none mb-2"
+                                                className="w-full bg-zinc-800/40 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 mb-2"
                                             />
                                             <div className="flex gap-2">
                                                 <button
@@ -342,7 +342,7 @@ export default function PillarPlan({
                         {showKPIs && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {planData.kpis_pilar.map((kpi, i) => (
-                                    <div key={i} className="p-3 rounded-xl bg-[#111113] border border-white/[0.06]">
+                                    <div key={i} className="p-3 rounded-xl bg-[#111113]">
                                         <p className="text-zinc-300 text-sm font-medium">{kpi.nome}</p>
                                         <div className="flex items-center justify-between mt-1.5">
                                             <span className="text-[11px] text-zinc-600">Atual: {kpi.valor_atual}</span>
@@ -360,7 +360,7 @@ export default function PillarPlan({
 
                 {/* Expected Result */}
                 {planData.resultado_final && (
-                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/5">
                         <p className="text-[10px] font-semibold text-emerald-500/80 uppercase tracking-wide mb-1">Resultado final esperado</p>
                         <p className="text-sm text-zinc-300 leading-relaxed">{planData.resultado_final}</p>
                     </div>
@@ -368,7 +368,7 @@ export default function PillarPlan({
 
                 {/* Connection to next pillars */}
                 {planData.conexao_proximos_pilares && (
-                    <div className="mb-6 p-4 rounded-xl bg-violet-500/5 border border-violet-500/15">
+                    <div className="mb-6 p-4 rounded-xl bg-violet-500/5">
                         <p className="text-[10px] font-semibold text-violet-500/80 uppercase tracking-wide mb-1">Conexão com outros pilares</p>
                         <p className="text-sm text-zinc-300 leading-relaxed">{planData.conexao_proximos_pilares}</p>
                     </div>
@@ -386,7 +386,7 @@ export default function PillarPlan({
                                 try { display = new URL(url).hostname; } catch { }
                                 return (
                                     <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-md bg-white/[0.03] text-zinc-500 hover:text-zinc-300 border border-white/[0.04] transition-colors">
+                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 transition-colors">
                                         <ExternalLink className="w-2.5 h-2.5" /> {display}
                                     </a>
                                 );

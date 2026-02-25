@@ -246,9 +246,9 @@ function ScoreRing({ score, size = 48, color }: { score: number; size?: number; 
 function DepBadge({ dep }: { dep: { label: string; score: number; pillar: string } }) {
     const isCritical = dep.score < 25;
     return (
-        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${isCritical
-            ? 'bg-red-500/10 text-red-400 border-red-500/20'
-            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${isCritical
+            ? 'bg-red-500/10 text-red-400'
+            : 'bg-amber-500/10 text-amber-400'
             }`}>
             <AlertTriangle className="w-2.5 h-2.5" />
             {dep.label} {dep.score}/100
@@ -264,9 +264,9 @@ function DeliverableCard({ deliverable, color, session, loadingState, setLoading
     const pct = deliverable.percentual_completado_ia;
 
     return (
-        <div className={`mt-3 rounded-xl border overflow-hidden ${isPartial
-            ? 'bg-[#111113] border-amber-500/15'
-            : 'bg-[#111113] border-white/[0.06]'}`}>
+        <div className={`mt-3 rounded-xl overflow-hidden ${isPartial
+            ? 'bg-[#111113]'
+            : 'bg-[#111113]'}`}>
             {/* Header */}
             <div onClick={() => setExpanded(!expanded)}
                 className="w-full flex items-center gap-3 p-4 text-left cursor-pointer hover:bg-white/[0.02] transition-colors">
@@ -275,12 +275,12 @@ function DeliverableCard({ deliverable, color, session, loadingState, setLoading
                         {safeRender(deliverable.entregavel_titulo)}
                     </p>
                     {deliverable.entregavel_tipo && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-500 border border-white/[0.04]">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-500">
                             {safeRender(deliverable.entregavel_tipo)}
                         </span>
                     )}
                     {isPartial && pct && (
-                        <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-400">
                             IA completou {pct}%
                         </span>
                     )}
@@ -313,21 +313,21 @@ function SubtaskList({ subtasks, color, onExecute, executingId }: {
     if (!items.length) return null;
 
     return (
-        <div className="mt-3 p-4 rounded-xl bg-[#0d0d0f] border border-white/[0.04]">
+        <div className="mt-3 p-4 rounded-xl bg-[#0d0d0f]">
             <div className="flex items-center gap-2 mb-3">
                 <ListTree className="w-4 h-4" style={{ color }} />
                 <span className="text-xs font-semibold text-zinc-400">Subtarefas ({items.length})</span>
             </div>
             <div className="space-y-2">
                 {items.map((st: any, i: number) => (
-                    <div key={st.id || i} className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.03]">
+                    <div key={st.id || i} className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02]">
                         <span className="text-[10px] font-mono text-zinc-600 mt-1 w-4">{i + 1}</span>
                         <div className="flex-1">
                             <div className="flex items-center gap-2 mb-0.5">
                                 <p className="text-xs font-medium text-zinc-300">{safeRender(st.titulo)}</p>
-                                <span className={`text-[8px] px-1 py-0.5 rounded border ${st.executavel_por_ia
-                                    ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                <span className={`text-[8px] px-1 py-0.5 rounded-md ${st.executavel_por_ia
+                                    ? 'bg-violet-500/10 text-violet-400'
+                                    : 'bg-blue-500/10 text-blue-400'
                                     }`}>{st.executavel_por_ia ? 'IA' : 'Você'}</span>
                             </div>
                             {st.descricao && <p className="text-[11px] text-zinc-500 leading-relaxed">{safeRender(st.descricao)}</p>}
@@ -606,6 +606,10 @@ export default function PillarWorkspace({
             }
 
             const allItems: any[] = existingSubtasks.subtarefas || [];
+            if (allItems.length === 0) {
+                throw new Error('Nenhuma subtarefa encontrada para esta ação.');
+            }
+
             // Populate visual list for THIS task
             setAutoExecSubtasks(prev => ({ ...prev, [tid]: allItems }));
 
@@ -720,20 +724,71 @@ export default function PillarWorkspace({
 
         } catch (err: any) {
             setError(err.message || 'Erro na execução automática');
+
+            // Mark task as error state if it failed early
+            setAutoExecStatuses(prev => {
+                const updated = { ...prev?.[tid] };
+                if (Object.keys(updated).length === 0) {
+                    updated[0] = 'error'; // At least show one error
+                }
+                return { ...prev, [tid]: updated };
+            });
+
         } finally {
             setTimeout(() => {
                 setAutoExecuting(null);
                 setAutoExecStep(0);
-                setAutoExecTotal(0);
+                // We intentionally leave autoExecTotal/Subtasks intact so the UI shows the error state
             }, 800);
         }
     }, [analysisId, businessId, profile, apiCall, taskSubtasks]);
 
-    // ─── AI tries user task — delegates to same subtask flow ───
+    // ─── AI tries user task — delegates to specific backend endpoint ───
     const handleAITryUserTask = useCallback(async (pillarKey: string, task: TaskItem) => {
-        // Treat it the same as an AI task: expand subtasks + execute all
-        await handleAutoExecute(pillarKey, task);
-    }, [handleAutoExecute]);
+        const tid = `${pillarKey}_${task.id}`;
+        setAutoExecuting(tid); // Show general executing state
+        setExpandedTaskIds(prev => new Set(prev).add(tid));
+        setError('');
+
+        // We will mock a single subtask execution visually
+        setAutoExecStep(1);
+        setAutoExecTotal(1);
+        setAutoExecSubtasks(prev => ({ ...prev, [tid]: [task] }));
+        setAutoExecStatuses(prev => ({ ...prev, [tid]: { 0: 'running' } }));
+
+        try {
+            const execResult = await apiCall('ai-try-user-task', {
+                analysis_id: analysisId,
+                pillar_key: pillarKey,
+                task_id: task.id,
+                task_data: task,
+                profile: profile?.profile || profile,
+                business_id: businessId
+            });
+
+            if (execResult.success && execResult.execution) {
+                // Success
+                setAutoExecResults(prev => ({
+                    ...prev,
+                    [tid]: { ...prev?.[tid], 0: execResult.execution },
+                }));
+                setAutoExecStatuses(prev => ({
+                    ...prev,
+                    [tid]: { ...prev?.[tid], 0: 'done' },
+                }));
+                setAutoExecStep(2); // Done
+            } else {
+                throw new Error(execResult.error || 'Falha ao tentar executar a tarefa com IA');
+            }
+        } catch (err: any) {
+            setError(err.message || 'Erro na execução da IA');
+            setAutoExecStatuses(prev => ({ ...prev, [tid]: { 0: 'error' } }));
+        } finally {
+            setTimeout(() => {
+                setAutoExecuting(null);
+            }, 800);
+        }
+    }, [analysisId, businessId, profile, apiCall]);
 
     // ─── User completes task ───
     const handleUserComplete = useCallback(async (pillarKey: string, task: TaskItem) => {
@@ -774,16 +829,16 @@ export default function PillarWorkspace({
             <div className="mt-2 space-y-2">
                 {/* Expanding spinner — shown only before subtasks load for THIS task */}
                 {isAutoExec && !hasExecPanel && (
-                    <div className="flex items-center gap-2 p-3 rounded-xl bg-violet-500/5 border border-violet-500/15">
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-violet-500/5">
                         <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
                         <span className="text-sm text-violet-300">Criando subtarefas...</span>
                     </div>
                 )}
 
                 {hasExecPanel && (
-                    <div className="mt-3 rounded-xl bg-[#0d0d0f] border border-white/[0.05] overflow-hidden">
+                    <div className="mt-3 rounded-xl bg-[#0d0d0f] overflow-hidden">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+                        <div className="flex items-center justify-between px-4 py-3">
                             <div className="flex items-center gap-2">
                                 <ListTree className="w-4 h-4" style={{ color }} />
                                 <span className="text-xs font-semibold text-zinc-400">
@@ -804,14 +859,14 @@ export default function PillarWorkspace({
                         </div>
 
                         {/* Subtask cards */}
-                        <div className="divide-y divide-white/[0.03]">
+                        <div className="flex flex-col gap-1 px-2 pt-2 pb-3">
                             {taskExecSubtasks.map((st: any, i: number) => {
                                 const status = taskExecStatuses[i] || 'waiting';
                                 const result = taskExecResults[i];
                                 const isAI = st.executavel_por_ia;
 
                                 return (
-                                    <div key={i} className={`transition-colors ${status === 'running' ? 'bg-violet-500/[0.04]' :
+                                    <div key={i} className={`transition-colors rounded-xl overflow-hidden ${status === 'running' ? 'bg-violet-500/[0.04]' :
                                         status === 'error' ? 'bg-red-500/[0.03]' : ''
                                         }`}>
                                         {/* Subtask header row */}
@@ -839,9 +894,9 @@ export default function PillarWorkspace({
                                                         status === 'running' ? 'text-violet-300' :
                                                             'text-zinc-400'
                                                         }`}>{safeRender(st.titulo)}</p>
-                                                    <span className={`text-[8px] px-1 py-0.5 rounded border ${isAI
-                                                        ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                                                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                                    <span className={`text-[8px] px-1 py-0.5 rounded-md ${isAI
+                                                        ? 'bg-violet-500/10 text-violet-400'
+                                                        : 'bg-blue-500/10 text-blue-400'
                                                         }`}>{isAI ? 'IA' : 'Você'}</span>
                                                     {status === 'running' && (
                                                         <span className="text-[9px] text-violet-400/70 italic">executando...</span>
@@ -888,7 +943,7 @@ export default function PillarWorkspace({
                                                             } catch { }
                                                             return (
                                                                 <a key={si} href={url} target="_blank" rel="noopener noreferrer"
-                                                                    className={`flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all ${isAutoExec ? 'opacity-0 animate-[fadeIn_0.4s_ease_forwards]' : ''}`}
+                                                                    className={`flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-lg bg-zinc-800/60 text-zinc-400 hover:text-blue-300 transition-all ${isAutoExec ? 'opacity-0 animate-[fadeIn_0.4s_ease_forwards]' : ''}`}
                                                                     style={isAutoExec ? { animationDelay: `${si * 300 + 500}ms` } : undefined}>
                                                                     {faviconUrl ? (
                                                                         <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -906,7 +961,7 @@ export default function PillarWorkspace({
 
                                         {/* Error state */}
                                         {status === 'error' && (
-                                            <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/10">
+                                            <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-red-500/5">
                                                 <p className="text-[11px] text-red-400/80">Erro ao executar esta subtarefa</p>
                                             </div>
                                         )}
@@ -930,7 +985,7 @@ export default function PillarWorkspace({
 
                         {/* Footer: combined result summary */}
                         {!isAutoExec && Object.values(taskExecStatuses).some(s => s === 'done') && (
-                            <div className="px-4 py-3 border-t border-white/[0.04] bg-white/[0.01]">
+                            <div className="px-4 py-3 bg-white/[0.01]">
                                 <p className="text-[10px] text-zinc-600 italic flex items-center gap-1">
                                     <CheckCircle2 className="w-3 h-3 text-emerald-500/60" />
                                     {Object.values(taskExecStatuses).filter(s => s === 'done').length} subtarefas concluídas — resultado consolidado abaixo
@@ -938,7 +993,9 @@ export default function PillarWorkspace({
                             </div>
                         )}
                     </div>
-                )}
+                )
+                }
+
 
 
                 {/* Action buttons row — hidden while executing or exec panel exists */}
@@ -947,7 +1004,7 @@ export default function PillarWorkspace({
                         {task.executavel_por_ia ? (
                             <>
                                 <button onClick={() => handleAutoExecute(pillarKey, task)} disabled={!!autoExecuting || isExecuting}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20 transition-all disabled:opacity-50">
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-all disabled:opacity-50">
                                     <Play className="w-3 h-3" />
                                     {subtasks
                                         ? `Executar ${(subtasks.subtarefas || []).length} subtarefas com IA`
@@ -955,7 +1012,7 @@ export default function PillarWorkspace({
                                 </button>
                                 {!subtasks ? (
                                     <button onClick={() => handleExpandSubtasks(pillarKey, task)} disabled={isExpanding || !!autoExecuting}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] border border-white/[0.06] transition-all disabled:opacity-50">
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] transition-all disabled:opacity-50">
                                         {isExpanding
                                             ? <><Loader2 className="w-3 h-3 animate-spin" />Criando subtarefas...</>
                                             : <><ListTree className="w-3 h-3" />Ver subtarefas</>}
@@ -964,47 +1021,52 @@ export default function PillarWorkspace({
                             </>
                         ) : (
                             <button onClick={() => handleAITryUserTask(pillarKey, task)} disabled={!!autoExecuting || isExecuting}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 transition-all disabled:opacity-50">
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-all disabled:opacity-50">
                                 {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" />Tentando...</>
                                     : <><Wand2 className="w-3 h-3" />Delegar para IA</>}
                             </button>
                         )}
                     </div>
-                )}
+                )
+                }
 
                 {/* Deliverable */}
                 {deliverable && <DeliverableCard deliverable={deliverable} color={PILLAR_META[pillarKey]?.color || '#8b5cf6'} session={session} loadingState={loadingDoc} setLoadingDoc={setLoadingDoc} />}
 
                 {/* Sources from deliverable */}
-                {deliverable?.sources?.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                        {deliverable.sources.slice(0, 8).map((url: string, si: number) => {
-                            let host = url;
-                            let faviconUrl = '';
-                            try {
-                                const u = new URL(url);
-                                host = u.hostname.replace('www.', '');
-                                faviconUrl = `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
-                            } catch { }
-                            return (
-                                <a key={si} href={url} target="_blank" rel="noopener noreferrer"
-                                    className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all">
-                                    {faviconUrl ? (
-                                        <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                    ) : (
-                                        <Globe className="w-3 h-3 text-zinc-500" />
-                                    )}
-                                    <span className="truncate max-w-[120px]">{host}</span>
-                                </a>
-                            );
-                        })}
-                    </div>
-                )}
+                {
+                    deliverable?.sources?.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {deliverable.sources.slice(0, 8).map((url: string, si: number) => {
+                                let host = url;
+                                let faviconUrl = '';
+                                try {
+                                    const u = new URL(url);
+                                    host = u.hostname.replace('www.', '');
+                                    faviconUrl = `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
+                                } catch { }
+                                return (
+                                    <a key={si} href={url} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-lg bg-zinc-800/60 text-zinc-400 hover:text-blue-300 transition-all">
+                                        {faviconUrl ? (
+                                            <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                        ) : (
+                                            <Globe className="w-3 h-3 text-zinc-500" />
+                                        )}
+                                        <span className="truncate max-w-[120px]">{host}</span>
+                                    </a>
+                                );
+                            })}
+                        </div>
+                    )
+                }
 
                 {/* Subtasks — hide when exec panel already shows them */}
-                {subtasks && !isAutoExec && !hasExecPanel && <SubtaskList subtasks={subtasks} color={PILLAR_META[pillarKey]?.color || '#8b5cf6'}
-                    onExecute={() => { }} executingId={null} />}
-            </div>
+                {
+                    subtasks && !isAutoExec && !hasExecPanel && <SubtaskList subtasks={subtasks} color={PILLAR_META[pillarKey]?.color || '#8b5cf6'}
+                        onExecute={() => { }} executingId={null} />
+                }
+            </div >
         );
     };
 
@@ -1059,7 +1121,7 @@ export default function PillarWorkspace({
                     {/* ── Header ── */}
                     <div className="flex items-start gap-4 mb-6">
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{ backgroundColor: `${meta.color}15`, border: `1px solid ${meta.color}30` }}>
+                            style={{ backgroundColor: `${meta.color}15` }}>
                             <Icon style={{ color: meta.color, width: 22, height: 22 }} />
                         </div>
                         <div className="flex-1">
@@ -1073,19 +1135,19 @@ export default function PillarWorkspace({
 
                     {/* ── Top stats row ── */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                        <div className="p-3 rounded-xl bg-[#111113] border border-white/[0.06] text-center">
+                        <div className="p-3 rounded-xl bg-[#111113] text-center">
                             <p className={`text-lg font-bold ${dimScore >= 70 ? 'text-emerald-400' : dimScore >= 40 ? 'text-amber-400' : 'text-red-400'}`}>{dimScore}</p>
                             <p className="text-[9px] text-zinc-600 uppercase mt-0.5">Score</p>
                         </div>
-                        <div className="p-3 rounded-xl bg-[#111113] border border-white/[0.06] text-center">
+                        <div className="p-3 rounded-xl bg-[#111113] text-center">
                             <p className="text-lg font-bold text-zinc-300">{completedCount}/{totalTasks}</p>
                             <p className="text-[9px] text-zinc-600 uppercase mt-0.5">Tarefas</p>
                         </div>
-                        <div className="p-3 rounded-xl bg-[#111113] border border-white/[0.06] text-center">
+                        <div className="p-3 rounded-xl bg-[#111113] text-center">
                             <p className="text-lg font-bold text-violet-400">{aiTasks.length}</p>
                             <p className="text-[9px] text-zinc-600 uppercase mt-0.5">IA</p>
                         </div>
-                        <div className="p-3 rounded-xl bg-[#111113] border border-white/[0.06] text-center">
+                        <div className="p-3 rounded-xl bg-[#111113] text-center">
                             <p className="text-lg font-bold text-blue-400">{userTasks.length}</p>
                             <p className="text-[9px] text-zinc-600 uppercase mt-0.5">Manual</p>
                         </div>
@@ -1094,7 +1156,7 @@ export default function PillarWorkspace({
                     {/* ── Two-column layout: Entregáveis + Diagnóstico ── */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
                         {/* Deliverables Checklist */}
-                        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                        <div className="p-4 rounded-xl bg-[#111113]">
                             <div className="flex items-center gap-2 mb-3">
                                 <Package className="w-4 h-4" style={{ color: meta.color }} />
                                 <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Entregáveis</span>
@@ -1134,7 +1196,7 @@ export default function PillarWorkspace({
                         </div>
 
                         {/* Diagnostic */}
-                        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                        <div className="p-4 rounded-xl bg-[#111113]">
                             <div className="flex items-center gap-2 mb-3">
                                 <BarChart3 className="w-4 h-4 text-zinc-500" />
                                 <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Diagnóstico</span>
@@ -1143,13 +1205,13 @@ export default function PillarWorkspace({
                                 <p className="text-xs text-zinc-400 leading-relaxed mb-2">{safeRender(dim.justificativa)}</p>
                             )}
                             {dim.dado_chave && (
-                                <div className="flex items-start gap-1.5 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10 mb-2">
+                                <div className="flex items-start gap-1.5 p-2 rounded-lg bg-emerald-500/5 mb-2">
                                     <Zap className="w-3 h-3 text-emerald-400 mt-0.5 flex-shrink-0" />
                                     <p className="text-[10px] text-emerald-300/80">{safeRender(dim.dado_chave)}</p>
                                 </div>
                             )}
                             {dim.meta_pilar && (
-                                <div className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                                <div className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-500/5">
                                     <Target className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
                                     <p className="text-[10px] text-amber-300/80">Meta: {safeRender(dim.meta_pilar)}</p>
                                 </div>
@@ -1159,7 +1221,7 @@ export default function PillarWorkspace({
 
                     {/* ── Sources ── */}
                     {allSources.length > 0 && (
-                        <div className="mb-6 p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                        <div className="mb-6 p-4 rounded-xl bg-[#111113]">
                             <div className="flex items-center gap-2 mb-3">
                                 <Globe className="w-4 h-4 text-blue-400" />
                                 <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Fontes Pesquisadas</span>
@@ -1176,7 +1238,7 @@ export default function PillarWorkspace({
                                     } catch { }
                                     return (
                                         <a key={si} href={url} target="_blank" rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/30 hover:text-blue-300 hover:border-blue-500/20 transition-all">
+                                            className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-lg bg-zinc-800/60 text-zinc-400 hover:text-blue-300 transition-all">
                                             {faviconUrl ? (
                                                 <img src={faviconUrl} alt="" className="w-3.5 h-3.5 rounded-sm" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                             ) : (
@@ -1192,8 +1254,8 @@ export default function PillarWorkspace({
 
                     {/* Dependencies */}
                     {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
-                        <div className={`mb-4 p-4 rounded-xl border ${deps.blockers?.length > 0
-                            ? 'bg-red-500/[0.04] border-red-500/20' : 'bg-amber-500/[0.04] border-amber-500/20'}`}>
+                        <div className={`mb-4 p-4 rounded-xl ${deps.blockers?.length > 0
+                            ? 'bg-red-500/[0.04]' : 'bg-amber-500/[0.04]'}`}>
                             <div className="flex items-center gap-2 mb-2">
                                 <Link2 className="w-4 h-4 text-amber-400" />
                                 <span className="text-xs font-semibold text-amber-400">Dependências</span>
@@ -1207,7 +1269,7 @@ export default function PillarWorkspace({
 
                     {/* ── Progress Bar ── */}
                     {totalTasks > 0 && (
-                        <div className="mb-6 p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                        <div className="mb-6 p-4 rounded-xl bg-[#111113]">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-xs text-zinc-500">Progresso das Tarefas</span>
                                 <span className="text-xs font-mono text-zinc-400">{completedCount}/{totalTasks}</span>
@@ -1220,7 +1282,7 @@ export default function PillarWorkspace({
                     )}
 
                     {error && (
-                        <div className="mb-4 p-3 rounded-xl bg-red-950/30 border border-red-900/50 text-red-200 text-sm">
+                        <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
                             {error}
                             <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
                         </div>
@@ -1254,9 +1316,9 @@ export default function PillarWorkspace({
                             const subtasksCount = subtasksList.length;
 
                             return (
-                                <div key={task.id} className={`rounded-xl border transition-all ${isDone
-                                    ? 'bg-[#111113] border-emerald-500/15'
-                                    : 'bg-[#111113] border-white/[0.06]'}`}>
+                                <div key={task.id} className={`rounded-xl transition-all ${isDone
+                                    ? 'bg-[#111113]'
+                                    : 'bg-[#111113]'}`}>
                                     <div className="flex items-start gap-3 p-4">
                                         {isAI ? (
                                             isDone ? <CheckCircle2 className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
@@ -1274,16 +1336,16 @@ export default function PillarWorkspace({
                                                     <p className={`text-sm font-medium ${isDone ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
                                                         {task.titulo}
                                                     </p>
-                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${isAI
-                                                        ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                                                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${isAI
+                                                        ? 'bg-violet-500/10 text-violet-400'
+                                                        : 'bg-blue-500/10 text-blue-400'
                                                         }`}>{isAI ? 'IA' : 'Você'}</span>
                                                     {task.prioridade && (
-                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${task.prioridade === 'critica'
-                                                            ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${task.prioridade === 'critica'
+                                                            ? 'bg-red-500/10 text-red-400'
                                                             : task.prioridade === 'alta'
-                                                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                                                : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                                                                ? 'bg-amber-500/10 text-amber-400'
+                                                                : 'bg-zinc-500/10 text-zinc-400'
                                                             }`}>{task.prioridade}</span>
                                                     )}
                                                 </div>
@@ -1296,13 +1358,13 @@ export default function PillarWorkspace({
                                                 <div className="flex flex-wrap items-center gap-3 mt-1.5 mb-2">
                                                     {deliverable && (
                                                         <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc, task.id); }} disabled={loadingDoc === (deliverable.id || task.id || 'export')}
-                                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'text-zinc-400 hover:text-zinc-200 cursor-pointer'}`}>
+                                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-400 hover:text-zinc-200 cursor-pointer'}`}>
                                                             {loadingDoc === (deliverable.id || task.id || 'export') ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> : <img src="/docs.png" alt="" className="w-4 h-4" />}
                                                             {loadingDoc === (deliverable.id || task.id || 'export') ? 'Gerando Doc...' : !session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
                                                         </button>
                                                     )}
                                                     {subtasksCount > 0 && (
-                                                        <span className="flex items-center gap-1 text-[10px] font-medium text-zinc-500 bg-black/20 px-2 py-1 rounded-md border border-white/[0.03]">
+                                                        <span className="flex items-center gap-1 text-[10px] font-medium text-zinc-500 bg-black/20 px-2 py-1 rounded-md">
                                                             <ListTree className="w-3 h-3" /> {subtasksCount} subtarefas
                                                         </span>
                                                     )}
@@ -1322,7 +1384,7 @@ export default function PillarWorkspace({
 
                                                     {/* User task instructions */}
                                                     {!isAI && task.instrucoes_usuario && !taskDeliverables[task.id] && (
-                                                        <div className="mt-1 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                                                        <div className="mt-1 p-3 rounded-lg bg-blue-500/5">
                                                             <p className="text-[11px] text-blue-300/80 whitespace-pre-wrap leading-relaxed">{safeRender(task.instrucoes_usuario)}</p>
                                                         </div>
                                                     )}
@@ -1364,7 +1426,7 @@ export default function PillarWorkspace({
                             {showKPIs && (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {plan.kpis_pilar.map((kpi: any, i: number) => (
-                                        <div key={i} className="p-3 rounded-xl bg-[#111113] border border-white/[0.06]">
+                                        <div key={i} className="p-3 rounded-xl bg-white/[0.03]">
                                             <p className="text-zinc-300 text-sm font-medium">{safeRender(kpi.nome)}</p>
                                             <div className="flex items-center justify-between mt-1">
                                                 <span className="text-[11px] text-zinc-600">Atual: {safeRender(kpi.valor_atual)}</span>
@@ -1378,13 +1440,13 @@ export default function PillarWorkspace({
                     )}
 
                     {plan.resultado_final && (
-                        <div className="mb-4 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                        <div className="mb-4 p-4 rounded-xl bg-emerald-500/5">
                             <p className="text-[10px] font-semibold text-emerald-500/80 uppercase tracking-wide mb-1">Resultado esperado</p>
                             <p className="text-sm text-zinc-300 leading-relaxed">{safeRender(plan.resultado_final)}</p>
                         </div>
                     )}
                     {(plan.conexao_pilares || plan.conexao_proximos_pilares) && (
-                        <div className="mb-4 p-4 rounded-xl bg-violet-500/5 border border-violet-500/15">
+                        <div className="mb-4 p-4 rounded-xl bg-violet-500/5">
                             <p className="text-[10px] font-semibold text-violet-500/80 uppercase tracking-wide mb-1">Conexão com outros pilares</p>
                             <p className="text-sm text-zinc-300 leading-relaxed">{safeRender(plan.conexao_pilares || plan.conexao_proximos_pilares)}</p>
                         </div>
@@ -1411,10 +1473,10 @@ export default function PillarWorkspace({
                         <ScoreRing score={scoreGeral} size={72} color={scoreGeral >= 70 ? '#10b981' : scoreGeral >= 40 ? '#f59e0b' : '#ef4444'} />
                     </div>
                     {classificacao && (
-                        <span className={`inline-block mt-3 text-xs font-medium px-3 py-1 rounded-full border ${scoreGeral >= 70
-                            ? 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10'
-                            : scoreGeral >= 40 ? 'text-amber-400 border-amber-500/20 bg-amber-500/10'
-                                : 'text-red-400 border-red-500/20 bg-red-500/10'}`}>
+                        <span className={`inline-block mt-3 text-xs font-medium px-3 py-1 rounded-full ${scoreGeral >= 70
+                            ? 'text-emerald-400 bg-emerald-500/10'
+                            : scoreGeral >= 40 ? 'text-amber-400 bg-amber-500/10'
+                                : 'text-red-400 bg-red-500/10'}`}>
                             {safeRender(classificacao)}
                         </span>
                     )}
@@ -1429,13 +1491,13 @@ export default function PillarWorkspace({
                         Seus 7 Especialistas
                     </h2>
                     <button onClick={onRedo}
-                        className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg bg-white/[0.04] text-zinc-500 hover:text-zinc-300 border border-white/[0.06] transition-colors">
+                        className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
                         <RefreshCw className="w-3 h-3" /> Reanalisar
                     </button>
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-3 rounded-xl bg-red-950/30 border border-red-900/50 text-red-200 text-sm">
+                    <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
                         {error}
                         <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
                     </div>
@@ -1450,55 +1512,87 @@ export default function PillarWorkspace({
                         const s = typeof dim.score === 'number' ? dim.score : 0;
                         const spec = specialists[key] || {};
                         const isLoading = loadingPillar === key;
-                        const statusBadge = s >= 70 ? { text: 'Forte', cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' }
-                            : s >= 40 ? { text: 'Atenção', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20' }
-                                : s > 0 ? { text: 'Crítico', cls: 'text-red-400 bg-red-500/10 border-red-500/20' }
+                        const statusBadge = s >= 70 ? { text: 'Forte', cls: 'text-emerald-400 bg-emerald-500/10' }
+                            : s >= 40 ? { text: 'Atenção', cls: 'text-amber-400 bg-amber-500/10' }
+                                : s > 0 ? { text: 'Crítico', cls: 'text-red-400 bg-red-500/10' }
                                     : { text: 'Sem dados', cls: 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20' };
                         const cached = pillarStates[key];
                         const hasPlan = cached?.plan?.plan_data;
                         const progress = cached?.progress;
 
                         return (
-                            <button key={key} onClick={() => handleSelectPillar(key)} disabled={isLoading}
-                                className="text-left p-5 rounded-2xl bg-[#111113] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200 group disabled:opacity-60">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="p-2 rounded-lg" style={{ backgroundColor: `${meta.color}12` }}>
-                                        <Icon className="w-4 h-4" style={{ color: meta.color }} />
+                            <div key={key}
+                                className="flex flex-col text-left p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] transition-all duration-200 group cursor-pointer relative"
+                                onClick={() => !isLoading && handleSelectPillar(key)}>
+
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="p-2 rounded-lg" style={{ backgroundColor: `${meta.color}12` }}>
+                                            <Icon className="w-4 h-4" style={{ color: meta.color }} />
+                                        </div>
+                                        {isLoading
+                                            ? <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
+                                            : <ChevronRight className="w-4 h-4 text-zinc-800 group-hover:text-zinc-500 transition-colors" />}
                                     </div>
-                                    {isLoading
-                                        ? <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
-                                        : <ChevronRight className="w-4 h-4 text-zinc-800 group-hover:text-zinc-500 transition-colors" />}
+
+                                    <h3 className="text-white text-sm font-semibold mb-0.5">{meta.label}</h3>
+                                    <p className="text-zinc-600 text-[11px] mb-2">{spec.cargo || ''}</p>
+
+                                    <div className="flex items-center gap-2.5 mb-2">
+                                        <ScoreRing score={s} size={36} color={meta.color} />
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${statusBadge.cls}`}>
+                                            {statusBadge.text}
+                                        </span>
+                                    </div>
+
+                                    {/* Diagnostic justificativa inline */}
+                                    {dim.justificativa && (
+                                        <p className="text-zinc-600 text-[10px] leading-relaxed line-clamp-2 mb-1">
+                                            {safeRender(dim.justificativa)}
+                                        </p>
+                                    )}
+
+                                    {hasPlan && progress && (
+                                        <div className="mt-1">
+                                            <div className="flex items-center justify-between text-[10px] text-zinc-600 mb-1">
+                                                <span>{progress.completed || 0}/{progress.total || 0} tarefas</span>
+                                            </div>
+                                            <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full transition-all"
+                                                    style={{ width: `${progress.total > 0 ? ((progress.completed || 0) / progress.total) * 100 : 0}%`, backgroundColor: meta.color }} />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
-                                <h3 className="text-white text-sm font-semibold mb-0.5">{meta.label}</h3>
-                                <p className="text-zinc-600 text-[11px] mb-2">{spec.cargo || ''}</p>
+                                {/* Actions Footer */}
+                                <div className="mt-4 pt-3 border-t border-white/[0.05] flex justify-end">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
 
-                                <div className="flex items-center gap-2.5 mb-2">
-                                    <ScoreRing score={s} size={36} color={meta.color} />
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusBadge.cls}`}>
-                                        {statusBadge.text}
-                                    </span>
+                                            // Format the context for export
+                                            const mktCat = marketData?.categories?.find((c: any) => c.id === key);
+                                            const mktInsights = mktCat?.resumo?.visao_geral ? `\n\n**Visão de Mercado:**\n${safeRender(mktCat.resumo.visao_geral)}\n${(mktCat.resumo.pontos_chave || []).map((p: any) => `• ${safeRender(p)}`).join('\n')}` : '';
+
+                                            // Format the context to look like a deliverable
+                                            const contextDeliverable = {
+                                                id: `context_${key}`,
+                                                entregavel_titulo: `Contexto de Análise: ${meta.label}`,
+                                                conteudo_completo: `**Diagnóstico da IA:**\n${safeRender(dim.justificativa || 'Sem dados diagnósticos.')}\n\n**Meta do Pilar:**\n${safeRender(dim.meta_pilar || 'Não definida.')}\n\n**Principal Desafio/Oportunidade:**\n${safeRender(dim.dado_chave || 'Não identificado.')}${mktInsights}`,
+                                                fontes_consultadas: mktCat?.fontes || []
+                                            };
+
+                                            openInGoogleDocs(contextDeliverable, meta.label, session, setLoadingDoc, `ctx_${key}`);
+                                        }}
+                                        disabled={loadingDoc === `ctx_${key}`}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'bg-white/[0.03] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]'}`}
+                                    >
+                                        {loadingDoc === `ctx_${key}` ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> : <img src="/docs.png" alt="" className="w-4 h-4" />}
+                                        {loadingDoc === `ctx_${key}` ? 'Gerando Doc...' : !session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
+                                    </button>
                                 </div>
-
-                                {/* Diagnostic justificativa inline */}
-                                {dim.justificativa && (
-                                    <p className="text-zinc-600 text-[10px] leading-relaxed line-clamp-2 mb-1">
-                                        {safeRender(dim.justificativa)}
-                                    </p>
-                                )}
-
-                                {hasPlan && progress && (
-                                    <div className="mt-1">
-                                        <div className="flex items-center justify-between text-[10px] text-zinc-600 mb-1">
-                                            <span>{progress.completed || 0}/{progress.total || 0} tarefas</span>
-                                        </div>
-                                        <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                                            <div className="h-full rounded-full transition-all"
-                                                style={{ width: `${progress.total > 0 ? ((progress.completed || 0) / progress.total) * 100 : 0}%`, backgroundColor: meta.color }} />
-                                        </div>
-                                    </div>
-                                )}
-                            </button>
+                            </div>
                         );
                     })}
                 </div>

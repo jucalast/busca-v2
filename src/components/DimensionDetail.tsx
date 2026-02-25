@@ -207,7 +207,7 @@ export default function DimensionDetail({
 
                 {/* Key Finding */}
                 {dim.dado_chave && (
-                    <div className="mb-8 p-4 rounded-xl bg-amber-500/5 border border-amber-500/15">
+                    <div className="mb-8 p-4 rounded-xl bg-amber-500/5">
                         <div className="flex items-start gap-2.5">
                             <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                             <div>
@@ -284,7 +284,7 @@ export default function DimensionDetail({
                                         href={fonte.startsWith('http') ? fonte : undefined}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-md bg-white/[0.03] text-zinc-500 hover:text-zinc-300 border border-white/[0.04] transition-colors"
+                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 transition-colors"
                                     >
                                         <ExternalLink className="w-2.5 h-2.5" />
                                         {display}
@@ -306,7 +306,7 @@ export default function DimensionDetail({
                             {marketCategories.map((cat: any) => {
                                 const resumo = cat.resumo || {};
                                 return (
-                                    <div key={cat.id} className="p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                                    <div key={cat.id} className="p-4 rounded-xl bg-[#111113]">
                                         <h3 className="text-sm font-semibold text-white mb-2">{cat.nome}</h3>
                                         {resumo.visao_geral && (
                                             <p className="text-zinc-400 text-sm leading-relaxed mb-3">{safeRender(resumo.visao_geral)}</p>
@@ -357,7 +357,7 @@ export default function DimensionDetail({
                         <Sparkles className="w-3.5 h-3.5" />
                         Assistente de {meta.label}
                     </h2>
-                    <div className="rounded-2xl bg-[#111113] border border-white/[0.06] overflow-hidden">
+                    <div className="rounded-2xl bg-[#111113] overflow-hidden">
                         {/* Messages */}
                         <div className="max-h-[420px] overflow-y-auto p-5 space-y-5">
                             {/* Welcome message */}
@@ -411,7 +411,7 @@ export default function DimensionDetail({
                                                             href={url}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-white/[0.03] text-zinc-600 hover:text-zinc-400 border border-white/[0.04] transition-colors"
+                                                            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-zinc-800/40 text-zinc-600 hover:text-zinc-400 transition-colors"
                                                         >
                                                             <ExternalLink className="w-2.5 h-2.5" />
                                                             {hostname}
@@ -457,7 +457,7 @@ export default function DimensionDetail({
                                     onChange={(e) => setInputValue(e.target.value)}
                                     placeholder={`Pergunte sobre ${meta.label.toLowerCase()}...`}
                                     disabled={isLoading}
-                                    className="flex-1 bg-white/[0.04] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/[0.15] transition-colors disabled:opacity-50"
+                                    className="flex-1 bg-zinc-800/40 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none transition-all disabled:opacity-50"
                                 />
                                 <button
                                     type="submit"

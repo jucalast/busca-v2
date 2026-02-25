@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain, Sparkles, ChevronDown } from 'lucide-react';
+import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
+import ModelSelector from './ModelSelector';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Business {
@@ -131,7 +132,7 @@ export default function SidebarLayout({
   return (
     <div className="flex flex-col h-screen bg-[#09090b] overflow-hidden">
       {/* Top Bar - Full Width */}
-      <header className="h-20 border-b border-zinc-800 bg-[#111113] flex items-center justify-between px-6 flex-shrink-0">
+      <header className="h-20 bg-[#111113] flex items-center justify-between px-6 flex-shrink-0 shadow-[0_1px_0_0_rgba(255,255,255,0.03)]">
         {/* Logo */}
         <div className="flex items-center gap-4">
           <img
@@ -142,24 +143,8 @@ export default function SidebarLayout({
         </div>
 
         {/* Global AI Model Selector */}
-        <div className="flex items-center gap-3">
-          <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Sparkles className="h-4 w-4 text-violet-400" />
-            </div>
-            <select
-              value={aiModel}
-              onChange={(e) => setAiModel(e.target.value)}
-              className="appearance-none bg-zinc-900 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-lg focus:ring-violet-500 focus:border-violet-500 block w-full pl-9 pr-8 py-2 hover:border-zinc-500 transition-colors cursor-pointer"
-            >
-              <option value="groq">Modelo: Groq (Llama)</option>
-              <option value="gemini">Modelo: Google Gemini</option>
-              <option value="openrouter">Modelo: OpenRouter</option>
-            </select>
-            <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
-              <ChevronDown className="h-4 w-4 text-zinc-500" />
-            </div>
-          </div>
+        <div className="flex items-center gap-3 px-4">
+          <ModelSelector value={aiModel} onChange={setAiModel} />
         </div>
       </header>
 
@@ -168,7 +153,7 @@ export default function SidebarLayout({
         {/* Sidebar */}
         <aside
           className={`${sidebarOpen ? 'w-80' : 'w-0'
-            } transition-all duration-300 flex-shrink-0 border-r border-zinc-800 bg-zinc-950 flex flex-col overflow-hidden`}
+            } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden`}
         >
           {/* New Business Button */}
           <div className="p-4 flex-shrink-0">
@@ -182,7 +167,7 @@ export default function SidebarLayout({
           </div>
 
           {/* Business List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 border-t border-zinc-800">
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 border-t border-zinc-800/50">
             {loading ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-10 w-10 border-2 border-zinc-600 border-t-transparent mx-auto mb-3"></div>
@@ -201,9 +186,9 @@ export default function SidebarLayout({
                 <div key={business.id} className="relative">
                   <div
                     onClick={() => onSelectBusiness(business.id)}
-                    className={`cursor-pointer p-5 rounded-2xl bg-[#111113] border transition-all duration-200 ${currentBusinessId === business.id
-                      ? 'border-white/[0.12]'
-                      : 'border-white/[0.06] hover:border-white/[0.12]'
+                    className={`cursor-pointer p-5 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
+                      ? 'bg-white/[0.06]'
+                      : 'bg-white/[0.02] hover:bg-white/[0.05]'
                       }`}
                   >
                     <div className="flex items-start justify-between mb-2.5">
@@ -219,12 +204,7 @@ export default function SidebarLayout({
                         <div
                           className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
                             business.latest_analysis.score_geral
-                          )} flex-shrink-0 border ${business.latest_analysis.score_geral >= 80
-                            ? 'border-green-500/30'
-                            : business.latest_analysis.score_geral >= 60
-                              ? 'border-yellow-500/30'
-                              : 'border-red-500/30'
-                            }`}
+                          )} flex-shrink-0`}
                         >
                           <div className="flex items-center gap-1.5">
                             <TrendingUp
@@ -264,7 +244,7 @@ export default function SidebarLayout({
                           <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
                         </button>
                         {openMenuId === business.id && (
-                          <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl overflow-hidden z-50">
+                          <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl shadow-xl overflow-hidden z-50">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -287,10 +267,10 @@ export default function SidebarLayout({
           </div>
 
           {/* Sidebar Footer - Logout */}
-          <div className="p-4 border-t border-zinc-800 flex-shrink-0">
+          <div className="p-4 border-t border-zinc-800/50 flex-shrink-0">
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all text-zinc-400 hover:text-white"
+              className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-zinc-800/40 hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-white"
             >
               <LogOut className="w-4 h-4" />
               <span className="text-sm font-medium">Sair da Conta</span>
@@ -313,7 +293,7 @@ export default function SidebarLayout({
         {/* Toggle Button - Floating between sidebar and content */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className={`absolute top-4 z-20 w-8 h-8 bg-[#111113] hover:bg-zinc-700 border border-zinc-700 rounded-md flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[19rem]' : 'left-3'
+          className={`absolute top-4 z-20 w-8 h-8 bg-zinc-800/60 hover:bg-zinc-700 rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[19rem]' : 'left-3'
             }`}
         >
           {sidebarOpen ? (
@@ -328,7 +308,7 @@ export default function SidebarLayout({
           {/* Content */}
           <main className="flex-1 overflow-y-auto">
             {error && (
-              <div className="m-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
+              <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
                 {error}
               </div>
             )}
@@ -342,14 +322,14 @@ export default function SidebarLayout({
             {/* Backdrop overlay */}
             {rightSidebarOpen && (
               <div
-                className="fixed inset-0 bg-black/50 z-30 transition-opacity duration-300"
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
                 onClick={() => setRightSidebarOpen(false)}
               />
             )}
             {/* Toggle button */}
             <button
               onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-              className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-[#111113] hover:bg-zinc-700 border border-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
+              className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
                 }`}
             >
               {rightSidebarOpen ? (
@@ -363,9 +343,8 @@ export default function SidebarLayout({
             </button>
             {/* Sidebar panel */}
             <aside
-              className={`fixed top-20 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
+              className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
                 }`}
-              style={{ borderLeft: rightSidebarOpen ? '1px solid rgba(255,255,255,0.08)' : 'none' }}
             >
               {rightSidebar}
             </aside>

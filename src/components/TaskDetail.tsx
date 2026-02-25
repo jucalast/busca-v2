@@ -126,7 +126,7 @@ export default function TaskDetail({
                 </div>
 
                 {/* Progress Bar */}
-                <div className="mb-6 p-4 rounded-xl bg-[#111113] border border-white/[0.06]">
+                <div className="mb-6 p-4 rounded-xl bg-[#111113]">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs text-zinc-500">Progresso</span>
                         <span className="text-xs font-mono text-zinc-400">{completedCount}/{subtarefas.length}</span>
@@ -149,7 +149,7 @@ export default function TaskDetail({
 
                 {/* Expert Tip */}
                 {detail.dica_principal && (
-                    <div className="mb-6 p-4 rounded-xl bg-amber-500/5 border border-amber-500/15">
+                    <div className="mb-6 p-4 rounded-xl bg-amber-500/5">
                         <div className="flex items-start gap-2.5">
                             <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                             <div>
@@ -172,9 +172,9 @@ export default function TaskDetail({
                                 <button
                                     key={st.id}
                                     onClick={() => onToggleSubtask(st.id)}
-                                    className={`w-full flex items-start gap-3 p-4 rounded-xl border transition-all text-left ${isDone
-                                        ? 'bg-emerald-500/5 border-emerald-500/15'
-                                        : 'bg-[#111113] border-white/[0.06] hover:border-white/[0.12]'
+                                    className={`w-full flex items-start gap-3 p-4 rounded-xl transition-all text-left ${isDone
+                                        ? 'bg-emerald-500/5'
+                                        : 'bg-[#111113] hover:bg-white/[0.03]'
                                         }`}
                                 >
                                     {isDone
@@ -226,14 +226,14 @@ export default function TaskDetail({
                         {showTools && (
                             <div className="space-y-2">
                                 {detail.ferramentas_necessarias.map((tool, i) => (
-                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-[#111113] border border-white/[0.06]">
-                                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-[#111113]">
+                                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
                                             <Wrench className="w-3.5 h-3.5 text-blue-400" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
                                                 <p className="text-sm font-medium text-zinc-200">{tool.nome}</p>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400">
                                                     {tool.custo}
                                                 </span>
                                             </div>
@@ -265,7 +265,7 @@ export default function TaskDetail({
                                 try { display = new URL(url).hostname; } catch { }
                                 return (
                                     <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-md bg-white/[0.03] text-zinc-500 hover:text-zinc-300 border border-white/[0.04] transition-colors">
+                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 transition-colors">
                                         <ExternalLink className="w-2.5 h-2.5" />
                                         {display}
                                     </a>
@@ -277,7 +277,7 @@ export default function TaskDetail({
 
                 {/* Expected Result */}
                 {detail.resultado_esperado && (
-                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/5">
                         <p className="text-[10px] font-semibold text-emerald-500/80 uppercase tracking-wide mb-1">Resultado esperado</p>
                         <p className="text-sm text-zinc-300 leading-relaxed">{detail.resultado_esperado}</p>
                     </div>
@@ -295,7 +295,7 @@ export default function TaskDetail({
                     </button>
 
                     {showChat && (
-                        <div className="rounded-2xl bg-[#111113] border border-white/[0.06] overflow-hidden">
+                        <div className="rounded-2xl bg-[#111113] overflow-hidden">
                             {/* Messages */}
                             <div className="max-h-[400px] overflow-y-auto p-5 space-y-4">
                                 {/* Welcome */}
@@ -304,7 +304,7 @@ export default function TaskDetail({
                                         <Sparkles className="w-3.5 h-3.5 text-violet-400" />
                                     </div>
                                     <p className="text-zinc-500 text-sm leading-relaxed">
-                                        Sou seu assistente para esta tarefa. Posso ajudar com dúvidas específicas, 
+                                        Sou seu assistente para esta tarefa. Posso ajudar com dúvidas específicas,
                                         sugerir alternativas ou explicar qualquer passo do checklist.
                                     </p>
                                 </div>
@@ -335,7 +335,7 @@ export default function TaskDetail({
                                                         try { host = new URL(url).hostname; } catch { }
                                                         return (
                                                             <a key={si} href={url} target="_blank" rel="noopener noreferrer"
-                                                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-white/[0.03] text-zinc-600 hover:text-zinc-400 border border-white/[0.04] transition-colors">
+                                                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-zinc-800/40 text-zinc-600 hover:text-zinc-400 transition-colors">
                                                                 <ExternalLink className="w-2.5 h-2.5" /> {host}
                                                             </a>
                                                         );
@@ -361,7 +361,7 @@ export default function TaskDetail({
                             </div>
 
                             {/* Input */}
-                            <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.04]">
+                            <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800/40">
                                 <div className="flex gap-2">
                                     <input
                                         ref={inputRef}
@@ -370,7 +370,7 @@ export default function TaskDetail({
                                         onChange={(e) => setInputValue(e.target.value)}
                                         placeholder="Pergunte sobre esta tarefa..."
                                         disabled={chatLoading}
-                                        className="flex-1 bg-white/[0.04] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/[0.15] transition-colors disabled:opacity-50"
+                                        className="flex-1 bg-zinc-800/40 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none transition-all disabled:opacity-50"
                                     />
                                     <button
                                         type="submit"

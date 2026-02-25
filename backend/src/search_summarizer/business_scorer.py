@@ -537,12 +537,12 @@ JSON:
 {{
     "score": 0-100,
     "status": "critico/atencao/forte",
-    "justificativa": "2-3 frases sobre {dim_cfg['label']} com dados concretos",
+    "justificativa": "Diagnóstico profundo e detalhado sobre {dim_cfg['label']}, elaborando extensivamente sobre os dados e cenários encontrados",
     "acoes_imediatas": [
         {{"acao": "Ação sobre {dim_cfg['label']}: o que + como + resultado", "impacto": "alto/medio/baixo", "prazo": "1 semana/2 semanas/1 mês", "custo": "R$ 0/até R$ 50/até R$ 100", "fonte": "dado de suporte"}}
     ],
     "fontes_utilizadas": ["URLs reais"],
-    "dado_chave": "Achado mais importante sobre {dim_cfg['label']}",
+    "dado_chave": "Achado mais importante e completo sobre {dim_cfg['label']}",
     "meta_pilar": "Estado ideal de {dim_cfg['label']} para {nome} (NÃO sobre logística/custos)"
 }}"""
 
@@ -590,7 +590,7 @@ JSON:
 Perfil: Equipe {_eq} | Capital {_cap} | Ticket {_tick} | Canais: {perfil.get('canais_venda','?')} | Cliente ideal: {_cli}
 Foco: {dim_cfg['foco']}
 
-Retorne JSON: {{"score": 0-100, "status": "critico/atencao/forte", "justificativa": "2 frases sobre {dim_cfg['label']}", "acoes_imediatas": [{{"acao": "ação sobre {dim_cfg['label']}", "impacto": "alto", "prazo": "1 semana", "custo": "R$ 0", "fonte": "perfil do negócio"}}], "fontes_utilizadas": [], "dado_chave": "dado sobre {dim_cfg['label']}", "meta_pilar": "estado ideal de {dim_cfg['label']} para {nome}"}}"""
+Retorne JSON: {{"score": 0-100, "status": "critico/atencao/forte", "justificativa": "Diagnóstico aprofundado sobre {dim_cfg['label']}", "acoes_imediatas": [{{"acao": "ação sobre {dim_cfg['label']}", "impacto": "alto", "prazo": "1 semana", "custo": "R$ 0", "fonte": "perfil do negócio"}}], "fontes_utilizadas": [], "dado_chave": "achado completo sobre {dim_cfg['label']}", "meta_pilar": "estado ideal de {dim_cfg['label']} para {nome}"}}"""
         try:
             result = call_llm(provider=model_provider, prompt=minimal_prompt)
             result.setdefault("score", 50)

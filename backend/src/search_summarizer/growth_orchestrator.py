@@ -137,8 +137,8 @@ REGRAS ANTI-GENÉRICO:
 
 JSON:
 {{
-    "visao_geral": "2-3 frases com a principal conclusão baseada nos dados encontrados",
-    "pontos_chave": ["fato concreto com número ou nome real encontrado na pesquisa"],
+    "visao_geral": "Análise profunda e detalhada (Deep Dive) do cenário de mercado. Explore o contexto, oportunidades e ameaças de forma extensa e rigorosa.",
+    "pontos_chave": ["fato concreto extenso, com números, contexto ou nomes reais encontrados na pesquisa que embasem a visão geral"],
     "recomendacoes": ["frase completa com ação + ferramenta real + justificativa baseada em dados"],
     "dados_relevantes": {{"nome_da_metrica": "valor numerico ou textual real"}}
 }}

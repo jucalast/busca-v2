@@ -93,9 +93,38 @@ export default function BusinessMindMap({
         }
     }, []);
 
-    // Accordion toggle
+    // Accordion toggle & Zoom to node
     const togglePillar = useCallback((key: string) => {
-        setExpandedPillar(prev => prev === key ? null : key);
+        setExpandedPillar(prev => {
+            const isClosing = prev === key;
+            if (isClosing) return null;
+
+            // It's opening: zoom and pan
+            if (containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                const viewCenterX = rect.width / 2;
+                const viewCenterY = rect.height / 2;
+
+                const idx = PILLAR_ORDER.indexOf(key);
+                if (idx !== -1) {
+                    const pos = PILLAR_POSITIONS[idx];
+                    const targetZoom = 1.1; // zoom level when clicking a node
+
+                    // Offset x so the expanded menu also fits well
+                    const direction = pos.side === 'left' ? -1 : 1;
+                    const visualCenterX = pos.x + direction * 100; // midpoint between node and subitems
+                    const visualCenterY = pos.y;
+
+                    setZoom(targetZoom);
+                    setPan({
+                        x: viewCenterX - visualCenterX * targetZoom,
+                        y: viewCenterY - visualCenterY * targetZoom
+                    });
+                }
+            }
+
+            return key;
+        });
     }, []);
 
     // ─── Pan handlers ───
@@ -177,33 +206,56 @@ export default function BusinessMindMap({
     const svgLines: React.ReactNode[] = [];
 
     pillarNodes.forEach(p => {
+        // Line calculation logic
+        // Center node is at (0, 0) logically, size is ~140x140. Edge is ~70px out. 
+        // We'll draw from center, but markerEnd places marker at the very tip of the line.
+        const direction = p.pos.side === 'left' ? -1 : 1;
+
+        // As you can see in the screenshot, the line on the left side is traversing ABOVE the icon. 
+        // We really need to stop it far away from the icon so it doesn't cross it! 
+        // For right side, pos.x is where the node starts (icon is on the left). 
+        // For left side, pos.x is where the node ENDS (icon is on the right). 
+        // The line from center goes from (0,0) to the node. 
+        // Left node is at x < 0. Center is at x = 0.
+        const targetX = p.pos.x - (direction * 60);
+        const targetY = p.pos.y;
+
         // Center → pillar line
         svgLines.push(
             <path
                 key={`line-${p.key}`}
-                d={bezierPath(0, 0, p.pos.x, p.pos.y)}
+                d={bezierPath(0, 0, targetX, targetY)}
                 stroke={p.meta.color}
                 strokeWidth={2}
-                strokeOpacity={0.3}
                 fill="none"
+                markerEnd={`url(#arrow-${p.key})`}
             />
         );
 
         // Pillar → sub-items lines (if expanded)
         if (p.isExpanded && p.subItems.length > 0) {
-            const direction = p.pos.side === 'left' ? -1 : 1;
-            const subX = p.pos.x + direction * 200;
+            // Base X for sub items
+            const subXBase = p.pos.x + direction * 230; // Further away to avoid overlaps 
+
+            // Start line exactly near the `>` chevron indicator at the edge of the pillar box
+            // Aumentando de 165 para 180 para iniciar "mais pra frente da setinha"
+            const startSubX = p.pos.x + direction * 180;
 
             p.subItems.forEach((sub, si) => {
                 const subY = p.pos.y - ((p.subItems.length - 1) * 28) / 2 + si * 28;
+
+                // Pull back the end of the line so the circle connects exactly to the edge of the subItem content
+                // Removemos o offset (- direction * 8) para que alinhe exatamente nas bolinhas/icones do item
+                const targetSubX = subXBase;
+
                 svgLines.push(
                     <path
                         key={`sub-${p.key}-${si}`}
-                        d={bezierPath(p.pos.x, p.pos.y, subX, subY)}
+                        d={bezierPath(startSubX, p.pos.y, targetSubX, subY)}
                         stroke={sub.color}
                         strokeWidth={1.2}
-                        strokeOpacity={0.25}
                         fill="none"
+                        markerEnd={`url(#sub-arrow-${p.key}-${si})`}
                     />
                 );
             });
@@ -223,20 +275,20 @@ export default function BusinessMindMap({
         >
             {/* ─── Zoom controls ─── */}
             <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5">
-                <button onClick={zoomIn} className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center transition-colors">
+                <button onClick={zoomIn} className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 flex items-center justify-center transition-colors">
                     <ZoomIn className="w-4 h-4 text-zinc-400" />
                 </button>
-                <button onClick={zoomOut} className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center transition-colors">
+                <button onClick={zoomOut} className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 flex items-center justify-center transition-colors">
                     <ZoomOut className="w-4 h-4 text-zinc-400" />
                 </button>
-                <button onClick={resetView} className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center transition-colors">
+                <button onClick={resetView} className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 flex items-center justify-center transition-colors">
                     <Maximize2 className="w-4 h-4 text-zinc-400" />
                 </button>
             </div>
 
             {/* ─── Title ─── */}
             <div className="absolute top-4 left-4 z-30">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] backdrop-blur-sm">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/40 backdrop-blur-sm">
                     <Brain className="w-4 h-4 text-violet-400" />
                     <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Mapa do Negócio</span>
                 </div>
@@ -255,28 +307,64 @@ export default function BusinessMindMap({
                 style={{
                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                     transformOrigin: '0 0',
-                    transition: dragging ? 'none' : 'transform 0.15s ease-out',
+                    transition: dragging ? 'none' : 'transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)',
                 }}
             >
                 {/* SVG layer */}
-                <svg className="absolute" style={{ overflow: 'visible', left: 0, top: 0, width: 0, height: 0 }}>
-                    {/* Subtle orbit ring */}
-                    <circle cx={0} cy={0} r={340} fill="none" stroke="rgba(255,255,255,0.025)" strokeWidth={1} strokeDasharray="6 12" />
-                    {svgLines}
+                <svg className="absolute inset-0 pointer-events-none" style={{ overflow: 'visible', width: '100%', height: '100%', zIndex: 0 }}>
+                    <defs>
+                        {pillarNodes.map(p => {
+                            const direction = p.pos.side === 'left' ? -1 : 1;
+                            return (
+                                <React.Fragment key={`defs-${p.key}`}>
+                                    <marker
+                                        id={`arrow-${p.key}`}
+                                        markerWidth="16"
+                                        markerHeight="16"
+                                        refX="8"
+                                        refY="8"
+                                        orient="auto"
+                                    >
+                                        <circle cx="8" cy="8" r="3.5" fill="#0a0a0c" stroke={p.meta.color} strokeWidth="1.5" />
+                                    </marker>
+                                    {p.isExpanded && p.subItems.map((sub, si) => (
+                                        <marker
+                                            key={`defs-sub-${p.key}-${si}`}
+                                            id={`sub-arrow-${p.key}-${si}`}
+                                            markerWidth="12"
+                                            markerHeight="12"
+                                            refX="6"
+                                            refY="6"
+                                            orient="auto"
+                                        >
+                                            <circle cx="6" cy="6" r="2.5" fill="#0a0a0c" stroke={sub.color} strokeWidth="1.2" />
+                                        </marker>
+                                    ))}
+                                </React.Fragment>
+                            );
+                        })}
+                    </defs>
+
+                    {/* Move the origin to center to match the absolutely positioned HTML nodes */}
+                    <g transform={`translate(0, 0)`}>
+                        {/* Subtle orbit ring */}
+                        <circle cx={0} cy={0} r={340} fill="none" stroke="rgba(255,255,255,0.025)" strokeWidth={1} strokeDasharray="6 12" />
+                        {svgLines}
+                    </g>
                 </svg>
 
                 {/* ─── Central Node ─── */}
                 <div
-                    className="mindmap-node absolute flex flex-col items-center"
+                    className="mindmap-node absolute flex flex-col items-center justify-center z-10"
                     style={{ left: -70, top: -70, width: 140, height: 140 }}
                 >
                     {/* Glow */}
-                    <div className="absolute inset-0 rounded-full opacity-15 blur-2xl" style={{ backgroundColor: scoreColor(scoreGeral) }} />
+                    <div className="absolute inset-0 rounded-full opacity-15 blur-2xl pointer-events-none" style={{ backgroundColor: scoreColor(scoreGeral) }} />
 
                     {/* Score ring */}
                     <div className="relative w-[110px] h-[110px] mt-1">
-                        <svg viewBox="0 0 110 110" className="absolute inset-0">
-                            <circle cx="55" cy="55" r="49" fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+                        <svg viewBox="0 0 110 110" className="absolute inset-0 rounded-full" style={{ backgroundColor: '#0a0a0c' }}>
+                            <circle cx="55" cy="55" r="49" fill="#0a0a0c" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
                             <circle
                                 cx="55" cy="55" r="49"
                                 fill="none"
@@ -297,9 +385,9 @@ export default function BusinessMindMap({
                     </div>
 
                     {/* Business info */}
-                    <div className="text-center mt-1">
-                        <p className="text-[11px] font-bold text-white truncate max-w-[140px]">{userProfile.name}</p>
-                        <p className="text-[9px] text-zinc-500 truncate max-w-[130px]">{userProfile.segment}</p>
+                    <div className="absolute top-[150px] flex flex-col items-center w-[200px]">
+                        <p className="text-[12px] font-extrabold text-white truncate w-full text-center" style={{ lineHeight: '1.2' }}>{userProfile.name}</p>
+                        <p className="text-[10px] text-zinc-400 truncate w-full text-center mt-1">{userProfile.segment}</p>
                     </div>
                 </div>
 
@@ -355,14 +443,9 @@ export default function BusinessMindMap({
 
                                 {/* Icon box */}
                                 <div
-                                    className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-shadow duration-300"
-                                    style={{
-                                        backgroundColor: `${p.meta.color}20`,
-                                        border: `1.5px solid ${p.meta.color}50`,
-                                        boxShadow: isHovered ? `0 0 24px ${p.meta.color}30` : 'none',
-                                    }}
+                                    className="w-11 h-11 flex items-center justify-center flex-shrink-0 transition-transform duration-300 relative z-10"
                                 >
-                                    <Icon style={{ color: p.meta.color, width: 20, height: 20 }} />
+                                    <Icon style={{ color: p.meta.color, width: 28, height: 28 }} />
                                 </div>
 
                                 {/* For right-side pillars: icon first, then label */}
@@ -396,7 +479,8 @@ export default function BusinessMindMap({
 
                             {/* ─── Sub-items (vertical list extending outward) ─── */}
                             {p.isExpanded && p.subItems.length > 0 && (() => {
-                                const subX = p.pos.x + direction * 200;
+                                // Match the subXBase calculation
+                                const subX = p.pos.x + direction * 230;
                                 const startY = p.pos.y - ((p.subItems.length - 1) * 28) / 2;
 
                                 return (
@@ -405,6 +489,7 @@ export default function BusinessMindMap({
                                         style={{
                                             left: p.pos.side === 'left' ? subX - 260 : subX,
                                             top: startY - 8,
+                                            pointerEvents: 'none'
                                         }}
                                     >
                                         {p.subItems.map((sub, si) => {
@@ -418,14 +503,21 @@ export default function BusinessMindMap({
                                                         justifyContent: p.pos.side === 'left' ? 'flex-end' : 'flex-start',
                                                     }}
                                                 >
+                                                    {p.pos.side === 'left' && (
+                                                        <span className="text-[10px] leading-tight whitespace-nowrap" style={{ color: sub.color }}>
+                                                            {sub.label}
+                                                        </span>
+                                                    )}
                                                     {SubIcon ? (
                                                         <SubIcon className="w-3 h-3 flex-shrink-0" style={{ color: sub.color }} />
                                                     ) : (
                                                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color }} />
                                                     )}
-                                                    <span className="text-[10px] leading-tight whitespace-nowrap" style={{ color: sub.color }}>
-                                                        {sub.label}
-                                                    </span>
+                                                    {p.pos.side === 'right' && (
+                                                        <span className="text-[10px] leading-tight whitespace-nowrap" style={{ color: sub.color }}>
+                                                            {sub.label}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             );
                                         })}

@@ -302,16 +302,16 @@ def build_cross_pillar_context(analysis_id: str, target_pillar: str, all_diagnos
         if isinstance(estado, dict):
             justif = estado.get("justificativa", "")
             if justif:
-                part += f"  Situação: {justif[:200]}\n"
+                part += f"  Situação: {justif[:1000]}\n"
             dado_chave = estado.get("dado_chave", "")
             if dado_chave:
-                part += f"  Dado-chave: {dado_chave[:150]}\n"
+                part += f"  Dado-chave: {dado_chave[:500]}\n"
             meta = estado.get("meta_pilar", "")
             if meta:
-                part += f"  Meta: {meta[:150]}\n"
+                part += f"  Meta: {meta[:300]}\n"
 
         if gaps and isinstance(gaps, list):
-            part += "  Gaps: " + "; ".join(str(g)[:80] for g in gaps[:3]) + "\n"
+            part += "  Gaps: " + "; ".join(str(g)[:200] for g in gaps[:3]) + "\n"
 
         # ── 2. Plan data (available if user opened this pillar) ──
         plan = db.get_pillar_plan(analysis_id, uk)
@@ -341,14 +341,14 @@ def build_cross_pillar_context(analysis_id: str, target_pillar: str, all_diagnos
         results = db.get_pillar_results(analysis_id, uk)
         executed = [r for r in (results or []) if r.get("status") in ("completed", "ai_executed", "ai_partial")]
         if executed:
-            part += "  Entregáveis produzidos:\n"
-            for r in executed[:4]:
-                outcome = r.get("outcome", "")[:100]
-                impact = r.get("business_impact", "")[:80]
-                part += f"    ✅ {r.get('action_title', '')[:60]}: {outcome}"
+            part += "  Entregáveis produzidos (CONTEÚDO COMPLETO - USE ISTO):\n"
+            for r in executed[:5]:
+                outcome = r.get("outcome", "")[:2000] # Increased context limit for robust intelligence cascade
+                impact = r.get("business_impact", "")[:500]
+                part += f"    ✅ {r.get('action_title', '')[:100]}:\n      {outcome}"
                 if impact:
-                    part += f" → {impact}"
-                part += "\n"
+                    part += f"\n      → Impacto Previsto: {impact}"
+                part += "\n\n"
 
         sections.append(part)
 
@@ -928,7 +928,7 @@ ENTREGÁVEIS OBRIGATÓRIOS deste pilar (suas tarefas DEVEM produzir estes):
 
 COMO {spec['cargo'].upper()}, crie TAREFAS que produzam os ENTREGÁVEIS OBRIGATÓRIOS acima.
 
-REGRA DE CASCATA: Use os dados dos especialistas anteriores (se houver). NÃO reinvente o que já foi definido upstream.
+REGRA DE CASCATA: É OBRIGATÓRIO (CRÍTICO) usar os dados ricos e os entregáveis completos fornecidos pelos especialistas anteriores. Se a Persona, Tom de Voz ou Posicionamento já foram definidos (upstream), USE esses dados exatos e aplique-os. NÃO INVENTE NADA NOVO que concorra com o que já foi produzido.
 
 CLASSIFICAÇÃO OBRIGATÓRIA para cada tarefa:
 - "executavel_por_ia": true → IA pode GERAR (textos, estratégias, planos, análises, scripts, calendários, templates)
@@ -1178,7 +1178,7 @@ ENTREGÁVEL ESPERADO: {entregavel}
 
 {all_research}
 
-REGRA DE CASCATA: Use os dados dos especialistas anteriores. Aplique variáveis já definidas (personas, tom de voz, paleta, canais) — NÃO reinvente.
+REGRA DE CASCATA (MANDATÓRIA): É ESTRITAMENTE OBRIGATÓRIO sugar todos os detalhes, contextos e variáveis definidos pelos especialistas anteriores fornecidos acima (ex: Persona detalhada, Tom de Voz rico, Mapa Visual, Canais). INJETE esses dados ricos diretamente no seu texto/entregável final. NUNCA gere conteúdo genérico ignorando o que o pilar anterior produziu.
 
 COMO {spec['cargo'].upper()}, EXECUTE esta tarefa AGORA.
 Gere o ENTREGÁVEL COMPLETO, pronto para uso imediato pelo negócio.
@@ -1385,6 +1385,8 @@ TIPO: {"Executável por IA" if is_ai else "Requer ação do usuário"}
 Quebre esta tarefa em 3-6 SUBTAREFAS concretas e sequenciais.
 Cada subtarefa deve ser pequena o suficiente para ser completada em uma sessão.
 Para cada subtarefa, classifique se a IA pode executar ou se o usuário precisa fazer.
+
+REGRA DE CASCATA: É OBRIGATÓRIO desenhar as subtarefas usando as variáveis, personas e estratégias já definidas pelos pilares anteriores. NÃO sub-divida tarefas de forma genérica.
 
 REGRA IMPORTANTE: Todas as subtarefas devem estar DENTRO do escopo acima.
 NÃO crie subtarefas que envolvam ações listadas em 🚫 PROIBIDO.

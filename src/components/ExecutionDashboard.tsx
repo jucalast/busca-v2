@@ -106,7 +106,7 @@ export default function ExecutionDashboard({
                     <div className="flex items-center gap-3">
                         <button
                             onClick={onViewDiagnostic}
-                            className="flex items-center gap-2 px-3 py-2 rounded-xl text-zinc-500 hover:text-zinc-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] transition-all text-xs"
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl text-zinc-500 hover:text-zinc-300 bg-zinc-800/40 hover:bg-zinc-800 transition-all text-xs"
                         >
                             <BarChart3 className="w-3.5 h-3.5" />
                             Diagnóstico
@@ -116,9 +116,9 @@ export default function ExecutionDashboard({
                 </div>
 
                 {/* ── Meta Card ── */}
-                <div className="p-5 rounded-2xl bg-[#111113] border border-white/[0.06] mb-6">
+                <div className="p-5 rounded-2xl bg-[#111113] mb-6">
                     <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
+                        <div className="p-2 rounded-xl bg-emerald-500/10 flex-shrink-0">
                             <Flag className="w-4 h-4 text-emerald-400" />
                         </div>
                         <div className="flex-1">
@@ -157,7 +157,7 @@ export default function ExecutionDashboard({
                         const phaseColor = fi === 0 ? '#10b981' : fi === 1 ? '#3b82f6' : fi === 2 ? '#a855f7' : '#f59e0b';
 
                         return (
-                            <div key={fase.id} className="rounded-2xl bg-[#111113] border border-white/[0.06] overflow-hidden">
+                            <div key={fase.id} className="rounded-2xl bg-[#111113] overflow-hidden">
                                 {/* Phase Header */}
                                 <button
                                     onClick={() => setExpandedPhase(isExpanded ? null : fase.id)}
@@ -198,7 +198,7 @@ export default function ExecutionDashboard({
                                                     key={task.id}
                                                     onClick={() => !isExpanding && onSelectTask(task, fase.titulo)}
                                                     disabled={isExpanding}
-                                                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.10] hover:bg-white/[0.04] transition-all text-left group disabled:opacity-60"
+                                                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-all text-left group disabled:opacity-60"
                                                 >
                                                     {/* Category Icon */}
                                                     <div
@@ -247,7 +247,7 @@ export default function ExecutionDashboard({
                 <div className="flex justify-center mt-8">
                     <button
                         onClick={onRedo}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-zinc-500 hover:text-zinc-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] transition-all text-sm"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-zinc-500 hover:text-zinc-300 bg-zinc-800/40 hover:bg-zinc-800 transition-all text-sm"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
                         Refazer Análise

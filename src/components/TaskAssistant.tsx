@@ -53,8 +53,8 @@ function CopyButton({ text }: { text: string }) {
         <button
             onClick={handleCopy}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${copied
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 border border-zinc-700'
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
                 }`}
         >
             {copied ? (
@@ -79,7 +79,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                     <p className="text-zinc-400 text-sm bg-zinc-900/50 rounded-xl p-3 border-l-4 border-amber-500">{data.estrategia}</p>
                 )}
                 {data.entregas.map((e: any, i: number) => (
-                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
+                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4">
                         <div className="flex items-center justify-between mb-2">
                             <h4 className="text-sm font-semibold text-white">{e.titulo}</h4>
                             <CopyButton text={e.conteudo} />
@@ -102,7 +102,7 @@ function RenderAssistOutput({ data }: { data: any }) {
         return (
             <div className="space-y-4">
                 {data.concorrentes.map((c: any, i: number) => (
-                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
+                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4">
                         <div className="flex items-center gap-2 mb-3">
                             <Target className="w-4 h-4 text-red-400" />
                             <h4 className="text-sm font-bold text-white">{c.nome}</h4>
@@ -138,7 +138,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                     </div>
                 ))}
                 {data.posicionamento_recomendado && (
-                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300 flex items-start gap-2">
+                    <div className="bg-emerald-500/10 rounded-xl p-3 text-sm text-emerald-300 flex items-start gap-2">
                         <Bookmark className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         {data.posicionamento_recomendado}
                     </div>
@@ -152,7 +152,7 @@ function RenderAssistOutput({ data }: { data: any }) {
         return (
             <div className="space-y-4">
                 {data.perfil_ideal_cliente && (
-                    <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
+                    <div className="bg-zinc-900/50 rounded-2xl p-4">
                         <div className="flex items-center gap-2 mb-2">
                             <User className="w-4 h-4 text-white" />
                             <h4 className="text-sm font-semibold text-white">Perfil Ideal de Cliente</h4>
@@ -186,7 +186,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                     <div className="space-y-2">
                         <p className="text-xs text-zinc-500 uppercase font-semibold">Onde Encontrar Leads</p>
                         {data.onde_encontrar.map((item: any, i: number) => (
-                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
+                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3">
                                 <div className="flex items-center gap-2 mb-1">
                                     <MapPin className="w-4 h-4 text-white" />
                                     <p className="text-sm font-semibold text-white">{item.canal}</p>
@@ -206,7 +206,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                     <div className="space-y-2">
                         <p className="text-xs text-zinc-500 uppercase font-semibold">Exemplos de Abordagem</p>
                         {data.exemplos_abordagem.map((ex: any, i: number) => (
-                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
+                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-1.5 text-xs text-zinc-400">
                                         <Mail className="w-3 h-3" />
@@ -230,13 +230,13 @@ function RenderAssistOutput({ data }: { data: any }) {
         return (
             <div className="space-y-4">
                 {data.sequencia_ideal && (
-                    <div className="flex items-start gap-2 text-sm text-blue-300 bg-blue-500/10 rounded-xl p-3 border border-blue-500/20">
+                    <div className="flex items-start gap-2 text-sm text-blue-300 bg-blue-500/10 rounded-xl p-3">
                         <Bookmark className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         <span>Sequência ideal: {data.sequencia_ideal}</span>
                     </div>
                 )}
                 {data.scripts.map((script: any, i: number) => (
-                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
+                    <div key={i} className="bg-zinc-900/50 rounded-2xl p-4">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                                 <Phone className="w-4 h-4 text-white" />
@@ -278,7 +278,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                 {data.pilares_conteudo && (
                     <div className="flex flex-wrap gap-2">
                         {data.pilares_conteudo.map((p: string, i: number) => (
-                            <span key={i} className="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <span key={i} className="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400">
                                 {p}
                             </span>
                         ))}
@@ -287,7 +287,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                 {data.calendario_semanal && (
                     <div className="space-y-2">
                         {data.calendario_semanal.map((item: any, i: number) => (
-                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50 flex items-center gap-3">
+                            <div key={i} className="bg-zinc-900/50 rounded-xl p-3 flex items-center gap-3">
                                 <div className="text-center min-w-[60px]">
                                     <p className="text-xs font-bold text-white">{item.dia}</p>
                                     <p className="text-[10px] text-zinc-500">{item.plataforma}</p>
@@ -315,7 +315,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                 {data.cenarios && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {data.cenarios.map((c: any, i: number) => (
-                            <div key={i} className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50">
+                            <div key={i} className="bg-zinc-900/50 rounded-2xl p-4">
                                 <h4 className="text-sm font-bold text-white mb-2">{c.nome}</h4>
                                 <div className="space-y-1.5 text-xs">
                                     <div className="flex justify-between"><span className="text-zinc-500">Preço</span><span className="text-white font-semibold">{c.preco_sugerido}</span></div>
@@ -333,7 +333,7 @@ function RenderAssistOutput({ data }: { data: any }) {
                     </div>
                 )}
                 {data.recomendacao && (
-                    <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 text-sm text-emerald-300 flex items-start gap-2">
+                    <div className="bg-emerald-500/10 rounded-xl p-3 text-sm text-emerald-300 flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         {data.recomendacao}
                     </div>
@@ -386,7 +386,7 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
             />
 
             {/* Modal */}
-            <div className="relative w-full max-w-3xl max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-2xl">
+            <div className="relative w-full max-w-3xl max-h-[85vh] bg-zinc-950 rounded-3xl overflow-hidden flex flex-col shadow-2xl">
                 {/* Color bar */}
                 <div className="h-1.5" style={{ background: meta.color }} />
 
@@ -444,7 +444,7 @@ const TaskAssistant: React.FC<TaskAssistantProps> = ({ task, profileSummary, onC
                     )}
 
                     {error && (
-                        <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-4 text-red-300 text-sm text-center">
+                        <div className="bg-red-950/30 rounded-xl p-4 text-red-300 text-sm text-center">
                             {error}
                             <button
                                 onClick={handleGenerate}
