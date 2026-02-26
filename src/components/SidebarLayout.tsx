@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
@@ -151,133 +152,138 @@ export default function SidebarLayout({
       {/* Bottom Area - Sidebar + Main Content */}
       <div className="absolute inset-x-0 top-20 bottom-0">
         <div className="flex h-full overflow-hidden relative">
-        {/* Sidebar */}
-        <aside
-          className={`${sidebarOpen ? 'w-80' : 'w-0'
-            } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden`}
-        >
-          {/* New Business Button */}
-          <div className="p-4 flex-shrink-0 relative z-20">
-            <button
-              onClick={onCreateNew}
-              className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 hover:bg-white/[0.04] rounded-xl transition-all"
-            >
-              <Plus className="w-5 h-5 text-zinc-400" />
-              <span className="text-zinc-300 font-semibold">Novo Negócio</span>
-            </button>
-          </div>
+          {/* Sidebar */}
+          <aside
+            className={`${sidebarOpen ? 'w-80' : 'w-0'
+              } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden`}
+          >
+            {/* New Business Button */}
+            <div className="p-4 flex-shrink-0 relative z-20">
+              <button
+                onClick={onCreateNew}
+                className="w-full flex items-center gap-2 px-4 py-2 bg-[#111113] hover:bg-zinc-800/80 text-white rounded-lg transition-colors border border-white/5"
+              >
+                <Plus className="w-4 h-4 text-zinc-400" />
+                <span className="font-medium">Novo Negócio</span>
+              </button>
+            </div>
 
-          {/* Business List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 border-t border-zinc-800/50">
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-2 border-zinc-600 border-t-transparent mx-auto mb-3"></div>
-                <p className="text-xs text-zinc-500">Carregando negócios...</p>
-              </div>
-            ) : businesses.length === 0 ? (
-              <div className="text-center py-12 px-4">
-                <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center mx-auto mb-4">
-                  <Building2 className="w-8 h-8 text-zinc-600" />
+            {/* Business List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 border-t border-zinc-800/50">
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-zinc-600 border-t-transparent mx-auto mb-3"></div>
+                  <p className="text-xs text-zinc-500">Carregando negócios...</p>
                 </div>
-                <p className="text-sm text-zinc-400 mb-2 font-medium">Nenhum negócio ainda</p>
-                <p className="text-xs text-zinc-600">Crie seu primeiro negócio para começar</p>
-              </div>
-            ) : (
-              businesses.map((business) => (
-                <div key={business.id} className="relative">
-                  <div
-                    onClick={() => onSelectBusiness(business.id)}
-                    className={`cursor-pointer p-5 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
-                      ? 'bg-white/[0.06]'
-                      : 'bg-white/[0.02] hover:bg-white/[0.05]'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between mb-2.5">
-                      <div className="flex-1 min-w-0 pr-2">
-                        <h3 className="text-sm font-semibold text-white truncate mb-1.5">
-                          {business.name}
-                        </h3>
-                        <p className="text-xs text-zinc-500 truncate">
-                          {business.segment}
-                        </p>
-                      </div>
-                      {business.latest_analysis && (
-                        <div
-                          className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
-                            business.latest_analysis.score_geral
-                          )} flex-shrink-0`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <TrendingUp
-                              className={`w-3.5 h-3.5 ${getScoreColor(
-                                business.latest_analysis.score_geral
-                              )}`}
-                            />
-                            <span
-                              className={`text-sm font-bold ${getScoreColor(
-                                business.latest_analysis.score_geral
-                              )}`}
-                            >
-                              {business.latest_analysis.score_geral}
-                            </span>
+              ) : businesses.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center mx-auto mb-4">
+                    <Building2 className="w-8 h-8 text-zinc-600" />
+                  </div>
+                  <p className="text-sm text-zinc-400 mb-2 font-medium">Nenhum negócio ainda</p>
+                  <p className="text-xs text-zinc-600">Crie seu primeiro negócio para começar</p>
+                </div>
+              ) : (
+                businesses.map((business) => {
+                  return (
+                    <div key={business.id} className="relative">
+                      <Link
+                        href={`/analysis/${business.id}`}
+                        scroll={false} // Evitar o pulo brusco da pagina on click
+                        className={`block p-5 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
+                          ? 'bg-white/[0.06]'
+                          : 'bg-white/[0.02] hover:bg-white/[0.05]'
+                          }`}
+                      >
+                        <div className="flex items-start justify-between mb-2.5">
+                          <div className="flex-1 min-w-0 pr-2">
+                            <h3 className="text-sm font-semibold text-white truncate mb-1.5">
+                              {business.name}
+                            </h3>
+                            <p className="text-xs text-zinc-500 truncate">
+                              {business.segment}
+                            </p>
                           </div>
+                          {business.latest_analysis && (
+                            <div
+                              className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
+                                business.latest_analysis.score_geral
+                              )} flex-shrink-0`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <TrendingUp
+                                  className={`w-3.5 h-3.5 ${getScoreColor(
+                                    business.latest_analysis.score_geral
+                                  )}`}
+                                />
+                                <span
+                                  className={`text-sm font-bold ${getScoreColor(
+                                    business.latest_analysis.score_geral
+                                  )}`}
+                                >
+                                  {business.latest_analysis.score_geral}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-xs text-zinc-600">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
-                          {business.model}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          <span>{business.location}</span>
-                        </div>
-                      </div>
-                      <div className="relative" ref={openMenuId === business.id ? menuRef : null}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenMenuId(openMenuId === business.id ? null : business.id);
-                          }}
-                          className="p-1 hover:bg-zinc-800 rounded transition-colors"
-                        >
-                          <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
-                        </button>
-                        {openMenuId === business.id && (
-                          <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl overflow-hidden z-50">
+                        <div className="flex items-center justify-between gap-2 text-xs text-zinc-600">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
+                              {business.model}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              <span>{business.location}</span>
+                            </div>
+                          </div>
+                          <div className="relative" ref={openMenuId === business.id ? menuRef : null}>
                             <button
                               onClick={(e) => {
+                                e.preventDefault(); // Impede nativo clique link
                                 e.stopPropagation();
-                                setOpenMenuId(null);
-                                handleDeleteBusiness(business.id, business.name, e);
+                                setOpenMenuId(openMenuId === business.id ? null : business.id);
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                              className="p-1 hover:bg-zinc-800 rounded transition-colors"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Excluir negócio</span>
+                              <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
                             </button>
+                            {openMenuId === business.id && (
+                              <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl overflow-hidden z-50">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault(); // Impede nativo clique link
+                                    e.stopPropagation();
+                                    setOpenMenuId(null);
+                                    handleDeleteBusiness(business.id, business.name, e);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Excluir negócio</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      </Link>
                     </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+                  );
+                })
+              )}
+            </div>
 
-          {/* Sidebar Footer - Logout */}
-          <div className="p-4 border-t border-zinc-800/50 flex-shrink-0">
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-zinc-800/40 hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-white"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="text-sm font-medium">Sair da Conta</span>
-            </button>
-          </div>
-        </aside>
+            {/* Sidebar Footer - Logout */}
+            <div className="p-4 border-t border-zinc-800/50 flex-shrink-0">
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-zinc-800/40 hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-white"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-sm font-medium">Sair da Conta</span>
+              </button>
+            </div>
+          </aside>
 
           {/* Confirm Delete Dialog */}
           <ConfirmDialog
@@ -318,39 +324,41 @@ export default function SidebarLayout({
           </div>
 
           {/* Right Sidebar - Business Mind Map */}
-          {rightSidebar && (
-            <>
-              {/* Backdrop overlay */}
-              {rightSidebarOpen && (
-                <div
-                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
-                  onClick={() => setRightSidebarOpen(false)}
-                />
-              )}
-              {/* Toggle button */}
-              <button
-                onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-                className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
-                  }`}
-              >
-                {rightSidebarOpen ? (
-                  <X className="w-4 h-4 text-zinc-400" />
-                ) : (
-                  <>
-                    <Brain className="w-4 h-4 text-violet-400" />
-                    <span className="text-[11px] font-semibold text-zinc-400 hidden md:inline">Mapa</span>
-                  </>
+          {
+            rightSidebar && (
+              <>
+                {/* Backdrop overlay */}
+                {rightSidebarOpen && (
+                  <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
+                    onClick={() => setRightSidebarOpen(false)}
+                  />
                 )}
-              </button>
-              {/* Sidebar panel */}
-              <aside
-                className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
-                  }`}
-              >
-                {rightSidebar}
-              </aside>
-            </>
-          )}
+                {/* Toggle button */}
+                <button
+                  onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+                  className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
+                    }`}
+                >
+                  {rightSidebarOpen ? (
+                    <X className="w-4 h-4 text-zinc-400" />
+                  ) : (
+                    <>
+                      <Brain className="w-4 h-4 text-violet-400" />
+                      <span className="text-[11px] font-semibold text-zinc-400 hidden md:inline">Mapa</span>
+                    </>
+                  )}
+                </button>
+                {/* Sidebar panel */}
+                <aside
+                  className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
+                    }`}
+                >
+                  {rightSidebar}
+                </aside>
+              </>
+            )
+          }
         </div>
       </div>
     </div>

@@ -84,10 +84,9 @@ interface GrowthHubProps {
     userProfile: { name: string; segment: string };
     onSelectDimension: (key: string) => void;
     onRedo: () => void;
-    onBackToExecution?: () => void;
 }
 
-export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo, onBackToExecution }: GrowthHubProps) {
+export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo }: GrowthHubProps) {
     const score = data.score || {};
     const dimensoes = score.dimensoes || {};
     const scoreGeral = score.score_geral || 0;
@@ -144,19 +143,6 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
                         </span>
                     </div>
                 </div>
-
-                {/* Back to Specialists */}
-                {onBackToExecution && (
-                    <div className="mb-6">
-                        <button
-                            onClick={onBackToExecution}
-                            className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-                        >
-                            <ArrowUpRight className="w-4 h-4 rotate-[-135deg]" />
-                            Voltar aos Especialistas
-                        </button>
-                    </div>
-                )}
 
                 {/* Section Heading */}
                 <div className="mb-6">

@@ -709,14 +709,15 @@ def check_pillar_dependencies(analysis_id: str, pillar_key: str) -> dict:
 AI_CAPABILITIES = [
     "escrever", "criar texto", "redigir", "elaborar", "gerar", "copy",
     "estratégia", "plano", "análise", "diagnóstico", "planejamento",
-    "pesquisar", "analisar", "benchmarking", "comparar",
-    "calendário", "cronograma", "agenda",
-    "persona", "perfil de cliente", "público",
+    "pesquisar", "analisar", "benchmarking", "comparar", "descrever", "identificar",
+    "calendário", "cronograma", "agenda", "segmentação", "mapear",
+    "persona", "perfil de cliente", "público", "documento", "script",
     "precificação", "preço", "margem", "ticket",
-    "funil", "jornada", "pipeline", "script",
-    "template", "modelo", "roteiro", "proposta",
+    "funil", "jornada", "pipeline", "roteiro",
+    "template", "modelo", "proposta",
     "otimizar texto", "seo", "palavras-chave", "hashtag",
     "email", "mensagem", "abordagem", "pitch",
+    "criar o documento", "criar a segmentação", "descrever o mapa"
 ]
 
 REQUIRES_USER_ACTION = [
@@ -932,13 +933,13 @@ PARE de criar tarefas de "Pesquisar", "Coletar dados", "Analisar", "Identificar"
 REGRA DE CASCATA: É OBRIGATÓRIO (CRÍTICO) usar os dados fornecidos. Se a Persona, Tom de Voz ou Posicionamento já foram definidos pelos pilares anteriores (upstream), USE esses dados exatos e NÃO INVENTE NADA NOVO que concorra. No entanto, se o seu pilar é o responsável por CRIAR esse dado pela primeira vez (ex: Publico-Alvo criando a Persona), então VOCÊ DEVE INVENTAR E CRIAR o documento profundamente do zero usando a inteligência da pesquisa!
 
 CLASSIFICAÇÃO OBRIGATÓRIA para cada tarefa:
-- "executavel_por_ia": true → IA pode GERAR (textos, estratégias, planos, análises, scripts, calendários, templates)
-- "executavel_por_ia": false → EXIGE ação humana (criar contas, publicar, fotografar, configurar ferramentas)
+- "executavel_por_ia": true → A IA CONSEGUE FAZER ISSO SOZINHA! (Ex: gerar textos, escrever roteiros, mapear jornadas, descrever personas, criar planos, sugerir ideias, dar dicas técnicas, estruturar scripts). MARQUE COMO TRUE SEMPRE QUE ENVOLVER PENSAMENTO OU ESCRITA.
+- "executavel_por_ia": false → O USUÁRIO TEM QUE FAZER ISSO COM AS MÃOS NO MUNDO REAL (Ex: cadastrar em um site, pagar um boleto, criar senha, gravar vídeos, ligar pro cliente, imprimir).
 
 REGRAS:
 1. 4-8 tarefas CONCRETAS e SEQUENCIAIS — TODAS dentro do escopo deste pilar
-2. Use "docs" para tarefas de documentos, textos, planos e análises
-3. Para tarefas IA: descreva exatamente o entregável (ex: "documento de persona completo com dados demográficos")
+2. Use "Google Docs" para tarefas de documentos, textos, planos e análises (A IA VAI ESCREVER ISSO, marque true)
+3. Para tarefas IA: descreva exatamente o entregável (ex: "documento de persona completo")
 4. Para tarefas usuário: dê instruções passo-a-passo claras
 5. NÃO repita ações já concluídas
 6. Se capital zero: apenas ferramentas gratuitas
@@ -1050,8 +1051,8 @@ def _format_previous_results(previous_results: list = None) -> str:
     if not previous_results:
         return ""
     
-    text = "═══ RESULTADOS DAS SUBTAREFAS ANTERIORES ═══\n"
-    text += "Use estas informações como base. NÃO repita o que já foi produzido.\n\n"
+    text = "═══ RESULTADOS EXATOS DAS SUBTAREFAS ANTERIORES ═══\n"
+    text += "É OBRIGATÓRIO (CRÍTICO) manter exatamente os mesmos dados descritos abaixo (mesmo nome de persona, mesma idade, mesmos canais). NÃO re-invente coisas que já descrevemos!\n\n"
     
     for i, pr in enumerate(previous_results):
         titulo = pr.get("titulo", pr.get("entregavel_titulo", f"Subtarefa {i+1}"))
@@ -1181,12 +1182,21 @@ ENTREGÁVEL ESPERADO: {entregavel}
 
 REGRA DE CASCATA (MANDATÓRIA): É ESTRITAMENTE OBRIGATÓRIO sugar todos os detalhes e variáveis já definidos (ex: Persona, Tom de Voz). INJETE esses dados diretamente no entregável final. Se o seu pilar for o primeiro a definir isso (ex: Público-Alvo), então CRIE AGORA do zero.
 
+REGRA ANTI-AMNÉSIA: OBRIGATÓRIO manter CONSISTÊNCIA ABSOLUTA com as subtarefas anteriores listadas acima. Se a subtarefa 1 gerou a persona "João Carlos, 42 anos", você DEVE usar o MESMO João Carlos agora. NÃO crie uma persona nova. NÃO mude a idade ou o cargo. Honre o que já foi construído, apenas detalhando mais a fundo!
+
 COMO {spec['cargo'].upper()}, EXECUTE esta tarefa AGORA.
-PARE DE APENAS RESUMIR OS DADOS DE MERCADO. A pesquisa e os dados de mercado fornecidos (incluindo "all_research") são apenas a BASE BÁSICA. Você deve CRIAR INEDITAMENTE o conteúdo final pedido. 
-Se a tarefa pede uma Persona, INVENTE um NOME, IDADE, CARGO, construa uma narrativa de vida, dores e objeções profundas. 
-Se for uma estratégia, detalhe o passo a passo de O QUE FAZER e COMO FAZER. 
-NÃO ESCREVA textos genéricos como "A empresa X faz isso, a concorrência faz aquilo". ISSO É CHATO. CRIE O ENTREGÁVEL REAL PARA O USUÁRIO APLICAR HOJE!
-Gere o ENTREGÁVEL COMPLETO, pronto para uso imediato pelo negócio.
+PARE DE APENAS RESUMIR OS DADOS DE MERCADO. A pesquisa e os dados de mercado fornecidos são apenas a BASE BÁSICA. Você deve CRIAR INEDITAMENTE o conteúdo final pedido. 
+
+REGRA ANTI-GENÉRICO E "LIVRO DIDÁTICO" (CRÍTICO):
+PROIBIDO dar definições teóricas empresariais ou explicações acadêmicas! 
+NÃO USE frases inúteis como "O cliente passa por Conscientização, Consideração, Decisão e Fidelização...". 
+Seja ultra-específico e prático. Dê EXEMPLOS REAIS do DIA A DIA DESTE NEGÓCIO:
+- Se for Jornada, diga EXATAMENTE o que a pessoa digita no Google e quais sites ela visita.
+- Diga com quem ela conversa pela empresa no WhatsApp para fechar.
+- Se for Persona, cite um problema extremamente específico que tira o sono dela hoje (ex: caixa amassa no frete).
+
+NÃO ESCREVA "A empresa X faz isso". ISSO É CHATO. CRIE O CONTEÚDO REAL, PRONTO PARA USO!
+Gere o ENTREGÁVEL COMPLETO, aplicável AGORA por profissionais desse negócio.
 Mantenha-se ESTRITAMENTE dentro do escopo do seu pilar.
 
 - Se é um texto/copy: escreva o texto final USANDO dados upstream
@@ -1390,6 +1400,8 @@ TIPO: {"Executável por IA" if is_ai else "Requer ação do usuário"}
 Quebre esta tarefa em 3-6 SUBTAREFAS concretas e sequenciais.
 Cada subtarefa deve ser pequena o suficiente para ser completada em uma sessão.
 Para cada subtarefa, classifique se a IA pode executar ou se o usuário precisa fazer.
+
+REGRA ANTI-INVASÃO DE ESCOPO (CRÍTICO): PARE DE INVENTAR EXTRAS. Esta tarefa é EXCLUSIVAMENTE sobre: "{task_title}". NÃO INCLUA NUNCA sub-passos referentes a escopos de outras tarefas maiores do mesmo pilar. Exemplo: se a tarefa for ESTRITAMENTE sobre "Criar Documento de Persona", é ESTRITAMENTE PROIBIDO colocar uma subtarefa sobre "Desenvolver Jornada do Cliente" no meio. Mantenha o escopo isolado apenas no entregável desta tarefa específica.
 
 REGRA DE CASCATA: É OBRIGATÓRIO desenhar as subtarefas usando as variáveis, personas e estratégias já definidas pelos pilares anteriores. NÃO sub-divida tarefas de forma genérica.
 

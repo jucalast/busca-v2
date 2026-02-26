@@ -1495,5 +1495,41 @@ def delete_specialist_subtasks(analysis_id: str, pillar_key: str, task_id: str):
         conn.close()
 
 
+def delete_pillar_data(analysis_id: str, pillar_key: str):
+    """Delete all plan and execution data for an entire pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            DELETE FROM specialist_plans 
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+
+        cursor.execute('''
+            DELETE FROM specialist_executions 
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+
+        cursor.execute('''
+            DELETE FROM specialist_results 
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+
+        cursor.execute('''
+            DELETE FROM pillar_diagnostics 
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+
+        cursor.execute('''
+            DELETE FROM pillar_kpis 
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # Initialize database on module import
 init_db()

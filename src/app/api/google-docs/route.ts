@@ -43,7 +43,8 @@ function parseInlineFormatting(text: string): TextRun[] {
         runs.push({ content: text });
     }
 
-    return runs;
+    // Ensure no undefined contents sneak through the regex
+    return runs.filter(r => r && typeof r.content === 'string');
 }
 
 // Analisa uma linha de Markdown e retorna dados limpos
@@ -186,6 +187,8 @@ export async function POST(req: NextRequest) {
             // D. Aplicar formatação inline (bold, italic)
             let runOffset = lineStart;
             for (const run of runs) {
+                if (!run || typeof run.content !== 'string') continue;
+
                 const runLen = run.content.length;
                 if (runLen > 0 && (run.bold || run.italic)) {
                     const fields: string[] = [];

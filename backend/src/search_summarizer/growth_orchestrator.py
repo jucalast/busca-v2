@@ -384,7 +384,7 @@ def main():
         "expand-subtasks", "ai-try-user-task",
         "list-businesses", "get-business", "create-business", "save-analysis",
         "register", "login", "logout", "validate-session", "delete-business",
-        "run-pillar", "pillar-status", "get-pillar-data"
+        "run-pillar", "pillar-status", "get-pillar-data", "redo-pillar"
     ])
     parser.add_argument("--input-file", required=True, help="Path to JSON input file")
     args = parser.parse_args()
@@ -1080,6 +1080,24 @@ def main():
                 print(json.dumps({"success": True, "message": "Subtasks data cleared for regeneration"}, ensure_ascii=False))
             except Exception as e:
                 print("--- REDO_SUBTASKS_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
+    # ━━━ Redo Pillar Action ━━━
+    elif args.action == "redo-pillar":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        
+        if not analysis_id or not pillar_key:
+            print("--- REDO_PILLAR_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key are required"}, ensure_ascii=False))
+        else:
+            try:
+                # Delete all data associated with the pillar
+                db.delete_pillar_data(analysis_id, pillar_key)
+                print("--- REDO_PILLAR_RESULT ---")
+                print(json.dumps({"success": True, "message": f"All data for pillar {pillar_key} cleared for regeneration"}, ensure_ascii=False))
+            except Exception as e:
+                print("--- REDO_PILLAR_RESULT ---")
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
 
 

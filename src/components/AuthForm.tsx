@@ -5,6 +5,8 @@ import { Lock, Mail, User, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import Image from 'next/image';
 import ParticleLoader from '@/components/ParticleLoader';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function AuthForm() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -15,7 +17,14 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSession, signIn } from 'next-auth/react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 // ─── Pillar metadata ───
 const PILLAR_META: Record<string, { label: string; icon: any; color: string; ordem: number }> = {
@@ -26,486 +27,30 @@ const PILLAR_META: Record<string, { label: string; icon: any; color: string; ord
 
 const PILLAR_ORDER = Object.keys(PILLAR_META).sort((a, b) => PILLAR_META[a].ordem - PILLAR_META[b].ordem);
 
-// ─── Types ───
-interface PillarWorkspaceProps {
-    score: any;
-    specialists: Record<string, any>;
-    analysisId: string | null;
-    businessId: string | null;
-    profile: any;
-    marketData: any;
-    userProfile: { name: string; segment: string };
-    onRedo: () => void;
-    onStateChange?: (pillarStates: Record<string, any>, completedTasks: Record<string, Set<string>>) => void;
-}
-
-interface TaskItem {
-    id: string;
-    titulo: string;
-    descricao: string;
-    executavel_por_ia: boolean;
-    entregavel_ia?: string;
-    instrucoes_usuario?: string;
-    ferramenta?: string;
-    ferramenta_url?: string;
-    tempo_estimado?: string;
-    resultado_esperado?: string;
-    kpi?: string;
-    prioridade?: string;
-    depende_de?: string | null;
-    depende_pilar?: string | null;
-}
-
-// ─── Helpers ───
-
-function safeRender(value: any): string {
-    if (value == null) return '';
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-    if (Array.isArray(value)) return value.map(safeRender).join('\n');
-    if (typeof value === 'object') {
-        return Object.entries(value)
-            .map(([k, v]) => {
-                const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
-                return `${label}: ${safeRender(v)}`;
-            })
-            .join('\n');
-    }
-    return String(value);
-}
-
-// ─── Google Docs Export (API Native Flow) ───
-async function openInGoogleDocs(deliverable: any, pillarLabel: string, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
-    if (!session || !session.accessToken) {
-        // Usuário não logado com o Google, forçamos o login primeiro
-        await signIn('google');
-        return;
-    }
-
-    const docId = deliverable.id || fallbackId || 'export';
-    setLoadingDoc(docId);
-
-    const title = safeRender(deliverable.entregavel_titulo || 'Entregável');
-    const rawContent = safeRender(deliverable.conteudo_completo || deliverable.conteudo);
-    const content = cleanMarkdown(rawContent);
-    const comoAplicar = cleanMarkdown(safeRender(deliverable.como_aplicar || ''));
-    const impacto = cleanMarkdown(safeRender(deliverable.impacto_estimado || ''));
-    const sources = deliverable.sources || deliverable.fontes_consultadas || [];
-
-    let plainText = ``;
-    if (pillarLabel) plainText += `Pilar: ${pillarLabel}\n\n`;
-    plainText += content + '\n\n';
-    if (comoAplicar) plainText += `Como Aplicar\n${comoAplicar}\n\n`;
-    if (impacto) plainText += `Impacto Estimado: ${impacto}\n\n`;
-    if (sources.length > 0) {
-        plainText += `Fontes:\n`;
-        sources.forEach((src: string) => {
-            plainText += `- ${src}\n`;
-        });
-        plainText += '\n';
-    }
-
-    try {
-        const response = await fetch('/api/google-docs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: session.accessToken,
-                title: title,
-                plainContent: plainText,
-            }),
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || 'Falha ao criar documento');
-        }
-
-        const result = await response.json();
-        if (result.success && result.url) {
-            window.open(result.url, '_blank');
-        } else {
-            throw new Error('Resposta inválida ao criar documento');
-        }
-    } catch (err: any) {
-        console.error('Error creating Google Doc:', err);
-        alert('Erro ao criar documento: ' + err.message);
-    } finally {
-        setLoadingDoc(null);
-    }
-}
-
-// ─── Full Analysis Export ───
-async function exportFullAnalysis(session: any, setLoadingFull: (loading: boolean) => void, analysisData: any, businessName: string) {
-    if (!session || !session.accessToken) {
-        await signIn('google');
-        return;
-    }
-
-    setLoadingFull(true);
-
-    try {
-        const response = await fetch('/api/export-analysis', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: session.accessToken,
-                analysisData: {
-                    profile: analysisData.profile,
-                    score: analysisData.score,
-                    specialists: analysisData.specialists,
-                    marketData: analysisData.marketData,
-                    taskPlan: analysisData.taskPlan
-                },
-                businessName: businessName
-            }),
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || 'Falha ao criar documento completo');
-        }
-
-        const result = await response.json();
-        if (result.success && result.url) {
-            window.open(result.url, '_blank');
-        } else {
-            throw new Error('Resposta inválida ao criar documento');
-        }
-    } catch (err: any) {
-        console.error('Error creating full analysis Google Doc:', err);
-        alert('Erro ao criar documento completo: ' + err.message);
-    } finally {
-        setLoadingFull(false);
-    }
-}
-
-// ─── Markdown content renderer ───
-export function cleanMarkdown(raw: string): string {
-    if (!raw) return '';
-    let s = raw;
-
-    // Remove formatting fences the LLM often adds (e.g. ```markdown ... ```)
-    // Works even if the fence is in the middle of the text.
-    s = s.replace(/```(markdown|md)?[\s\n]*/gi, '');
-    s = s.replace(/```[\s\n]*/g, '');
-
-    return s.trim();
-}
-
-function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
-    const raw = typeof content === 'string' ? content : safeRender(content);
-    const text = cleanMarkdown(raw);
-    return (
-        <div className={`markdown-content ${className}`}>
-            <ReactMarkdown
-                components={{
-                    h1: ({ children }) => <h1 className="text-sm font-bold text-zinc-400 mt-3 mb-1.5">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-[13px] font-bold text-zinc-400 mt-2.5 mb-1">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-xs font-semibold text-zinc-500 mt-2 mb-1">{children}</h3>,
-                    h4: ({ children }) => <h4 className="text-[11px] font-semibold text-zinc-500 mt-1.5 mb-0.5">{children}</h4>,
-                    p: ({ children }) => <p className="text-[11px] text-zinc-500 leading-relaxed mb-1.5">{children}</p>,
-                    ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-1.5 space-y-0.5">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-1.5 space-y-0.5">{children}</ol>,
-                    li: ({ children }) => <li className="text-[11px] text-zinc-500 leading-relaxed">{children}</li>,
-                    strong: ({ children }) => <strong className="font-semibold text-zinc-400">{children}</strong>,
-                    em: ({ children }) => <em className="italic text-zinc-500">{children}</em>,
-                    a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-400 underline underline-offset-2">
-                            {children}
-                        </a>
-                    ),
-                    blockquote: ({ children }) => (
-                        <blockquote className="border-l-2 border-zinc-700 pl-3 my-1.5 text-zinc-600 italic">{children}</blockquote>
-                    ),
-                    code: ({ children, className: codeClass }) => {
-                        const isInline = !codeClass;
-                        return isInline
-                            ? <code className="bg-zinc-800 text-zinc-400 px-1 py-0.5 rounded text-[10px] font-mono">{children}</code>
-                            : <code className="block bg-zinc-900 text-zinc-400 p-2 rounded-lg text-[10px] font-mono my-1.5 overflow-x-auto">{children}</code>;
-                    },
-                    pre: ({ children }) => <pre className="bg-zinc-900 rounded-lg my-1.5 overflow-x-auto">{children}</pre>,
-                    hr: () => <hr className="border-zinc-800 my-2" />,
-                    table: ({ children }) => (
-                        <div className="overflow-x-auto my-1.5">
-                            <table className="min-w-full text-[10px] border-collapse">{children}</table>
-                        </div>
-                    ),
-                    thead: ({ children }) => <thead className="bg-zinc-800/50">{children}</thead>,
-                    th: ({ children }) => <th className="text-left text-zinc-400 font-semibold px-2 py-1 border border-zinc-700/50">{children}</th>,
-                    td: ({ children }) => <td className="text-zinc-500 px-2 py-1 border border-zinc-800/50">{children}</td>,
-                }}
-            >
-                {text}
-            </ReactMarkdown>
-        </div>
-    );
-}
-
-// ─── Streaming text reveal ───
-function StreamingText({ text, speed = 8, className = '' }: { text: string; speed?: number; className?: string }) {
-    const [displayed, setDisplayed] = React.useState('');
-    const [done, setDone] = React.useState(false);
-
-    React.useEffect(() => {
-        if (!text) return;
-        setDisplayed('');
-        setDone(false);
-        let idx = 0;
-        const interval = setInterval(() => {
-            // Reveal in chunks for smoother feel
-            const chunk = Math.min(3, text.length - idx);
-            idx += chunk;
-            setDisplayed(text.slice(0, idx));
-            if (idx >= text.length) {
-                clearInterval(interval);
-                setDone(true);
-            }
-        }, speed);
-        return () => clearInterval(interval);
-    }, [text, speed]);
-
-    return (
-        <span className={className}>
-            {displayed}
-            {!done && <span className="inline-block w-1.5 h-3 bg-zinc-400 animate-pulse ml-0.5 align-middle rounded-sm" />}
-        </span>
-    );
-}
-
-// ─── Sub-components ───
-
-function ScoreRing({ score, size = 48, color }: { score: number; size?: number; color: string }) {
-    const r = (size - 6) / 2;
-    const circ = 2 * Math.PI * r;
-    const pct = Math.max(0, Math.min(100, score));
-    return (
-        <svg width={size} height={size} className="transform -rotate-90">
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={3} />
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={3}
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)}
-                strokeLinecap="round" className="transition-all duration-700" />
-            <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central"
-                className="fill-white text-[11px] font-bold" transform={`rotate(90 ${size / 2} ${size / 2})`}>
-                {pct}
-            </text>
-        </svg>
-    );
-}
-
-function DepBadge({ dep }: { dep: { label: string; score: number; pillar: string } }) {
-    const isCritical = dep.score < 25;
-    return (
-        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${isCritical
-            ? 'bg-red-500/10 text-red-400'
-            : 'bg-amber-500/10 text-amber-400'
-            }`}>
-            <AlertTriangle className="w-2.5 h-2.5" />
-            {dep.label} {dep.score}/100
-        </span>
-    );
-}
-
-// ─── Tool Detection for Deliverables ───
-function getToolInfo(deliverable: any): { icon: string; name: string; color: string } {
-    const title = (deliverable.entregavel_titulo || '').toLowerCase();
-    const content = (deliverable.conteudo || '').toLowerCase();
-    const tipo = (deliverable.entregavel_tipo || '').toLowerCase();
-
-    // Check for Google Docs
-    if (title.includes('documento') || title.includes('doc') || tipo.includes('documento') ||
-        content.includes('documento') || content.includes('relatório') || content.includes('texto')) {
-        return { icon: '/docs.png', name: 'Google Docs', color: 'text-blue-400' };
-    }
-
-    // Check for Google Sheets/Spreadsheets
-    if (title.includes('planilha') || title.includes('sheets') || title.includes('tabela') ||
-        tipo.includes('planilha') || content.includes('planilha') || content.includes('tabela') ||
-        content.includes('dados') || content.includes('métricas')) {
-        return { icon: '/sheets.png', name: 'Google Sheets', color: 'text-green-400' };
-    }
-
-    // Check for Canva/Design
-    if (title.includes('design') || title.includes('visual') || title.includes('banner') ||
-        title.includes('logo') || title.includes('identidade') || tipo.includes('design') ||
-        content.includes('design') || content.includes('visual') || content.includes('criativo') ||
-        content.includes('identidade visual') || content.includes('marca')) {
-        return { icon: '/canva.png', name: 'Canva', color: 'text-pink-400' };
-    }
-
-    // Default to Docs
-    return { icon: '/docs.png', name: 'Google Docs', color: 'text-blue-400' };
-}
-
-// ─── Styled Deliverable Card ───
-function DeliverableCard({ deliverable, color, session, loadingState, setLoadingDoc }: { deliverable: any; color: string; session: any; loadingState: string | null; setLoadingDoc: (v: string | null) => void }) {
-    const [expanded, setExpanded] = useState(true);
-    const content = safeRender(deliverable.conteudo);
-    const isPartial = deliverable.was_user_task;
-    const pct = deliverable.percentual_completado_ia;
-    const toolInfo = getToolInfo(deliverable);
-
-    return (
-        <div className={`mt-3 p-3 bg-zinc-900 rounded-xl shadow-2xl shadow-black/70 overflow-hidden ${isPartial ? '' : ''}`}>
-            {/* Header */}
-            <div onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 cursor-pointer hover:bg-white/[0.04]">
-                {/* Tool Icon */}
-                <img src={toolInfo.icon} alt={toolInfo.name} className="w-7 h-7 rounded object-contain shrink-0 opacity-60 grayscale" />
-
-                <div className="flex-1 flex items-center gap-2 text-left min-w-0">
-                    <span className={`text-[13px] font-medium ${isPartial ? 'text-amber-300' : 'text-zinc-300'}`}>
-                        {safeRender(deliverable.entregavel_titulo)}
-                    </span>
-                    <span className={`text-[11px] ${toolInfo.color}`}>
-                        {toolInfo.name}
-                    </span>
-                    {deliverable.entregavel_tipo && (
-                        <span className="text-[11px] text-zinc-600">
-                            {safeRender(deliverable.entregavel_tipo)}
-                        </span>
-                    )}
-                    {isPartial && pct && (
-                        <span className="text-[11px] text-amber-400">
-                            IA completou {pct}%
-                        </span>
-                    )}
-                </div>
-
-                <div className="flex items-center gap-3">
-                    <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, '', session, setLoadingDoc); }} disabled={loadingState === (deliverable.id || 'export')}
-                        className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg transition-all duration-150 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04] disabled:opacity-50">
-                        {loadingState === (deliverable.id || 'export') ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : <img src={toolInfo.icon} alt="" className="w-4 h-4 rounded object-contain opacity-60 grayscale" />}
-                        {loadingState === (deliverable.id || 'export') ? 'Gerando...' : `Abrir no ${toolInfo.name}`}
-                    </button>
-                    {expanded ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
-                </div>
-            </div>
-
-            {expanded && (
-                <div className="px-2.5 pb-2.5 pt-0">
-                    <MarkdownContent content={content || 'Resumo final concluído.'} />
-                </div>
-            )}
-        </div>
-    );
-}
-
-// ─── Subtask List ───
-function SubtaskList({ subtasks, color, onExecute, executingId }: {
-    subtasks: any; color: string;
-    onExecute: (st: any) => void; executingId: string | null;
-}) {
-    const items = subtasks?.subtarefas || [];
-    if (!items.length) return null;
-
-    return (
-        <div className="mt-3 p-4 rounded-xl bg-[#0d0d0f]">
-            <div className="flex items-center gap-2 mb-3">
-                <ListTree className="w-4 h-4" style={{ color }} />
-                <span className="text-xs font-semibold text-zinc-400">Subtarefas ({items.length})</span>
-            </div>
-            <div className="space-y-2">
-                {items.map((st: any, i: number) => (
-                    <div key={st.id || i} className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02]">
-                        <span className="text-[10px] font-mono text-zinc-600 mt-1 w-4">{i + 1}</span>
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-0.5">
-                                <p className="text-xs font-medium text-zinc-300">{safeRender(st.titulo)}</p>
-                                <span className={`text-[8px] px-1 py-0.5 rounded-md ${st.executavel_por_ia
-                                    ? 'bg-violet-500/10 text-violet-400'
-                                    : 'bg-blue-500/10 text-blue-400'
-                                    }`}>{st.executavel_por_ia ? 'IA' : 'Você'}</span>
-                            </div>
-                            {st.descricao && <p className="text-[11px] text-zinc-500 leading-relaxed">{safeRender(st.descricao)}</p>}
-                            {st.tempo_estimado && (
-                                <span className="text-[10px] text-zinc-600 flex items-center gap-0.5 mt-1">
-                                    <Clock className="w-2.5 h-2.5" />{safeRender(st.tempo_estimado)}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-            {subtasks.resultado_combinado && (
-                <p className="text-[10px] text-zinc-600 mt-3 italic">
-                    <Target className="w-3 h-3 inline mr-1" />{safeRender(subtasks.resultado_combinado)}
-                </p>
-            )}
-        </div>
-    );
-}
-
-// ─── Source Badge List ───
-function SourceBadgeList({ sources, maxVisible = 4 }: { sources: string[], maxVisible?: number }) {
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    if (!sources || !Array.isArray(sources) || sources.length === 0) return null;
-
-    const uniqueSources = Array.from(new Set(sources.filter(Boolean)));
-    if (uniqueSources.length === 0) return null;
-
-    const visibleSources = isExpanded ? uniqueSources : uniqueSources.slice(0, maxVisible);
-    const hiddenCount = Math.max(0, uniqueSources.length - maxVisible);
-
-    return (
-        <div className="flex flex-wrap gap-2 mt-2">
-            {visibleSources.map((src, idx) => {
-                let displayUrl = src;
-                let hostname = src;
-                try {
-                    const url = new URL(src);
-                    hostname = url.hostname;
-                    displayUrl = hostname.replace('www.', '');
-                } catch (e) { /* ignore */ }
-
-                const faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
-
-                return (
-                    <a key={idx} href={src} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-150 cursor-pointer bg-white/[0.04] hover:bg-white/[0.08] shadow-sm border border-white/[0.02] group">
-                        <img
-                            src={faviconUrl}
-                            alt={displayUrl}
-                            className="w-4 h-4 rounded-sm shrink-0 object-contain"
-                        />
-                        <div className="flex-1 flex flex-col min-w-0 pr-1">
-                            <span className="text-[11px] font-medium text-zinc-400 group-hover:text-white transition-colors truncate max-w-[120px] leading-tight mt-[1px]">{displayUrl}</span>
-                        </div>
-                    </a>
-                );
-            })}
-            {!isExpanded && hiddenCount > 0 && (
-                <button
-                    onClick={() => setIsExpanded(true)}
-                    className="inline-flex items-center px-2 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.02] text-[10px] text-zinc-400 hover:text-white transition-colors cursor-pointer shadow-sm">
-                    +{hiddenCount} mais
-                </button>
-            )}
-            {isExpanded && hiddenCount > 0 && (
-                <button
-                    onClick={() => setIsExpanded(false)}
-                    className="inline-flex items-center px-2 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.02] text-[10px] text-zinc-400 hover:text-white transition-colors cursor-pointer shadow-sm">
-                    Recolher
-                </button>
-            )}
-        </div>
-    );
-}
+// ─── Imports Modulares ───
+import { PillarWorkspaceProps, TaskItem } from './types';
+import { safeRender, openInGoogleDocs, exportFullAnalysis, getToolInfo } from './utils';
+import { ScoreRing } from './components/ScoreRing';
+import { DepBadge } from './components/DepBadge';
+import { DeliverableCard } from './components/DeliverableCard';
+import { SubtaskList } from './components/SubtaskList';
+import { SourceBadgeList } from './components/SourceBadgeList';
+import { MarkdownContent } from './components/MarkdownContent';
+import { StreamingText } from './components/StreamingText';
 
 // ═══════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════
 
 export default function PillarWorkspace({
-    score, specialists, analysisId, businessId, profile, marketData, userProfile, onRedo, onStateChange,
+    score, specialists, analysisId, businessId, profile, marketData, userProfile, onRedo, onStateChange, initialActivePillar
 }: PillarWorkspaceProps) {
     const { data: session } = useSession();
     const { aiModel } = useAuth();
+    const router = useRouter();
     const [loadingDoc, setLoadingDoc] = useState<string | null>(null);
     const [loadingFullExport, setLoadingFullExport] = useState(false);
-    const [selectedPillar, setSelectedPillar] = useState<string | null>(null);
+    const [selectedPillar, setSelectedPillar] = useState<string | null>(initialActivePillar || null);
     const [pillarStates, setPillarStates] = useState<Record<string, any>>({});
     const [loadingPillar, setLoadingPillar] = useState<string | null>(null);
     const [executingTask, setExecutingTask] = useState<string | null>(null);
@@ -587,6 +132,19 @@ export default function PillarWorkspace({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analysisId]);
+
+    // useEffect(() => {
+    //     if (!selectedPillar && Object.keys(score?.dimensoes || {}).length > 0) {
+    //         setSelectedPillar(Object.keys(score.dimensoes)[0]);
+    //     }
+    // }, [score, selectedPillar]);
+
+    // Listener para o initialActivePillar quando mudar de cima pra baixo (Hub -> Workspace)
+    useEffect(() => {
+        if (initialActivePillar) {
+            setSelectedPillar(initialActivePillar);
+        }
+    }, [initialActivePillar]);
 
     // Save state to localStorage on changes
     useEffect(() => {
@@ -760,8 +318,77 @@ export default function PillarWorkspace({
         }
     }, [analysisId, apiCall]);
 
+    const handleRedoPillar = useCallback(async (pillarKey: string) => {
+        if (!confirm('Tem certeza? Isso apagará todas as tarefas geradas e executadas deste pilar.')) return;
+
+        // Clear frontend state for this specific pillar
+        setTaskDeliverables(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(pillarKey + '_')) delete next[k]; });
+            return next;
+        });
+        setTaskSubtasks(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(pillarKey + '_')) delete next[k]; });
+            return next;
+        });
+        setCompletedTasks(prev => {
+            const next = { ...prev };
+            delete next[pillarKey];
+            return next;
+        });
+        setPillarStates(prev => {
+            const next = { ...prev };
+            delete next[pillarKey];
+            return next;
+        });
+
+        setError('');
+        setLoadingPillar(pillarKey); // Show loading spinner
+
+        // Clear backend data
+        try {
+            await apiCall('redo-pillar', {
+                analysis_id: analysisId,
+                pillar_key: pillarKey,
+            });
+
+            // Reload the pillar to get brand new tasks
+            const result = await apiCall('specialist-tasks', {
+                analysis_id: analysisId, pillar_key: pillarKey,
+                business_id: businessId, profile: profile?.profile || profile,
+            });
+
+            if (result.success && result.plan) {
+                setPillarStates(prev => ({
+                    ...prev,
+                    [pillarKey]: {
+                        success: true, pillar_key: pillarKey,
+                        plan: { plan_data: result.plan, status: 'generated' },
+                        results: [], kpis: [],
+                        dependencies: result.plan.dependencies || { ready: true, blockers: [], warnings: [] },
+                        progress: { total: result.plan.tarefas?.length || 0, completed: 0 },
+                    },
+                }));
+            } else {
+                setError(result.error || 'Erro ao recriar tarefas do pilar');
+                setSelectedPillar(null);
+            }
+
+        } catch (err: any) {
+            console.error('Failed to redo pillar:', err);
+            setError('Failed to redo pillar data');
+            setSelectedPillar(null);
+        } finally {
+            setLoadingPillar(null);
+        }
+    }, [analysisId, businessId, profile, apiCall]);
+
     // ─── Select pillar ───
     const handleSelectPillar = useCallback(async (key: string) => {
+        if (businessId) {
+            router.push(`/analysis/${businessId}/${key}`);
+        }
         setSelectedPillar(key);
         setExpandedTaskIds(new Set());
         setError('');
@@ -1101,6 +728,189 @@ export default function PillarWorkspace({
         }
     }, [analysisId, businessId, profile, apiCall]);
 
+    // ─── Generate Summary and Deliverable ───
+    const handleGenerateSummary = useCallback(async (pillarKey: string, task: TaskItem, tid: string) => {
+        setAutoExecuting(tid);
+        const controller = new AbortController();
+        abortControllersRef.current[`${tid}_summary`] = controller;
+
+        try {
+            const allItems = autoExecSubtasks[tid] || [];
+            setAutoExecTotal(allItems.length);
+            setAutoExecStep(allItems.length + 1);
+
+            const allResultsObj = autoExecResults[tid] || {};
+            const allResults = [];
+            for (let i = 0; i < allItems.length; i++) {
+                if (allResultsObj[i]) allResults.push(allResultsObj[i]);
+            }
+
+            const combinedContent = allResults.map((r) =>
+                safeRender(r.conteudo) || ''
+            ).filter(Boolean).join('\n\n');
+
+            const summaryResult = await apiCall('specialist-execute', {
+                analysis_id: analysisId, pillar_key: pillarKey,
+                task_id: `${tid}_summary`,
+                task_data: {
+                    id: `${tid}_summary`,
+                    titulo: 'Resumo Executivo da Tarefa',
+                    descricao: 'Gere um resumo em texto corrido, detalhado e bem formatado, consolidando os principais resultados encontrados nas subtarefas, sem perder as principais informações.',
+                    entregavel_ia: 'Resumo das Subtarefas',
+                    ferramenta: 'analise_dados'
+                },
+                business_id: businessId, profile: profile?.profile || profile,
+                previous_results: [{ titulo: 'Conteúdo Original Completo', conteudo: combinedContent.substring(0, 15000) }],
+            }, { signal: controller.signal });
+
+            let resumo = combinedContent;
+            if (summaryResult.success && summaryResult.execution) {
+                resumo = safeRender(summaryResult.execution.conteudo);
+            }
+
+            const combinedSources = allResults.flatMap(r => r.sources || r.fontes_consultadas || []);
+            const combinedDeliverable = {
+                id: tid,
+                entregavel_titulo: task.entregavel_ia || task.titulo,
+                entregavel_tipo: 'plano_completo',
+                conteudo: resumo,
+                conteudo_completo: combinedContent,
+                como_aplicar: safeRender(allResults[allResults.length - 1]?.como_aplicar || ''),
+                impacto_estimado: safeRender(allResults[allResults.length - 1]?.impacto_estimado || ''),
+                fontes_consultadas: combinedSources,
+                sources: [...new Set(combinedSources)],
+                parts: allResults,
+            };
+
+            setTaskDeliverables(prev => ({ ...prev, [tid]: combinedDeliverable }));
+            setCompletedTasks(prev => {
+                const s = new Set(prev[pillarKey] || []);
+                s.add(task.id);
+                s.add(tid);
+                return { ...prev, [pillarKey]: s };
+            });
+
+        } catch (err: any) {
+            console.error('Summary error', err);
+        } finally {
+            if (abortControllersRef.current[`${tid}_summary`]) {
+                delete abortControllersRef.current[`${tid}_summary`];
+            }
+            setTimeout(() => {
+                setAutoExecuting(prev => prev === tid ? null : prev);
+            }, 800);
+        }
+    }, [analysisId, businessId, profile, apiCall, autoExecSubtasks, autoExecResults]);
+
+    // ─── Retry single auto-execution subtask ───
+    const handleRetryAutoExecSubtask = useCallback(async (pillarKey: string, task: TaskItem, subtaskIndex: number) => {
+        const tid = `${pillarKey}_${task.id}`;
+        const allItems = autoExecSubtasks[tid];
+        if (!allItems) return;
+        const st = allItems[subtaskIndex];
+        if (!st) return;
+
+        setAutoExecuting(tid); // Show execution indicator for the whole card
+        setError('');
+
+        const controller = new AbortController();
+        abortControllersRef.current[`${tid}_retry_${subtaskIndex}`] = controller;
+
+        setAutoExecStatuses(prev => ({
+            ...prev,
+            [tid]: { ...prev?.[tid], [subtaskIndex]: 'running' }
+        }));
+
+        try {
+            // Build previous results up to this index
+            const previousResults = [];
+            for (let i = 0; i < subtaskIndex; i++) {
+                const r = autoExecResults[tid]?.[i];
+                if (r) {
+                    previousResults.push({
+                        titulo: safeRender(r.entregavel_titulo || ''),
+                        conteudo: safeRender(r.conteudo || '').slice(0, 800),
+                    });
+                }
+            }
+
+            const execResult = await apiCall('specialist-execute', {
+                analysis_id: analysisId, pillar_key: pillarKey,
+                task_id: `${tid}_st${subtaskIndex + 1}`,
+                task_data: {
+                    ...st, id: `${tid}_st${subtaskIndex + 1}`,
+                    titulo: st.titulo,
+                    descricao: st.descricao || st.entregavel || '',
+                    entregavel_ia: st.entregavel || st.descricao,
+                },
+                business_id: businessId, profile: profile?.profile || profile,
+                previous_results: previousResults.length > 0 ? previousResults : undefined,
+            }, { signal: controller.signal });
+
+            if (execResult.success && execResult.execution) {
+                setAutoExecResults(prev => ({
+                    ...prev,
+                    [tid]: { ...prev?.[tid], [subtaskIndex]: execResult.execution },
+                }));
+
+                // Set to done, and check if all subtasks are complete
+                setAutoExecStatuses(prev => {
+                    const wasDone = prev[tid]?.[subtaskIndex] === 'done';
+                    const nextStatuses = { ...prev };
+                    if (!nextStatuses[tid]) nextStatuses[tid] = {};
+                    else nextStatuses[tid] = { ...prev[tid] }; // Deep clone for the particular task
+
+                    nextStatuses[tid][subtaskIndex] = 'done';
+
+                    const totalItems = allItems.length;
+                    let allDone = true;
+                    let nextIndexToRun = -1;
+
+                    for (let j = 0; j < totalItems; j++) {
+                        if (nextStatuses[tid][j] !== 'done') {
+                            allDone = false;
+                            if (nextIndexToRun === -1 && (nextStatuses[tid][j] === 'waiting' || nextStatuses[tid][j] === 'error')) {
+                                nextIndexToRun = j;
+                            }
+                        }
+                    }
+
+                    if (!wasDone) {
+                        if (allDone) {
+                            // After state update, check deliverable immediately
+                            setTimeout(() => handleGenerateSummary(pillarKey, task, tid), 100);
+                        } else if (nextIndexToRun !== -1) {
+                            // Automatically start the next subtask
+                            setTimeout(() => {
+                                setAutoExecStep(nextIndexToRun + 1);
+                                handleRetryAutoExecSubtask(pillarKey, task, nextIndexToRun);
+                            }, 300);
+                        }
+                    }
+
+                    return nextStatuses;
+                });
+            } else {
+                throw new Error(execResult.error || 'Erro na execução da subtarefa');
+            }
+        } catch (err: any) {
+            if (err.name === 'AbortError') setError('Execução cancelada pelo usuário.');
+            else setError(err.message || 'Erro na execução');
+
+            setAutoExecStatuses(prev => ({
+                ...prev,
+                [tid]: { ...prev?.[tid], [subtaskIndex]: 'error' }
+            }));
+        } finally {
+            if (abortControllersRef.current[`${tid}_retry_${subtaskIndex}`]) {
+                delete abortControllersRef.current[`${tid}_retry_${subtaskIndex}`];
+            }
+            setTimeout(() => {
+                setAutoExecuting(prev => prev === tid ? null : prev);
+            }, 800);
+        }
+    }, [analysisId, businessId, profile, apiCall, autoExecSubtasks, autoExecResults, handleGenerateSummary]);
+
     // ─── User completes task ───
     const handleUserComplete = useCallback(async (pillarKey: string, task: TaskItem) => {
         const tid = `${pillarKey}_${task.id}`;
@@ -1137,33 +947,33 @@ export default function PillarWorkspace({
         const color = PILLAR_META[pillarKey]?.color || '#8b5cf6';
 
         return (
-            <div className="mt-2 space-y-2">
+            <div className="mt-3 space-y-3">
                 {/* Expanding spinner — shown only before subtasks load for THIS task */}
                 {isAutoExec && !hasExecPanel && (
-                    <div className="flex items-center gap-2 p-3 rounded-xl bg-violet-500/5">
-                        <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-                        <span className="text-sm text-violet-300">Criando subtarefas...</span>
+                    <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-violet-500/[0.03] border border-violet-500/10">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                        <span className="text-[11px] font-medium text-violet-300/80 uppercase tracking-wider">Criando subtarefas...</span>
                     </div>
                 )}
 
                 {hasExecPanel && (
-                    <div className="mt-3 rounded-xl bg-[#0d0d0f] overflow-hidden">
+                    <div className="mt-4 rounded-xl border border-white/[0.04] bg-black/10 overflow-hidden">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.02]">
                             <div className="flex items-center gap-2">
-                                <ListTree className="w-4 h-4" style={{ color }} />
-                                <span className="text-xs font-semibold text-zinc-400">
-                                    {isAutoExec ? 'Executando subtarefas...' : 'Subtarefas executadas'}
+                                <ListTree className="w-3.5 h-3.5 opacity-20" style={{ color }} />
+                                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-[0.2em]">
+                                    {isAutoExec ? 'Processando' : 'Ações Realizadas'}
                                 </span>
                             </div>
                             {autoExecTotal > 0 && isAutoExec && (
-                                <div className="flex items-center gap-2">
-                                    <div className="w-24 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                                        <div className="h-full rounded-full transition-all duration-500"
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-16 h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+                                        <div className="h-full rounded-full transition-all duration-700 ease-out"
                                             style={{ width: `${(Math.min(autoExecStep, autoExecTotal) / autoExecTotal) * 100}%`, backgroundColor: color }} />
                                     </div>
-                                    <span className="text-[10px] font-mono text-zinc-600">
-                                        {autoExecStep > autoExecTotal ? 'Resumo...' : `${autoExecStep}/${autoExecTotal}`}
+                                    <span className="text-[9px] font-mono text-zinc-600">
+                                        {autoExecStep > autoExecTotal ? 'Finalizando...' : `${autoExecStep} de ${autoExecTotal}`}
                                     </span>
                                 </div>
                             )}
@@ -1181,44 +991,48 @@ export default function PillarWorkspace({
                                         status === 'error' ? 'bg-red-500/[0.03]' : ''
                                         }`}>
                                         {/* Subtask header row */}
-                                        <div className="flex items-start gap-3 px-4 py-3">
+                                        <div className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/[0.02]">
                                             {/* Status icon */}
-                                            <div className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center">
-                                                {status === 'waiting' && (
-                                                    <Circle className="w-3.5 h-3.5 text-zinc-700" />
-                                                )}
-                                                {status === 'running' && (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
-                                                )}
-                                                {status === 'done' && (
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                                )}
-                                                {status === 'error' && (
-                                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                                                )}
+                                            <div className="mt-1 flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                                                {status === 'waiting' && <Circle className="w-3 h-3 text-zinc-900" />}
+                                                {status === 'running' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                                                {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500/80" />}
+                                                {status === 'error' && <AlertTriangle className="w-3 h-3 text-red-500/80" />}
                                             </div>
 
                                             <div className="flex-1">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="text-[10px] font-mono text-zinc-700">{i + 1}</span>
-                                                    <p className={`text-xs font-medium ${status === 'done' ? 'text-zinc-400' :
-                                                        status === 'running' ? 'text-violet-300' :
-                                                            'text-zinc-400'
-                                                        }`}>{safeRender(st.titulo)}</p>
-                                                    <span className={`text-[8px] px-1 py-0.5 rounded-md ${isAI
-                                                        ? 'bg-violet-500/10 text-violet-400'
-                                                        : 'bg-blue-500/10 text-blue-400'
-                                                        }`}>{isAI ? 'IA' : 'Você'}</span>
-                                                    {status === 'running' && (
-                                                        <span className="text-[9px] text-violet-400/70 italic">executando...</span>
-                                                    )}
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2 flex-wrap flex-1">
+                                                        <span className="text-[9px] font-mono text-zinc-900 select-none">{i + 1}</span>
+                                                        <p className={`text-[12px] font-medium leading-relaxed ${status === 'done' ? 'text-zinc-500' :
+                                                            status === 'running' ? 'text-zinc-100 font-semibold' : 'text-zinc-600'}`}>
+                                                            {safeRender(st.titulo)}
+                                                        </p>
+                                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm border-none ${isAI
+                                                            ? 'bg-blue-500/10 text-blue-500/50'
+                                                            : 'bg-white/[0.04] text-zinc-700'
+                                                            }`}>
+                                                            {isAI ? 'IA' : 'VOCÊ'}
+                                                        </span>
+                                                        {status === 'running' && (
+                                                            <span className="text-[8px] text-blue-400/40 uppercase tracking-widest font-bold animate-pulse">Running</span>
+                                                        )}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleRetryAutoExecSubtask(pillarKey, task, i); }}
+                                                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.02] hover:bg-white/[0.06] text-zinc-700 hover:text-zinc-400 transition-all text-[8px] active:scale-95 uppercase tracking-wider font-bold"
+                                                        title="Refazer subtarefa">
+                                                        <RefreshCw className={`w-2 h-2 ${status === 'running' ? 'animate-spin opacity-30' : ''}`} />
+                                                        <span>Refazer</span>
+                                                    </button>
                                                 </div>
                                                 {st.descricao && status === 'waiting' && (
-                                                    <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">{safeRender(st.descricao)}</p>
+                                                    <p className="text-[11px] text-zinc-700 mt-1 leading-relaxed">{safeRender(st.descricao)}</p>
                                                 )}
                                                 {st.tempo_estimado && (
-                                                    <span className="text-[10px] text-zinc-700 flex items-center gap-0.5 mt-0.5">
-                                                        <Clock className="w-2.5 h-2.5" />{safeRender(st.tempo_estimado)}
+                                                    <span className="text-[9px] text-zinc-900 font-mono flex items-center gap-1 mt-1">
+                                                        <Clock className="w-2.5 h-2.5 opacity-10" />{safeRender(st.tempo_estimado)}
                                                     </span>
                                                 )}
                                             </div>
@@ -1260,24 +1074,26 @@ export default function PillarWorkspace({
                         </div>
 
                         {/* Summary generation indicator */}
-                        {isAutoExec && autoExecStep > autoExecTotal && (
-                            <div className="flex items-start gap-3 px-4 py-3 bg-violet-500/[0.04]">
-                                <div className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                        {(isAutoExec && autoExecStep > autoExecTotal) || (taskExecSubtasks.length > 0 && !taskDeliverables[tid] && autoExecTotal > 0 && autoExecStep > autoExecTotal && !isAutoExec) ? (
+                            <div className="flex items-start gap-3 px-4 py-3.5 bg-blue-500/[0.02] border-t border-white/[0.02]">
+                                <div className="mt-0.5 flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400/60" />
                                 </div>
                                 <div className="flex-1">
-                                    <p className="text-xs font-medium text-violet-300">Gerando resumo corporativo...</p>
-                                    <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">Sintetizando os resultados encontrados para sua visualização no card principal.</p>
+                                    <p className="text-[11px] font-semibold text-blue-400/60 uppercase tracking-wider">Gerando resumo executivo...</p>
+                                    <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed">Sintetizando os resultados para uma visão consolidada no card.</p>
                                 </div>
                             </div>
-                        )}
+                        ) : null}
+
+
 
                         {/* Footer: combined result summary */}
                         {!isAutoExec && Object.values(taskExecStatuses).some(s => s === 'done') && (
-                            <div className="px-4 py-3 bg-white/[0.01]">
-                                <p className="text-[10px] text-zinc-600 italic flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-500/60" />
-                                    {Object.values(taskExecStatuses).filter(s => s === 'done').length} subtarefas concluídas — resultado consolidado abaixo
+                            <div className="px-4 py-2.5 bg-white/[0.01] border-t border-white/[0.02]">
+                                <p className="text-[9px] text-zinc-700 italic flex items-center gap-1.5 opacity-60">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-500/40" />
+                                    {Object.values(taskExecStatuses).filter(s => s === 'done').length} subtarefas concluídas — resultado consolidado
                                 </p>
                             </div>
                         )}
@@ -1356,15 +1172,15 @@ export default function PillarWorkspace({
                 {(isDone || deliverable || (hasExecPanel && !isAutoExec)) && (
                     <div className="flex flex-wrap gap-2 mt-2">
                         <button onClick={() => handleRedoTask(pillarKey, tid, task)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all">
-                            <RefreshCw className="w-3 h-3" />
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium bg-white/[0.02] text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05] transition-all border border-white/[0.02]">
+                            <RefreshCw className="w-2.5 h-2.5 opacity-40" />
                             Refazer Tarefa
                         </button>
                         {/* Additional redo button for tasks with subtasks */}
                         {subtasks && (
                             <button onClick={() => handleRedoTask(pillarKey, tid, task)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-all">
-                                <RefreshCw className="w-3 h-3" />
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium bg-blue-500/[0.03] text-blue-400/60 hover:text-blue-400 hover:bg-blue-500/10 transition-all border border-blue-500/[0.05]">
+                                <RefreshCw className="w-2.5 h-2.5 opacity-40" />
                                 Refazer Tudo
                             </button>
                         )}
@@ -1432,27 +1248,45 @@ export default function PillarWorkspace({
         return (
             <div className="h-screen bg-[#09090b] flex">
                 {/* Left Column - Header and Sources */}
-                <div className="w-1/2 border-r border-zinc-800 flex flex-col">
+                <div className="w-1/2 border-r border-zinc-800 flex flex-col pt-0">
                     <div className="p-6 pb-4">
                         <div className="flex justify-end mb-6 relative z-20">
-                            <button onClick={() => setSelectedPillar(null)}
+                            <button onClick={() => {
+                                setSelectedPillar(null);
+                                if (businessId) router.push(`/analysis/${businessId}/especialistas`);
+                            }}
                                 className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm">
-                                <ArrowLeft className="w-4 h-4" /> Voltar aos pilares
+                                <ArrowLeft className="w-4 h-4" /> Voltar para os Especialistas
                             </button>
                         </div>
 
+
+
                         {/* Header */}
-                        <div className="flex items-start gap-4 mb-6">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                                style={{ backgroundColor: `${meta.color}12` }}>
-                                <Icon className="w-4 h-4" style={{ color: meta.color, width: 22, height: 22 }} />
+                        <div className="flex items-start justify-between gap-4 mb-6">
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: `${meta.color}12` }}>
+                                    <Icon className="w-4 h-4" style={{ color: meta.color, width: 22, height: 22 }} />
+                                </div>
+                                <div className="flex-1">
+                                    <h1 className="text-xl font-bold text-white">{plan.titulo_plano || meta.label}</h1>
+                                    <p className="text-zinc-500 text-xs mt-0.5">
+                                        {specialists[selectedPillar]?.cargo || meta.label}
+                                    </p>
+                                    <p className="text-zinc-400 text-sm mt-1">{safeRender(plan.objetivo)}</p>
+                                </div>
                             </div>
-                            <div className="flex-1">
-                                <h1 className="text-xl font-bold text-white">{plan.titulo_plano || meta.label}</h1>
-                                <p className="text-zinc-500 text-xs mt-0.5">
-                                    {specialists[selectedPillar]?.cargo || meta.label}
-                                </p>
-                                <p className="text-zinc-400 text-sm mt-1">{safeRender(plan.objetivo)}</p>
+
+                            {/* Actions Header */}
+                            <div>
+                                <button
+                                    onClick={() => handleRedoPillar(selectedPillar)}
+                                    title="Apagar e Refazer Todo o Pilar"
+                                    className="p-2 border border-red-500/20 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/50 rounded-lg transition-all"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1519,7 +1353,7 @@ export default function PillarWorkspace({
 
                                             // O card do meio (reto) fica na frente
                                             const isMiddleCard = displayIndex === middleIndex;
-                                            const zIndex = isMiddleCard ? 100 : (totalCards - Math.abs(displayIndex - middleIndex));
+                                            const zIndex = isMiddleCard ? 20 : (totalCards - Math.abs(displayIndex - middleIndex));
 
                                             const cardBgClass = isMiddleCard
                                                 ? 'bg-zinc-800 shadow-2xl shadow-black/80'
@@ -1534,7 +1368,7 @@ export default function PillarWorkspace({
                                                     key={entregavel.id || originalIndex}
                                                     className={`absolute w-96 p-3 rounded-xl overflow-hidden cursor-pointer transition-all duration-150 hover:scale-105 ${cardBgClass}`}
                                                     style={{
-                                                        transform: `translateX(${translateX}px) rotate(${angle}deg) translateY(${Math.abs(angle) * 0.5}px) translateZ(${zIndex * 10}px)`,
+                                                        transform: `translateX(${translateX}px) rotate(${angle}deg) translateY(${Math.abs(angle) * 0.5}px) translateZ(${zIndex}px)`,
                                                         zIndex: zIndex,
                                                     }}
                                                     onClick={() => handleReorderEntregaveis(originalIndex)}
@@ -1593,7 +1427,21 @@ export default function PillarWorkspace({
                 </div>
 
                 {/* Right Column - Tasks */}
-                <div className="w-1/2 flex flex-col">
+                <div className="w-1/2 flex flex-col pt-0">
+                    {/* Top Progress Bar - Glued to the top */}
+                    {totalTasks > 0 && (
+                        <div className="w-full flex-shrink-0">
+                            <div className="h-[2px] w-full bg-zinc-800/30">
+                                <div className="h-full transition-all duration-700 ease-out"
+                                    style={{ width: `${(completedCount / totalTasks) * 100}%`, backgroundColor: meta.color }} />
+                            </div>
+                            <div className="px-6 py-1">
+                                <span className="text-[9px] font-mono text-zinc-600 uppercase">
+                                    {completedCount} de {totalTasks} tarefas
+                                </span>
+                            </div>
+                        </div>
+                    )}
                     <div className="p-6 pb-4">
                         {/* Dependencies */}
                         {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
@@ -1610,19 +1458,7 @@ export default function PillarWorkspace({
                             </div>
                         )}
 
-                        {/* Progress Bar */}
-                        {totalTasks > 0 && (
-                            <div className="mb-4 p-3 rounded-lg bg-[#111113]">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs text-zinc-500">Progresso das Tarefas</span>
-                                    <span className="text-xs font-mono text-zinc-400">{completedCount}/{totalTasks}</span>
-                                </div>
-                                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full transition-all duration-500"
-                                        style={{ width: `${(completedCount / totalTasks) * 100}%`, backgroundColor: meta.color }} />
-                                </div>
-                            </div>
-                        )}
+
 
                         {error && (
                             <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
@@ -1633,141 +1469,138 @@ export default function PillarWorkspace({
                     </div>
 
                     {/* Tasks List */}
-                    <div className="flex-1 px-6 pb-6 overflow-y-auto">
-                        <p className="text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-3">Tarefas</p>
-                        <section className="space-y-3">
-                            {tarefas.map((task, i) => {
-                                const tid = `${selectedPillar}_${task.id}`;
-                                const isDone = done.has(task.id) || done.has(tid);
-                                const isAI = task.executavel_por_ia;
-                                const isExpanded = expandedTaskIds.has(tid);
+                    {/* Tasks List Area */}
+                    <div className="flex-1 px-3 pb-6 overflow-y-auto">
+                        <div className="rounded-xl overflow-hidden p-1.5">
+                            <div className="px-3 pt-2 pb-1.5 flex items-center justify-between">
+                                <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Tarefas</span>
+                                <span className="text-[9px] font-mono text-zinc-700 uppercase">
+                                    {completedCount} / {totalTasks}
+                                </span>
+                            </div>
 
-                                const toggleExpand = () => {
-                                    setExpandedTaskIds(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(tid)) {
-                                            next.delete(tid);
-                                        } else {
-                                            next.add(tid);
-                                        }
-                                        return next;
-                                    });
-                                };
+                            <section className="space-y-0.5">
+                                {tarefas.map((task, i) => {
+                                    const tid = `${selectedPillar}_${task.id}`;
+                                    const isDone = done.has(task.id) || done.has(tid);
+                                    const isAI = task.executavel_por_ia;
+                                    const isExpanded = expandedTaskIds.has(tid);
 
-                                const deliverable = taskDeliverables[tid];
-                                const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
-                                const subtasksCount = subtasksList.length;
+                                    const toggleExpand = () => {
+                                        setExpandedTaskIds(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(tid)) next.delete(tid);
+                                            else next.add(tid);
+                                            return next;
+                                        });
+                                    };
 
-                                return (
-                                    <div key={task.id} className={`rounded-xl transition-all ${isDone
-                                        ? 'bg-[#111113]'
-                                        : 'bg-[#111113]'}`}>
-                                        <div className="flex items-start gap-3 p-4">
-                                            {isAI ? (
-                                                isDone ? <CheckCircle2 className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
-                                                    : <Bot className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: meta.color }} />
-                                            ) : (
-                                                <button onClick={() => !isDone && handleUserComplete(selectedPillar, task)} className="mt-0.5 flex-shrink-0">
-                                                    {isDone ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                                                        : <Circle className="w-5 h-5 text-zinc-700 hover:text-zinc-500 transition-colors" />}
-                                                </button>
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between gap-2 mb-1 cursor-pointer group" onClick={toggleExpand}>
-                                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                                        <span className="text-[10px] font-mono text-zinc-700">{i + 1}</span>
-                                                        <p className={`text-sm font-medium ${isDone ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
-                                                            {task.titulo}
-                                                        </p>
-                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${isAI
-                                                            ? 'bg-violet-500/10 text-violet-400'
-                                                            : 'bg-blue-500/10 text-blue-400'
-                                                            }`}>{isAI ? 'IA' : 'Você'}</span>
-                                                        {task.prioridade && (
-                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${task.prioridade === 'critica'
-                                                                ? 'bg-red-500/10 text-red-400'
-                                                                : task.prioridade === 'alta'
-                                                                    ? 'bg-amber-500/10 text-amber-400'
-                                                                    : 'bg-zinc-500/10 text-zinc-400'
-                                                                }`}>{task.prioridade}</span>
-                                                        )}
-                                                    </div>
-                                                    <button className="text-zinc-500 group-hover:text-zinc-300 transition-colors p-1" title={!isExpanded ? "Expandir" : "Recolher"}>
-                                                        {!isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                                                    </button>
+                                    const deliverable = taskDeliverables[tid];
+                                    const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
+                                    const subtasksCount = subtasksList.length;
+
+                                    // Dynamic Icon Logic
+                                    const tool = (task.ferramenta || '').toLowerCase();
+                                    let taskIcon = null;
+
+                                    if (isDone) {
+                                        taskIcon = <CheckCircle2 className="w-[22px] h-[22px] text-emerald-500" />;
+                                    } else if (tool.includes('docs') || tool.includes('document')) {
+                                        taskIcon = <img src="/docs.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Docs" />;
+                                    } else if (tool.includes('sheets') || tool.includes('planilha')) {
+                                        taskIcon = <img src="/sheets.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Sheets" />;
+                                    } else if (tool.includes('canva')) {
+                                        taskIcon = <img src="/canva.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Canva" />;
+                                    } else if (tool.includes('excel')) {
+                                        taskIcon = <img src="/excel.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Excel" />;
+                                    } else if (tool.includes('google') || tool.includes('search')) {
+                                        taskIcon = <img src="/google.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Google" />;
+                                    } else if (isAI) {
+                                        const modelInfo =
+                                            aiModel === 'gemini' ? { img: '/gemini.png', label: 'Gemini' } :
+                                                aiModel === 'groq' ? { img: '/groq llama.png', label: 'Groq' } :
+                                                    { img: '/openrouter.png', label: 'OpenRouter' };
+                                        taskIcon = <img src={modelInfo.img} className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt={modelInfo.label} />;
+                                    } else {
+                                        taskIcon = <Circle className="w-[22px] h-[22px] text-zinc-800" />;
+                                    }
+
+                                    return (
+                                        <div key={task.id} className="group">
+                                            <button
+                                                onClick={toggleExpand}
+                                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer ${isExpanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
+                                            >
+                                                <div className="shrink-0">
+                                                    {taskIcon}
                                                 </div>
 
-                                                {!isExpanded && (deliverable || subtasksCount > 0) && (
-                                                    <div className="flex flex-wrap items-center gap-3 mt-1.5 mb-2">
+                                                <div className="flex-1 min-w-0 flex flex-col items-start gap-0.5">
+                                                    <div className="flex items-center gap-2 w-full text-left">
+                                                        <span className={`text-[13px] font-medium truncate ${isExpanded ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
+                                                            {task.titulo}
+                                                        </span>
+                                                        {isDone && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden text-left">
+                                                        <span className="text-[11px] text-zinc-600">#{i + 1}</span>
+                                                        <span className="text-[11px] text-zinc-600">
+                                                            {isAI ? 'Inteligência Artificial' : 'Ações Manuais'}
+                                                        </span>
+                                                        {task.prioridade && (
+                                                            <>
+                                                                <span className="w-1 h-1 rounded-full bg-zinc-800" />
+                                                                <span className={`text-[11px] ${task.prioridade === 'critica' ? 'text-red-500/50' : task.prioridade === 'alta' ? 'text-amber-500/50' : 'text-zinc-600'}`}>
+                                                                    {task.prioridade}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                                                    {!isExpanded ? (
+                                                        <ChevronDown className="w-3.5 h-3.5" />
+                                                    ) : (
+                                                        <ChevronUp className="w-3.5 h-3.5 text-zinc-300" />
+                                                    )}
+                                                </div>
+                                            </button>
+
+                                            {isExpanded && (
+                                                <div className="px-3 pb-3 -mt-1 ml-[34.5px]">
+                                                    <div className="h-[1px] w-full bg-white/[0.03] mb-3" />
+                                                    {task.descricao && <p className="text-zinc-500 text-[12px] leading-relaxed mb-3 text-left">{safeRender(task.descricao)}</p>}
+
+                                                    <div className="flex flex-wrap items-center gap-2 mb-3">
                                                         {deliverable && (
-                                                            <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc, task.id); }} disabled={loadingDoc === (deliverable.id || task.id || 'export')}
-                                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-400 hover:text-zinc-200 cursor-pointer'}`}>
-                                                                {(() => {
-                                                                    const toolInfo = getToolInfo(deliverable);
-                                                                    return loadingDoc === (deliverable.id || task.id || 'export') ?
-                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> :
-                                                                        <img src={toolInfo.icon} alt="" className="w-4 h-4 opacity-60 grayscale" />;
-                                                                })()}
-                                                                {(() => {
-                                                                    const toolInfo = getToolInfo(deliverable);
-                                                                    return loadingDoc === (deliverable.id || task.id || 'export') ?
-                                                                        'Gerando...' :
-                                                                        (!session?.accessToken ? 'Login c/ Google' : `Abrir no ${toolInfo.name}`);
-                                                                })()}
-                                                                {isDone && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-0.5" />}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc, task.id); }}
+                                                                disabled={loadingDoc === (deliverable.id || task.id || 'export')}
+                                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'}`}
+                                                            >
+                                                                {loadingDoc === (deliverable.id || task.id || 'export') ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                                                                {!session?.accessToken ? 'Conectar Google' : 'Abrir no Google Docs'}
                                                             </button>
                                                         )}
                                                         {subtasksCount > 0 && (
-                                                            <span className="flex items-center gap-1 text-[10px] font-medium text-zinc-500 bg-black/20 px-2 py-1 rounded-md">
-                                                                <ListTree className="w-3 h-3" /> {subtasksCount} subtarefas
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {isExpanded && (
-                                                    <>
-                                                        {task.descricao && <p className="text-zinc-500 text-xs leading-relaxed mb-1">{safeRender(task.descricao)}</p>}
-
-                                                        {/* AI task entregável preview */}
-                                                        {isAI && task.entregavel_ia && !isDone && !taskDeliverables[task.id] && (
-                                                            <p className="text-[11px] text-violet-400/70 italic mb-1">
-                                                                <Sparkles className="w-3 h-3 inline mr-1" />Entregável: {safeRender(task.entregavel_ia)}
-                                                            </p>
-                                                        )}
-
-                                                        {/* User task instructions */}
-                                                        {!isAI && task.instrucoes_usuario && !taskDeliverables[task.id] && (
-                                                            <div className="mt-1 p-3 rounded-lg bg-blue-500/5">
-                                                                <p className="text-[11px] text-blue-300/80 whitespace-pre-wrap leading-relaxed">{safeRender(task.instrucoes_usuario)}</p>
+                                                            <div className="px-2 py-1 rounded-md bg-white/[0.02] text-[10px] text-zinc-600 flex items-center gap-1.5">
+                                                                <ListTree className="w-3 h-3" /> {subtasksCount} sub
                                                             </div>
                                                         )}
+                                                    </div>
 
-                                                        {/* Meta info */}
-                                                        <div className="flex flex-wrap items-center gap-3 mt-1 text-[10px] text-zinc-600">
-                                                            {task.tempo_estimado && <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{task.tempo_estimado}</span>}
-                                                            {task.ferramenta && (
-                                                                <span className="flex items-center gap-0.5">
-                                                                    {task.ferramenta}
-                                                                    {task.ferramenta_url && (
-                                                                        <a href={task.ferramenta_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 ml-0.5">
-                                                                            <ExternalLink className="w-2.5 h-2.5" />
-                                                                        </a>
-                                                                    )}
-                                                                </span>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Action buttons + deliverables + subtasks */}
+                                                    <div className="mt-1">
                                                         <TaskActions task={task} pillarKey={selectedPillar} tid={tid} isDone={isDone} />
-                                                    </>
-                                                )}
-                                            </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </section>
+                                    );
+                                })}
+                            </section>
+                        </div>
                     </div>
                 </div>
             </div>

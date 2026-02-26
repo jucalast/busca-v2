@@ -728,6 +728,21 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
+        // ━━━ Action: Redo Pillar ━━━
+        if (action === 'redo-pillar') {
+            const { analysis_id, pillar_key } = body;
+            if (!analysis_id || !pillar_key) {
+                return NextResponse.json({ error: 'analysis_id and pillar_key are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('redo-pillar', {
+                analysis_id,
+                pillar_key,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
 
     } catch (error: any) {
