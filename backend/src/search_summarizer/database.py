@@ -20,7 +20,8 @@ DB_PATH = DB_DIR / 'growth_platform.db'
 
 def get_connection():
     """Get database connection with JSON support."""
-    conn = sqlite3.connect(str(DB_PATH))
+    # Add timeout to avoid locks during concurrent access
+    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -766,6 +767,30 @@ def list_business_analyses(business_id: str, limit: int = 10) -> List[Dict]:
         "classificacao": row["classificacao"],
         "created_at": row["created_at"]
     } for row in rows]
+
+
+def get_analysis(analysis_id: str) -> Optional[Dict]:
+    """Get a specific analysis by ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM analyses WHERE id = ?', (analysis_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "business_id": row["business_id"],
+        "score_data": json.loads(row["score_data"]),
+        "task_data": json.loads(row["task_data"]),
+        "market_data": json.loads(row["market_data"]),
+        "score_geral": row["score_geral"],
+        "classificacao": row["classificacao"],
+        "created_at": row["created_at"]
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════

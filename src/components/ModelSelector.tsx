@@ -75,7 +75,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute top-full right-0 mt-1.5 z-50 min-w-[240px] p-1.5 bg-zinc-900 rounded-xl shadow-2xl shadow-black/70 overflow-hidden">
+                <div className="absolute top-full right-0 mt-1.5 z-50 min-w-[240px] p-1.5 bg-[#111113] rounded-xl shadow-2xl shadow-black/70 overflow-hidden">
                     <div className="px-3 pt-2 pb-1.5">
                         <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Modelo</span>
                     </div>
@@ -86,7 +86,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
                             <button
                                 key={opt.value}
                                 onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer ${active ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer ${active ? 'bg-zinc-800' : 'hover:bg-[#1b1b1f]'
                                     }`}
                             >
                                 <Image

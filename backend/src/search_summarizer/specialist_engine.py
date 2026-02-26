@@ -799,17 +799,55 @@ def generate_specialist_tasks(
     if not api_key:
         return {"success": False, "error": "GROQ_API_KEY not configured"}
 
+    print(f"DEBUG: generate_specialist_tasks(analysis_id={analysis_id}, pillar_key={pillar_key})", file=sys.stderr)
+    
+    # Comprehensive normalization (convert all hyphens to underscores)
+    pillar_key = pillar_key.replace("-", "_")
+
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
-        return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
+        print(f"DEBUG: Specialist not found for {pillar_key}", file=sys.stderr)
+        return {"success": False, "error": f"Pilar desconhecido: {pillar_key}"}
 
     from business_scorer import DIMENSIONS
     dim_cfg = DIMENSIONS.get(pillar_key, {})
 
+    # Load all diagnostics for cross-pillar context
+    all_diags_list = db.get_all_diagnostics(analysis_id)
+    all_diagnostics = {d["pillar_key"].replace("-", "_"): d for d in all_diags_list}
+    print(f"DEBUG: Found {len(all_diagnostics)} diagnostics for analysis {analysis_id}", file=sys.stderr)
+
+    # 1. Start with the pillar diagnostic
+    diagnostic = all_diagnostics.get(pillar_key)
     if not diagnostic:
         diagnostic = db.get_pillar_diagnostic(analysis_id, pillar_key)
+        
+    # 🚨 EMERGENCY FALLBACK: Load from the main analyses table if individual diags are missing
     if not diagnostic:
-        return {"success": False, "error": f"Diagnóstico não encontrado para {pillar_key}. Execute a análise primeiro."}
+        print(f"DEBUG: Diagnostic for {pillar_key} missing in pillar_diagnostics. Trying fallback to analyses table...", file=sys.stderr)
+        analysis = db.get_analysis(analysis_id)
+        if analysis and "score_data" in analysis:
+            dims = analysis["score_data"].get("dimensoes", {})
+            # Try both underscore and hyphen versions in the JSON
+            dv = dims.get(pillar_key) or dims.get(pillar_key.replace("_", "-"))
+            if dv:
+                print(f"  ✅ Fallback successful: Found {pillar_key} in score_data", file=sys.stderr)
+                diagnostic = {
+                    "score": dv.get("score", 50),
+                    "status": dv.get("status", "atencao"),
+                    "estado_atual": {
+                        "justificativa": dv.get("justificativa", ""),
+                        "dado_chave": dv.get("dado_chave", ""),
+                        "meta_pilar": dv.get("meta_pilar", ""),
+                    },
+                    "gaps": [a.get("acao", str(a)) if isinstance(a, dict) else str(a) for a in dv.get("acoes_imediatas", [])],
+                    "oportunidades": [dv.get("dado_chave", "")] if dv.get("dado_chave") else [],
+                    "fontes": dv.get("fontes_utilizadas", []),
+                }
+
+    if not diagnostic:
+        print(f"DEBUG: FATAL - No diagnostic found for {pillar_key} even after fallback", file=sys.stderr)
+        return {"success": False, "error": f"Diagnóstico não encontrado para {pillar_key}. Re-execute a análise principal."}
 
     # Load market data from DB if not passed
     if not market_data:

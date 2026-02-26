@@ -24,8 +24,8 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body
-        className={`${poppins.variable} font-sans antialiased min-h-screen text-zinc-50`}
-        style={{ backgroundColor: '#09090b' }}
+        className={`${poppins.className} ${poppins.variable} antialiased min-h-screen text-zinc-50`}
+        style={{ backgroundColor: '#09090b', fontFamily: "'Poppins', var(--font-poppins), sans-serif" }}
       >
         <NextAuthProvider>
           <AuthProvider>

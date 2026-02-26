@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
     Users, Palette, Eye, ShoppingBag, TrendingUp, Megaphone, HandCoins,
     ChevronRight, ArrowLeft, Loader2, Bot, User as UserIcon,
-    CheckCircle2, Circle, AlertTriangle, Link2, ExternalLink,
+    CheckCircle2, Circle, AlertTriangle, Link2, ExternalLink, AlertCircle, RotateCcw,
     Clock, BarChart3, ChevronDown, ChevronUp, Sparkles,
     RefreshCw, Play, FileText, ListTree, Wand2, Target,
     Layers, ArrowRight, Zap, Globe, Package, Loader, Check
@@ -61,6 +61,7 @@ export default function PillarWorkspace({
     const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
     const [showKPIs, setShowKPIs] = useState(false);
     const [error, setError] = useState('');
+    const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
     const [entregaveisOrder, setEntregaveisOrder] = useState<number[]>([]); // Para controlar ordem dos entregáveis
     // Auto-execution state: expand → execute sequentially
     const [autoExecuting, setAutoExecuting] = useState<string | null>(null); // task id being auto-executed
@@ -139,12 +140,7 @@ export default function PillarWorkspace({
     //     }
     // }, [score, selectedPillar]);
 
-    // Listener para o initialActivePillar quando mudar de cima pra baixo (Hub -> Workspace)
-    useEffect(() => {
-        if (initialActivePillar) {
-            setSelectedPillar(initialActivePillar);
-        }
-    }, [initialActivePillar]);
+
 
     // Save state to localStorage on changes
     useEffect(() => {
@@ -420,16 +416,30 @@ export default function PillarWorkspace({
                     },
                 }));
             } else {
-                setError(result.error || 'Erro ao gerar tarefas');
-                setSelectedPillar(null);
+                console.error(`Pillar ${key} load failed:`, result.error);
+                setError(result.error || 'Erro ao carregar o pilar');
             }
         } catch (err: any) {
-            setError(err.message || 'Erro');
-            setSelectedPillar(null);
+            console.error(`Pillar ${key} communication error:`, err);
+            setError(err.message || 'Erro de comunicação');
         } finally {
             setLoadingPillar(null);
         }
-    }, [pillarStates, analysisId, businessId, profile, apiCall]);
+    }, [pillarStates, analysisId, businessId, profile, apiCall, router]);
+
+    // Listener para o initialActivePillar quando mudar de cima pra baixo (Hub -> Workspace)
+    useEffect(() => {
+        if (initialActivePillar) {
+            handleSelectPillar(initialActivePillar);
+        }
+    }, [initialActivePillar, handleSelectPillar]);
+
+    // Reset any visual "expanded" highlight once the user leaves the task focus view
+    useEffect(() => {
+        if (!focusedTaskId) {
+            setExpandedTaskIds(prev => (prev.size > 0 ? new Set() : prev));
+        }
+    }, [focusedTaskId]);
 
     // ─── AI executes task ───
     const handleAIExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
@@ -459,7 +469,7 @@ export default function PillarWorkspace({
             } else { setError(result.error || 'Erro na execução'); }
         } catch (err: any) {
             if (err.name === 'AbortError') setError('Execução cancelada pelo usuário.');
-            else setError(err.message || 'Erro');
+            else setError(err.message || 'Erro ao executar tarefa');
         } finally {
             if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
             setExecutingTask(null);
@@ -1223,10 +1233,45 @@ export default function PillarWorkspace({
         if (isLoading || !plan) {
             return (
                 <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
-                    <div className="text-center">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: meta?.color }} />
-                        <p className="text-zinc-400 text-sm">O especialista está analisando e criando tarefas...</p>
-                        <p className="text-zinc-600 text-xs mt-2">Pesquisando dados reais + cruzando com outros pilares</p>
+                    <div className="text-center max-w-md px-6">
+                        {error ? (
+                            <>
+                                <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                                    <AlertCircle className="w-6 h-6 text-red-500" />
+                                </div>
+                                <h3 className="text-white font-semibold mb-2">Erro ao carregar o pilar</h3>
+                                <p className="text-zinc-400 text-sm mb-6">{error}</p>
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={() => handleSelectPillar(selectedPillar)}
+                                        className="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-all text-sm font-medium flex items-center justify-center gap-2"
+                                    >
+                                        <RotateCcw className="w-4 h-4" /> Tentar Novamente
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedPillar(null);
+                                            if (businessId) router.push(`/analysis/${businessId}/especialistas`);
+                                        }}
+                                        className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+                                    >
+                                        Voltar para o Hub
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: meta?.color }} />
+                                <p className="text-zinc-400 text-sm font-medium">O especialista está analisando e criando tarefas...</p>
+                                <p className="text-zinc-600 text-xs mt-2 leading-relaxed">
+                                    Pesquisando dados reais + cruzando com outros pilares para gerar recomendações personalizadas.
+                                </p>
+                                <div className="mt-8 pt-8 border-t border-zinc-800/50">
+                                    <p className="text-[10px] text-zinc-700 uppercase tracking-widest font-semibold mb-1">Status</p>
+                                    <p className="text-xs text-zinc-500 animate-pulse">Iniciando protocolo de análise profunda...</p>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             );
@@ -1248,7 +1293,7 @@ export default function PillarWorkspace({
         return (
             <div className="h-screen bg-[#09090b] flex">
                 {/* Left Column - Header and Sources */}
-                <div className="w-1/2 border-r border-zinc-800 flex flex-col pt-0">
+                <div className="w-1/2 border-r border-zinc-800 flex flex-col pt-0 relative z-0 overflow-hidden">
                     <div className="p-6 pb-4">
                         <div className="flex justify-end mb-6 relative z-20">
                             <button onClick={() => {
@@ -1293,7 +1338,7 @@ export default function PillarWorkspace({
 
                     {/* Sources Section */}
                     {allSources.length > 0 && (
-                        <div className="flex-1 px-6 pb-6 overflow-y-auto">
+                        <div className="flex-1 px-6 pb-6">
                             <div className="p-4 rounded-xl">
                                 <div className="flex items-center gap-2 mb-3">
                                     <img src="/google.png" alt="Fontes" className="w-4 h-4" />
@@ -1320,6 +1365,9 @@ export default function PillarWorkspace({
 
                                     {/* Cards em leque com perspectiva */}
                                     <div className="relative h-64 flex items-center justify-center">
+                                        {/* Edge masks to simulate cards slipping under sidebars */}
+                                        <div className="pointer-events-none absolute inset-y-0 -left-12 w-12 bg-[#09090b]" />
+                                        <div className="pointer-events-none absolute inset-y-0 -right-12 w-12 bg-[#09090b]" />
                                         {entregaveisOrder.map((originalIndex, displayIndex) => {
                                             const entregavel = entregaveis[originalIndex];
                                             if (!entregavel) return null;
@@ -1353,7 +1401,9 @@ export default function PillarWorkspace({
 
                                             // O card do meio (reto) fica na frente
                                             const isMiddleCard = displayIndex === middleIndex;
-                                            const zIndex = isMiddleCard ? 20 : (totalCards - Math.abs(displayIndex - middleIndex));
+                                            const zStackBase = 6;
+                                            const depthOffset = Math.abs(displayIndex - middleIndex);
+                                            const zIndex = Math.max(1, zStackBase - depthOffset);
 
                                             const cardBgClass = isMiddleCard
                                                 ? 'bg-zinc-800 shadow-2xl shadow-black/80'
@@ -1372,16 +1422,25 @@ export default function PillarWorkspace({
                                                         zIndex: zIndex,
                                                     }}
                                                     onClick={() => handleReorderEntregaveis(originalIndex)}
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            handleReorderEntregaveis(originalIndex);
+                                                        }
+                                                    }}
                                                 >
+                                                    {isCompleted && (
+                                                        <div className="absolute top-2 left-2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center z-30 shadow-lg">
+                                                            <Check className="w-3 h-3 text-white" />
+                                                        </div>
+                                                    )}
+
                                                     {/* Header com ícone da ferramenta */}
                                                     <div className="flex items-center gap-2.5 mb-2">
-                                                        <div className="relative">
-                                                            <img src={toolInfo.icon} alt={toolInfo.name} className={`w-7 h-7 rounded object-contain shrink-0 ${isMiddleCard ? '' : 'opacity-60 grayscale'}`} />
-                                                            {isCompleted && (
-                                                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
-                                                                    <Check className="w-2.5 h-2.5 text-white" />
-                                                                </div>
-                                                            )}
+                                                        <div className="relative w-7 h-7 shrink-0">
+                                                            <img src={toolInfo.icon} alt={toolInfo.name} className={`w-full h-full rounded object-contain ${isMiddleCard ? '' : 'opacity-60 grayscale'}`} />
                                                         </div>
                                                         <div className="flex-1 flex items-center gap-2 text-left min-w-0 whitespace-nowrap">
                                                             <span className={`text-[13px] font-medium ${titleClass}`}>
@@ -1391,9 +1450,6 @@ export default function PillarWorkspace({
                                                                 {toolInfo.name}
                                                             </span>
                                                         </div>
-                                                        {isCompleted && (
-                                                            <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                                                        )}
                                                     </div>
 
                                                     {/* Descrição */}
@@ -1427,7 +1483,7 @@ export default function PillarWorkspace({
                 </div>
 
                 {/* Right Column - Tasks */}
-                <div className="w-1/2 flex flex-col pt-0">
+                <div className="w-1/2 flex flex-col pt-0 relative z-30">
                     {/* Top Progress Bar - Glued to the top */}
                     {totalTasks > 0 && (
                         <div className="w-full flex-shrink-0">
@@ -1470,137 +1526,241 @@ export default function PillarWorkspace({
 
                     {/* Tasks List */}
                     {/* Tasks List Area */}
-                    <div className="flex-1 px-3 pb-6 overflow-y-auto">
-                        <div className="rounded-xl overflow-hidden p-1.5">
-                            <div className="px-3 pt-2 pb-1.5 flex items-center justify-between">
-                                <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Tarefas</span>
-                                <span className="text-[9px] font-mono text-zinc-700 uppercase">
-                                    {completedCount} / {totalTasks}
-                                </span>
-                            </div>
+                    <div className="flex-1 px-3 pb-28 overflow-visible flex flex-col relative">
+                        {focusedTaskId ? (
+                            <div className="flex-1 flex flex-col h-full">
+                                {/* Back UI */}
+                                <div className="px-3 pb-6">
+                                    <button
+                                        onClick={() => setFocusedTaskId(null)}
+                                        className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-all text-[10px] uppercase tracking-widest font-bold"
+                                    >
+                                        <ArrowLeft className="w-3 h-3" /> Voltar
+                                    </button>
+                                </div>
 
-                            <section className="space-y-0.5">
-                                {tarefas.map((task, i) => {
-                                    const tid = `${selectedPillar}_${task.id}`;
-                                    const isDone = done.has(task.id) || done.has(tid);
-                                    const isAI = task.executavel_por_ia;
-                                    const isExpanded = expandedTaskIds.has(tid);
+                                {/* Execution Stream / Subtasks Area */}
+                                <div className="flex-1 px-1 flex flex-col-reverse">
+                                    <div className="flex flex-col gap-2">
+                                        {/* Main content area that grows upwards */}
+                                        {tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId) && (() => {
+                                            const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId)!;
+                                            const tid = focusedTaskId;
+                                            const subtasks = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
+                                            const statuses = autoExecStatuses[tid] || {};
+                                            const results = autoExecResults[tid] || {};
+                                            const isAutoExec = autoExecuting === tid;
 
-                                    const toggleExpand = () => {
-                                        setExpandedTaskIds(prev => {
-                                            const next = new Set(prev);
-                                            if (next.has(tid)) next.delete(tid);
-                                            else next.add(tid);
-                                            return next;
-                                        });
-                                    };
+                                            return (
+                                                <div className="space-y-2">
+                                                    {subtasks.map((st: any, i: number) => {
+                                                        const status = statuses[i] || 'waiting';
+                                                        if (status === 'waiting' && !isAutoExec) return null;
+                                                        const result = results[i];
 
-                                    const deliverable = taskDeliverables[tid];
-                                    const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
-                                    const subtasksCount = subtasksList.length;
+                                                        return (
+                                                            <div key={i} className="p-3 bg-white/[0.02] border border-white/[0.03] rounded-lg">
+                                                                <div className="flex items-start gap-3">
+                                                                    <div className="mt-0.5">
+                                                                        {status === 'running' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" /> :
+                                                                            status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> :
+                                                                                <Circle className="w-3.5 h-3.5 text-zinc-900" />}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between mb-1">
+                                                                            <p className={`text-[12px] font-medium leading-relaxed ${status === 'done' ? 'text-zinc-500' : 'text-zinc-100'}`}>
+                                                                                {st.titulo}
+                                                                            </p>
+                                                                            <span className="text-[9px] text-zinc-700 font-mono shrink-0">#{i + 1}</span>
+                                                                        </div>
+                                                                        {status === 'done' && result && (
+                                                                            <div className="mt-2 pt-2 border-t border-white/[0.02]">
+                                                                                <div className="max-h-60 pr-1 text-[11px] text-zinc-400">
+                                                                                    {i === autoExecStep - 2 ? (
+                                                                                        <StreamingText text={safeRender(result.conteudo)} speed={8} />
+                                                                                    ) : (
+                                                                                        <MarkdownContent content={safeRender(result.conteudo)} />
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
 
-                                    // Dynamic Icon Logic
-                                    const tool = (task.ferramenta || '').toLowerCase();
-                                    let taskIcon = null;
-
-                                    if (isDone) {
-                                        taskIcon = <CheckCircle2 className="w-[22px] h-[22px] text-emerald-500" />;
-                                    } else if (tool.includes('docs') || tool.includes('document')) {
-                                        taskIcon = <img src="/docs.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Docs" />;
-                                    } else if (tool.includes('sheets') || tool.includes('planilha')) {
-                                        taskIcon = <img src="/sheets.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Sheets" />;
-                                    } else if (tool.includes('canva')) {
-                                        taskIcon = <img src="/canva.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Canva" />;
-                                    } else if (tool.includes('excel')) {
-                                        taskIcon = <img src="/excel.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Excel" />;
-                                    } else if (tool.includes('google') || tool.includes('search')) {
-                                        taskIcon = <img src="/google.png" className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt="Google" />;
-                                    } else if (isAI) {
-                                        const modelInfo =
-                                            aiModel === 'gemini' ? { img: '/gemini.png', label: 'Gemini' } :
-                                                aiModel === 'groq' ? { img: '/groq llama.png', label: 'Groq' } :
-                                                    { img: '/openrouter.png', label: 'OpenRouter' };
-                                        taskIcon = <img src={modelInfo.img} className="w-[22px] h-[22px] rounded shrink-0 object-contain" alt={modelInfo.label} />;
-                                    } else {
-                                        taskIcon = <Circle className="w-[22px] h-[22px] text-zinc-800" />;
-                                    }
-
-                                    return (
-                                        <div key={task.id} className="group">
-                                            <button
-                                                onClick={toggleExpand}
-                                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer ${isExpanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
-                                            >
-                                                <div className="shrink-0">
-                                                    {taskIcon}
-                                                </div>
-
-                                                <div className="flex-1 min-w-0 flex flex-col items-start gap-0.5">
-                                                    <div className="flex items-center gap-2 w-full text-left">
-                                                        <span className={`text-[13px] font-medium truncate ${isExpanded ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
-                                                            {task.titulo}
-                                                        </span>
-                                                        {isDone && <Check className="w-3.5 h-3.5 text-blue-400" />}
-                                                    </div>
-
-                                                    <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden text-left">
-                                                        <span className="text-[11px] text-zinc-600">#{i + 1}</span>
-                                                        <span className="text-[11px] text-zinc-600">
-                                                            {isAI ? 'Inteligência Artificial' : 'Ações Manuais'}
-                                                        </span>
-                                                        {task.prioridade && (
-                                                            <>
-                                                                <span className="w-1 h-1 rounded-full bg-zinc-800" />
-                                                                <span className={`text-[11px] ${task.prioridade === 'critica' ? 'text-red-500/50' : task.prioridade === 'alta' ? 'text-amber-500/50' : 'text-zinc-600'}`}>
-                                                                    {task.prioridade}
-                                                                </span>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                <div className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-colors">
-                                                    {!isExpanded ? (
-                                                        <ChevronDown className="w-3.5 h-3.5" />
-                                                    ) : (
-                                                        <ChevronUp className="w-3.5 h-3.5 text-zinc-300" />
+                                                    {/* Summary generation */}
+                                                    {isAutoExec && autoExecStep > autoExecTotal && autoExecTotal > 0 && (
+                                                        <div className="p-3 flex items-center gap-2">
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                                                            <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Processando...</p>
+                                                        </div>
                                                     )}
                                                 </div>
-                                            </button>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
 
-                                            {isExpanded && (
-                                                <div className="px-3 pb-3 -mt-1 ml-[34.5px]">
-                                                    <div className="h-[1px] w-full bg-white/[0.03] mb-3" />
-                                                    {task.descricao && <p className="text-zinc-500 text-[12px] leading-relaxed mb-3 text-left">{safeRender(task.descricao)}</p>}
+                                {/* Fixed Footer - The Main Task */}
+                                <div className="absolute bottom-8 sm:bottom-10 md:bottom-12 left-0 right-0 pt-4 bg-[#09090b] transform -translate-y-3 sm:-translate-y-5">
+                                    {tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId) && (() => {
+                                        const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId)!;
+                                        const tid = focusedTaskId;
+                                        const isDone = done.has(task.id) || done.has(tid);
 
-                                                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                                                        {deliverable && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, plan.titulo_plano || meta.label, session, setLoadingDoc, task.id); }}
-                                                                disabled={loadingDoc === (deliverable.id || task.id || 'export')}
-                                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'}`}
-                                                            >
-                                                                {loadingDoc === (deliverable.id || task.id || 'export') ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-                                                                {!session?.accessToken ? 'Conectar Google' : 'Abrir no Google Docs'}
-                                                            </button>
-                                                        )}
-                                                        {subtasksCount > 0 && (
-                                                            <div className="px-2 py-1 rounded-md bg-white/[0.02] text-[10px] text-zinc-600 flex items-center gap-1.5">
-                                                                <ListTree className="w-3 h-3" /> {subtasksCount} sub
+                                        const isAI = task.executavel_por_ia;
+                                        const taskIndex = tarefas.indexOf(task);
+
+                                        return (
+                                            <div className="px-1">
+                                                <div className="w-full flex flex-col ">
+                                                    <div className="w-full flex flex-col sm:items-start px-4 py-3 rounded-xl bg-white/[0.06]">
+                                                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                                                            <div className="flex items-start gap-2 w-full text-left">
+                                                                <span className="text-[13px] font-medium text-white leading-snug">
+                                                                    {task.titulo}
+                                                                </span>
+                                                                {isDone && <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
                                                             </div>
-                                                        )}
-                                                    </div>
 
-                                                    <div className="mt-1">
-                                                        <TaskActions task={task} pillarKey={selectedPillar} tid={tid} isDone={isDone} />
+                                                            <div className="flex flex-wrap items-center gap-2 text-left text-[11px] text-zinc-500">
+                                                                <span className="font-mono text-zinc-400">#{taskIndex + 1}</span>
+                                                                <span>{isAI ? 'Inteligência Artificial' : 'Ações Manuais'}</span>
+                                                                {task.prioridade && (
+                                                                    <>
+                                                                        <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                                                                        <span className={`${task.prioridade === 'critica'
+                                                                            ? 'text-red-400'
+                                                                            : task.prioridade === 'alta'
+                                                                                ? 'text-amber-400'
+                                                                                : 'text-zinc-400'}`}>
+                                                                            {task.prioridade}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="w-full border-t border-white/[0.05] pt-4 mt-1 sm:border-t-0 sm:pl-5 sm:pt-0">
+                                                            <TaskActions task={task} pillarKey={selectedPillar} tid={tid} isDone={isDone} />
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </section>
-                        </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="rounded-xl overflow-hidden p-1.5 h-full flex flex-col">
+                                <div className="px-3 pt-2 pb-1.5 flex items-center justify-between">
+                                    <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Tarefas</span>
+                                    <span className="text-[9px] font-mono text-zinc-700 uppercase">
+                                        {completedCount} / {totalTasks}
+                                    </span>
+                                </div>
+
+                                <section className="space-y-0.5 flex-1 pr-1">
+                                    {tarefas.map((task, i) => {
+                                        const tid = `${selectedPillar}_${task.id}`;
+                                        const isDone = done.has(task.id) || done.has(tid);
+                                        const isAI = task.executavel_por_ia;
+                                        const isExpanded = expandedTaskIds.has(tid);
+                                        const isFocused = focusedTaskId === tid;
+
+                                        const handleTaskClick = () => {
+                                            setFocusedTaskId(tid);
+                                            // Also expand if not expanded
+                                            if (!isExpanded) {
+                                                setExpandedTaskIds(prev => new Set(prev).add(tid));
+                                            }
+                                        };
+
+                                        const deliverable = taskDeliverables[tid];
+                                        const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
+                                        const subtasksCount = subtasksList.length;
+
+                                        // Dynamic Icon Logic
+                                        const tool = (task.ferramenta || '').toLowerCase();
+                                        let baseIcon = null;
+
+                                        if (tool.includes('docs') || tool.includes('document')) {
+                                            baseIcon = <img src="/docs.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Docs" />;
+                                        } else if (tool.includes('sheets') || tool.includes('planilha')) {
+                                            baseIcon = <img src="/sheets.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Sheets" />;
+                                        } else if (tool.includes('canva')) {
+                                            baseIcon = <img src="/canva.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Canva" />;
+                                        } else if (tool.includes('excel')) {
+                                            baseIcon = <img src="/excel.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Excel" />;
+                                        } else if (tool.includes('google') || tool.includes('search')) {
+                                            baseIcon = <img src="/google.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Google" />;
+                                        } else if (isAI) {
+                                            const modelInfo =
+                                                aiModel === 'gemini' ? { img: '/gemini.png', label: 'Gemini' } :
+                                                    aiModel === 'groq' ? { img: '/groq llama.png', label: 'Groq' } :
+                                                        { img: '/openrouter.png', label: 'OpenRouter' };
+                                            baseIcon = <img src={modelInfo.img} className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt={modelInfo.label} />;
+                                        } else {
+                                            baseIcon = <Circle className="w-[26px] h-[26px] text-zinc-800" />;
+                                        }
+
+                                        const taskIcon = (
+                                            <div className="relative">
+                                                {baseIcon}
+                                                {isDone && (
+                                                    <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg border-none">
+                                                        <Check className="w-2.5 h-2.5 text-white" strokeWidth={4} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+
+                                        return (
+                                            <div key={task.id} className="group">
+                                                <button
+                                                    onClick={handleTaskClick}
+                                                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-300 ease-out cursor-pointer ${isExpanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'} ${isFocused ? 'task-card-leave pointer-events-none' : ''}`}
+                                                >
+                                                    <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                                                        {taskIcon}
+                                                    </div>
+
+                                                    <div className="flex-1 min-w-0 flex flex-col items-start gap-0.5">
+                                                        <div className="flex items-center gap-2 w-full text-left">
+                                                            <span className={`text-[13px] font-medium truncate ${isExpanded ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
+                                                                {task.titulo}
+                                                            </span>
+                                                            {isDone && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden text-left">
+                                                            <span className="text-[11px] text-zinc-600">#{i + 1}</span>
+                                                            <span className="text-[11px] text-zinc-600">
+                                                                {isAI ? 'Inteligência Artificial' : 'Ações Manuais'}
+                                                            </span>
+                                                            {task.prioridade && (
+                                                                <>
+                                                                    <span className="w-1 h-1 rounded-full bg-zinc-800" />
+                                                                    <span className={`text-[11px] ${task.prioridade === 'critica' ? 'text-red-500/50' : task.prioridade === 'alta' ? 'text-amber-500/50' : 'text-zinc-600'}`}>
+                                                                        {task.prioridade}
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                                                        <ChevronRight className="w-3.5 h-3.5" />
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </section>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

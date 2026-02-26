@@ -4,13 +4,19 @@ import sys
 import time
 from groq import Groq
 from openai import OpenAI
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+
 try:
     import google.genai as genai
+    HAS_NEW_GENAI = True
 except ImportError:
     try:
         import google.generativeai as genai
+        HAS_NEW_GENAI = False
     except ImportError:
         genai = None
+        HAS_NEW_GENAI = False
 
 from dotenv import load_dotenv
 
@@ -18,10 +24,10 @@ load_dotenv()
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,
-# so when 2.5-flash is exhausted we can still use 2.0-flash, etc.
+# so when 2.0-flash is exhausted we can still use 1.5-flash, etc.
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
+    "gemini-1.5-flash",
 ]
 
 def _parse_retry_wait(error_msg: str) -> int:
@@ -187,7 +193,7 @@ def _call_gemini_once(api_key: str, prompt: str, temperature: float = 0.3, json_
         raise RuntimeError("A biblioteca google.genai não está instalada.")
     
     # Check if we're using the new google.genai or old google.generativeai
-    if hasattr(genai, 'Client'):
+    if HAS_NEW_GENAI:
         # New google.genai API
         client = genai.Client(api_key=api_key)
         

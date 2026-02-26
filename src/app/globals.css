@@ -5,6 +5,10 @@
 }
 
 @layer base {
+  :root {
+    --spacing: 0.25rem;
+  }
+
   html {
     color-scheme: dark;
   }
@@ -34,6 +38,26 @@
   .tracking-wide-label {
     @apply tracking-[0.2em] uppercase text-xs font-semibold;
   }
+
+  .bottom-8 {
+    bottom: calc(var(--spacing) * 20) !important;
+  }
+
+  @media (min-width: 640px) {
+    .sm\:bottom-10 {
+      bottom: calc(var(--spacing) * 24) !important;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .md\:bottom-12 {
+      bottom: calc(var(--spacing) * 18) !important;
+    }
+  }
+
+  .task-card-leave {
+    animation: task-card-leave 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
 }
 
 @keyframes fadeIn {
@@ -45,5 +69,20 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes task-card-leave {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(24px) scale(0.98);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(320px) scale(0.92);
+    opacity: 0;
   }
 }

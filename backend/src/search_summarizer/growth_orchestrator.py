@@ -399,8 +399,14 @@ def main():
     with open(input_file, 'r', encoding='utf-8') as f:
         input_data = json.load(f)
     
+    # Normalize hyphenated keys (common frontend/URL mistake)
+    if "pillar_key" in input_data and isinstance(input_data["pillar_key"], str):
+        input_data["pillar_key"] = input_data["pillar_key"].replace("-", "_")
+
     # Extract model provider from input data (fallback to environment variable)
     model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "groq")))
+
+    print(f"DEBUG: Action={args.action} | Model={model_provider}", file=sys.stderr)
 
     # ━━━ Profile Action ━━━
     if args.action == "profile":
@@ -688,6 +694,7 @@ def main():
             print("--- PILLAR_STATE_RESULT ---")
             print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
         else:
+            print(f"DEBUG: Fetching pillar-state for {pillar_key} (analysis_id={analysis_id})", file=sys.stderr)
             state = get_pillar_full_state(analysis_id, pillar_key)
             print("--- PILLAR_STATE_RESULT ---")
             print(json.dumps({"success": True, **state}, ensure_ascii=False, indent=2))
@@ -702,6 +709,7 @@ def main():
             print("--- SPECIALIST_TASKS_RESULT ---")
             print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
         else:
+            print(f"DEBUG: Running specialist-tasks for {pillar_key} (analysis_id={analysis_id})", file=sys.stderr)
             # Load business brief
             brief = None
             brief_row = db.get_business_brief(business_id, analysis_id) if business_id else None

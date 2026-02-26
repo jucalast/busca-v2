@@ -133,7 +133,7 @@ export default function SidebarLayout({
   return (
     <div className="relative h-screen bg-[#09090b] overflow-hidden">
       {/* Top Bar - Full Width */}
-      <header className="absolute inset-x-0 top-0 h-20 flex items-center justify-between px-6 z-20 bg-[#09090b]/90 backdrop-blur-sm border-b border-white/5">
+      <header className="absolute inset-x-0 top-0 h-20 flex items-center justify-between px-6 z-50 bg-[#09090b]/90 backdrop-blur-sm border-b border-white/5">
         {/* Logo */}
         <div className="flex items-center gap-4 relative z-10">
           <img
@@ -144,7 +144,7 @@ export default function SidebarLayout({
         </div>
 
         {/* Global AI Model Selector */}
-        <div className="flex items-center gap-3 px-4 relative z-10">
+        <div className="flex items-center gap-3 px-4 relative z-50">
           <ModelSelector value={aiModel} onChange={setAiModel} />
         </div>
       </header>
@@ -155,7 +155,7 @@ export default function SidebarLayout({
           {/* Sidebar */}
           <aside
             className={`${sidebarOpen ? 'w-80' : 'w-0'
-              } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden`}
+              } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden relative z-30`}
           >
             {/* New Business Button */}
             <div className="p-4 flex-shrink-0 relative z-20">
@@ -313,7 +313,7 @@ export default function SidebarLayout({
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col">
             {/* Content */}
-            <main className="flex-1 overflow-y-auto">
+            <main className="flex-1">
               {error && (
                 <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
                   {error}
@@ -330,14 +330,14 @@ export default function SidebarLayout({
                 {/* Backdrop overlay */}
                 {rightSidebarOpen && (
                   <div
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 transition-opacity duration-300"
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
                     onClick={() => setRightSidebarOpen(false)}
                   />
                 )}
                 {/* Toggle button */}
                 <button
                   onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-                  className={`fixed top-24 z-50 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
+                  className={`fixed top-24 z-[70] flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
                     }`}
                 >
                   {rightSidebarOpen ? (
@@ -351,7 +351,7 @@ export default function SidebarLayout({
                 </button>
                 {/* Sidebar panel */}
                 <aside
-                  className={`fixed top-0 right-0 bottom-0 z-40 transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
+                  className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
                     }`}
                 >
                   {rightSidebar}
