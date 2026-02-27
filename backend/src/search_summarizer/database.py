@@ -210,11 +210,32 @@ def init_db():
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pillar_kpis ON pillar_kpis (analysis_id, pillar_key)')
     
+    # Specialist subtasks — expanded micro-steps per task
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS specialist_subtasks (
+            id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            pillar_key TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            subtasks_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(analysis_id, pillar_key, task_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_specialist_subtasks ON specialist_subtasks (analysis_id, pillar_key)')
+    
     # Migration: add status column to specialist_results if missing
     try:
         cursor.execute("ALTER TABLE specialist_results ADD COLUMN status TEXT DEFAULT 'pending'")
     except Exception:
         pass  # Column already exists
+    
+    # Migration: add unique index to specialist_executions for upsert support
+    try:
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_specialist_executions_unique ON specialist_executions (analysis_id, pillar_key, task_id)')
+    except Exception:
+        pass
     
     conn.commit()
     conn.close()
@@ -1360,9 +1381,10 @@ def get_pillar_plan(analysis_id: str, pillar_key: str) -> Optional[Dict]:
 
 def save_execution_result(
     analysis_id: str, pillar_key: str, task_id: str, action_title: str,
-    status: str = "completed", outcome: str = "", business_impact: str = ""
+    status: str = "completed", outcome: str = "", business_impact: str = "",
+    result_data: Any = None
 ) -> Dict:
-    """Save an execution result for a pillar task."""
+    """Save an execution result for a pillar task, including full content."""
     import uuid
     conn = get_connection()
     cursor = conn.cursor()
@@ -1374,6 +1396,17 @@ def save_execution_result(
         INSERT INTO specialist_results (id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (result_id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, now))
+    
+    # Also save full execution content if provided
+    if result_data is not None:
+        result_json = json.dumps(result_data, ensure_ascii=False) if not isinstance(result_data, str) else result_data
+        cursor.execute('''
+            INSERT INTO specialist_executions (id, analysis_id, pillar_key, task_id, result_data, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(analysis_id, pillar_key, task_id) DO UPDATE SET
+                result_data = excluded.result_data,
+                status = excluded.status
+        ''', (str(uuid.uuid4()), analysis_id, pillar_key, task_id, result_json, status, now))
     
     conn.commit()
     conn.close()
@@ -1467,6 +1500,117 @@ def get_pillar_kpis(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
         "kpi_target": row["kpi_target"],
         "created_at": row["created_at"]
     } for row in rows]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Subtask Persistence
+# ═══════════════════════════════════════════════════════════════════
+
+def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data: Any) -> bool:
+    """Save or update expanded subtasks for a task."""
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.utcnow().isoformat()
+    data_json = json.dumps(subtasks_data, ensure_ascii=False) if not isinstance(subtasks_data, str) else subtasks_data
+    
+    cursor.execute('''
+        INSERT INTO specialist_subtasks (id, analysis_id, pillar_key, task_id, subtasks_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(analysis_id, pillar_key, task_id) DO UPDATE SET
+            subtasks_data = excluded.subtasks_data,
+            updated_at = excluded.updated_at
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, task_id, data_json, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_subtasks(analysis_id: str, pillar_key: str, task_id: str = None) -> Any:
+    """Get subtasks for a specific task or all tasks in a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if task_id:
+        cursor.execute('''
+            SELECT task_id, subtasks_data FROM specialist_subtasks
+            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+        ''', (analysis_id, pillar_key, task_id))
+    else:
+        cursor.execute('''
+            SELECT task_id, subtasks_data FROM specialist_subtasks
+            WHERE analysis_id = ? AND pillar_key = ?
+        ''', (analysis_id, pillar_key))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return None
+    
+    result = {}
+    for row in rows:
+        try:
+            result[row["task_id"]] = json.loads(row["subtasks_data"])
+        except (json.JSONDecodeError, TypeError):
+            result[row["task_id"]] = {}
+    
+    return result
+
+
+def get_full_executions(analysis_id: str, pillar_key: str) -> Optional[Dict]:
+    """Get all full execution results (with content) for a pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT task_id, result_data, status, created_at
+        FROM specialist_executions
+        WHERE analysis_id = ? AND pillar_key = ? AND result_data IS NOT NULL
+        ORDER BY created_at
+    ''', (analysis_id, pillar_key))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return None
+    
+    result = {}
+    for row in rows:
+        try:
+            result[row["task_id"]] = {
+                "result_data": json.loads(row["result_data"]),
+                "status": row["status"],
+                "created_at": row["created_at"]
+            }
+        except (json.JSONDecodeError, TypeError):
+            pass
+    
+    return result if result else None
+
+
+def delete_subtasks(analysis_id: str, pillar_key: str, task_id: str = None):
+    """Delete subtasks for a task or entire pillar."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if task_id:
+            cursor.execute('''
+                DELETE FROM specialist_subtasks
+                WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+            ''', (analysis_id, pillar_key, task_id))
+        else:
+            cursor.execute('''
+                DELETE FROM specialist_subtasks
+                WHERE analysis_id = ? AND pillar_key = ?
+            ''', (analysis_id, pillar_key))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str):

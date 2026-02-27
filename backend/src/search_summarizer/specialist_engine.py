@@ -1273,7 +1273,8 @@ Retorne APENAS o JSON."""
         db.save_execution_result(
             analysis_id, pillar_key, task_id, task_title,
             status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável gerado"),
-            business_impact=result.get("impacto_estimado", "")
+            business_impact=result.get("impacto_estimado", ""),
+            result_data=result
         )
 
         print(f"  ✅ Agent delivered: {result.get('entregavel_titulo', 'OK')}", file=sys.stderr)
@@ -1293,7 +1294,8 @@ Retorne APENAS o JSON."""
             db.save_execution_result(
                 analysis_id, pillar_key, task_id, task_title,
                 status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável gerado"),
-                business_impact=result.get("impacto_estimado", "")
+                business_impact=result.get("impacto_estimado", ""),
+                result_data=result
             )
             return {"success": True, "execution": result}
         except Exception as e2:
@@ -1607,7 +1609,8 @@ Retorne APENAS o JSON."""
         db.save_execution_result(
             analysis_id, pillar_key, task_id, task_title,
             status="ai_partial", outcome=result.get("entregavel_titulo", "IA tentou executar"),
-            business_impact=result.get("impacto_estimado", "")
+            business_impact=result.get("impacto_estimado", ""),
+            result_data=result
         )
 
         return {"success": True, "execution": result}
@@ -1622,7 +1625,8 @@ Retorne APENAS o JSON."""
             db.save_execution_result(
                 analysis_id, pillar_key, task_id, task_title,
                 status="ai_partial", outcome=result.get("entregavel_titulo", "IA tentou executar"),
-                business_impact=result.get("impacto_estimado", "")
+                business_impact=result.get("impacto_estimado", ""),
+                result_data=result
             )
             return {"success": True, "execution": result}
         except Exception as e2:

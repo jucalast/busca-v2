@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     Users, Palette, Eye, ShoppingBag, TrendingUp, Megaphone, HandCoins,
     ChevronRight, ArrowLeft, Loader2, Bot, User as UserIcon,
     CheckCircle2, Circle, AlertTriangle, Link2, ExternalLink, AlertCircle, RotateCcw,
     Clock, BarChart3, ChevronDown, ChevronUp, Sparkles,
     RefreshCw, Play, FileText, ListTree, Wand2, Target,
-    Layers, ArrowRight, Zap, Globe, Package, Loader, Check
+    Layers, ArrowRight, Zap, Globe, Package, Loader, Check, X, Plus, Download, Search, Square
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSession, signIn } from 'next-auth/react';
@@ -30,6 +30,7 @@ const PILLAR_ORDER = Object.keys(PILLAR_META).sort((a, b) => PILLAR_META[a].orde
 // ─── Imports Modulares ───
 import { PillarWorkspaceProps, TaskItem } from './types';
 import { safeRender, openInGoogleDocs, exportFullAnalysis, getToolInfo } from './utils';
+import { useTaskHandlers } from './handlers';
 import { ScoreRing } from './components/ScoreRing';
 import { DepBadge } from './components/DepBadge';
 import { DeliverableCard } from './components/DeliverableCard';
@@ -37,17 +38,18 @@ import { SubtaskList } from './components/SubtaskList';
 import { SourceBadgeList } from './components/SourceBadgeList';
 import { MarkdownContent } from './components/MarkdownContent';
 import { StreamingText } from './components/StreamingText';
-
-// ═══════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════
+import TaskCard from '../TaskCard';
+import TaskActionButtons from '../TaskActionButtons';
+import TaskSubtasksDisplay from '../TaskSubtasksDisplay';
+import ModelSelector from '../ModelSelector';
 
 export default function PillarWorkspace({
-    score, specialists, analysisId, businessId, profile, marketData, userProfile, onRedo, onStateChange, initialActivePillar
+    score, specialists, analysisId, businessId, profile, marketData, userProfile, onRedo, onStateChange, initialActivePillar, aiModel
 }: PillarWorkspaceProps) {
     const { data: session } = useSession();
-    const { aiModel } = useAuth();
+    const { aiModel: authAiModel } = useAuth();
     const router = useRouter();
+    const currentAiModel = aiModel || authAiModel;
     const [loadingDoc, setLoadingDoc] = useState<string | null>(null);
     const [loadingFullExport, setLoadingFullExport] = useState(false);
     const [selectedPillar, setSelectedPillar] = useState<string | null>(initialActivePillar || null);
@@ -72,8 +74,10 @@ export default function PillarWorkspace({
     const [autoExecSubtasks, setAutoExecSubtasks] = useState<Record<string, any[]>>({});
     const [autoExecResults, setAutoExecResults] = useState<Record<string, Record<number, any>>>({});
     const [autoExecStatuses, setAutoExecStatuses] = useState<Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>>({});
-
+    // Force re-render key for TaskSubtasksDisplay
+    const [subtasksUpdateKey, setSubtasksUpdateKey] = useState(0);
     const abortControllersRef = React.useRef<Record<string, AbortController>>({});
+    const [selectedTaskAiModel, setSelectedTaskAiModel] = useState<string>(currentAiModel || 'groq');
 
     // ─── localStorage persistence ───
     const prevAnalysisIdRef = React.useRef<string | null | undefined>(undefined);
@@ -87,7 +91,24 @@ export default function PillarWorkspace({
         prevAnalysisIdRef.current = analysisId;
 
         if (isReanalysis) {
-            // Reanalysis: clear everything + localStorage
+            // Clear cache on reanalysis to ensure fresh data
+            apiCache.current.clear();
+            console.log('🗑️ Cache cleared on reanalysis');
+
+            // Reset all states
+            setPillarStates({});
+            setTaskSubtasks({});
+            setAutoExecuting(null);
+            setAutoExecStep(0);
+            setAutoExecTotal(0);
+            setAutoExecLog([]);
+            setAutoExecSubtasks({});
+            setAutoExecResults({});
+            setAutoExecStatuses({});
+            setShowKPIs(false);
+            setSelectedTaskAiModel(currentAiModel || 'groq');
+            setError('');
+        } else {
             setPillarStates({});
             setTaskDeliverables({});
             setTaskSubtasks({});
@@ -97,20 +118,15 @@ export default function PillarWorkspace({
             setLoadingPillar(null);
             setExecutingTask(null);
             setExpandingTask(null);
-            setAutoExecuting(null);
-            setAutoExecStep(0);
-            setAutoExecTotal(0);
-            setAutoExecLog([]);
-            setAutoExecSubtasks({});
-            setAutoExecResults({});
-            setAutoExecStatuses({});
-            setShowKPIs(false);
-            setError('');
-            localStorage.removeItem(`pillar_workspace_${analysisId}`);
-            return;
         }
+        localStorage.removeItem(`pillar_workspace_${analysisId}`);
+        return;
+    }, [analysisId]);
 
-        // First mount: load persisted state from localStorage
+    // First mount: load persisted state from localStorage
+    useEffect(() => {
+        if (!analysisId) return;
+
         try {
             const saved = localStorage.getItem(`pillar_workspace_${analysisId}`);
             if (!saved) return;
@@ -203,116 +219,85 @@ export default function PillarWorkspace({
         setEntregaveisOrder(newOrder);
     };
 
-    // ─── API helper ───
-    const apiCall = useCallback(async (action: string, data: any, options?: { signal?: AbortSignal }) => {
+    // ─── API Cache ───
+    const apiCache = React.useRef<Map<string, { data: any; timestamp: number }>>(new Map());
+    const CACHE_DURATION = 30000; // 30 segundos
+
+    // ─── API helper with Cache ───
+    const apiCall = useCallback(async (action: string, data: any, options?: { signal?: AbortSignal; skipCache?: boolean }) => {
+        const cacheKey = `${action}-${JSON.stringify(data)}`;
+        const cached = apiCache.current.get(cacheKey);
+
+        // Return cached data if available and not expired
+        if (!options?.skipCache && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            console.log('📦 Using cached API response for:', action);
+            return cached.data;
+        }
+
+        console.log('🌐 Making fresh API call for:', action);
         const res = await fetch('/api/growth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, aiModel, ...data }),
+            body: JSON.stringify({ action, aiModel: selectedTaskAiModel || currentAiModel, ...data }),
             signal: options?.signal,
         });
-        return await res.json();
-    }, [aiModel]);
 
-    // ─── Stop and Redo Handlers ───
-    const handleStopExecution = useCallback((tid: string) => {
-        if (abortControllersRef.current[tid]) {
-            abortControllersRef.current[tid].abort();
-            delete abortControllersRef.current[tid];
+        const result = await res.json();
+
+        // Cache successful responses
+        if (!options?.skipCache && res.ok) {
+            apiCache.current.set(cacheKey, { data: result, timestamp: Date.now() });
+
+            // Clean old cache entries periodically
+            if (apiCache.current.size > 50) {
+                const now = Date.now();
+                for (const [key, value] of apiCache.current.entries()) {
+                    if (now - value.timestamp > CACHE_DURATION * 2) {
+                        apiCache.current.delete(key);
+                    }
+                }
+            }
         }
-        // Also clear auto-execution state if this was an auto-execution
-        if (autoExecuting === tid) {
-            setAutoExecuting(null);
-            setAutoExecStep(0);
-            setAutoExecTotal(0);
-            setAutoExecLog([]);
-        }
-    }, [autoExecuting]);
 
-    const handleRedoTask = useCallback(async (pillarKey: string, tid: string, task: TaskItem) => {
-        // Clear frontend state
-        setTaskDeliverables(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecResults(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecStatuses(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecSubtasks(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setCompletedTasks(prev => {
-            const next = { ...prev };
-            const s = new Set(next[pillarKey] || []);
-            s.delete(task.id);
-            s.delete(tid);
-            next[pillarKey] = s;
-            return next;
-        });
-        setTaskSubtasks(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
+        return result;
+    }, [selectedTaskAiModel, currentAiModel]);
 
-        // Clear backend data
-        try {
-            await apiCall('redo-task', {
-                analysis_id: analysisId,
-                pillar_key: pillarKey,
-                task_id: task.id,
-            });
-        } catch (err: any) {
-            console.error('Failed to clear task data:', err);
-            setError('Failed to reset task data');
-        }
-    }, [analysisId, apiCall]);
+    // ─── Use Task Handlers Hook ───
+    const taskHandlers = useTaskHandlers(
+        analysisId ?? '',
+        apiCall,
+        profile,
+        taskSubtasks,
+        autoExecResults,
+        setTaskSubtasks,
+        setAutoExecuting,
+        setAutoExecStep,
+        setAutoExecTotal,
+        setAutoExecLog,
+        setAutoExecSubtasks,
+        setAutoExecResults,
+        setAutoExecStatuses,
+        setTaskDeliverables,
+        setCompletedTasks,
+        setSubtasksUpdateKey,
+        setError,
+        abortControllersRef
+    );
 
-    const handleRedoSubtasks = useCallback(async (pillarKey: string, tid: string, task: TaskItem) => {
-        // Clear only subtasks from frontend
-        setTaskSubtasks(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecResults(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecStatuses(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-        setAutoExecSubtasks(prev => {
-            const next = { ...prev };
-            delete next[tid];
-            return next;
-        });
-
-        // Clear subtasks from backend
-        try {
-            await apiCall('redo-subtasks', {
-                analysis_id: analysisId,
-                pillar_key: pillarKey,
-                task_id: task.id,
-            });
-        } catch (err: any) {
-            console.error('Failed to clear subtasks data:', err);
-            setError('Failed to reset subtasks data');
-        }
-    }, [analysisId, apiCall]);
+    // Only use handlers if we have a valid analysisId
+    const {
+        handleExpandSubtasks,
+        handleAutoExecute,
+        handleRedoTask,
+        handleRedoSubtasks,
+        handleStopExecution,
+    } = analysisId ? taskHandlers : {
+        handleExpandSubtasks: () => { },
+        handleAutoExecute: () => { },
+        handleRedoTask: () => { },
+        handleRedoSubtasks: () => { },
+        handleStopExecution: () => { },
+    };
 
     const handleRedoPillar = useCallback(async (pillarKey: string) => {
         if (!confirm('Tem certeza? Isso apagará todas as tarefas geradas e executadas deste pilar.')) return;
@@ -380,6 +365,69 @@ export default function PillarWorkspace({
         }
     }, [analysisId, businessId, profile, apiCall]);
 
+    // ─── Hydrate subtasks and executions from DB ───
+    const hydratePillarData = useCallback(async (key: string) => {
+        try {
+            // Fetch subtasks and executions in parallel
+            const [subtasksRes, execsRes] = await Promise.all([
+                apiCall('get-subtasks', { analysis_id: analysisId, pillar_key: key }),
+                apiCall('get-pillar-executions', { analysis_id: analysisId, pillar_key: key }),
+            ]);
+
+            // Hydrate subtasks
+            if (subtasksRes.success && subtasksRes.subtasks) {
+                const savedSubtasks = subtasksRes.subtasks as Record<string, any>;
+                for (const [taskId, stData] of Object.entries(savedSubtasks)) {
+                    const tid = `${key}_${taskId}`;
+                    setTaskSubtasks(prev => ({ ...prev, [tid]: stData }));
+                    // Also set up autoExec display data
+                    const items = (stData as any)?.subtarefas || [];
+                    if (items.length > 0) {
+                        setAutoExecSubtasks(prev => ({ ...prev, [tid]: items }));
+                    }
+                }
+                console.log(`📦 Hydrated ${Object.keys(savedSubtasks).length} subtask groups for ${key}`);
+            }
+
+            // Hydrate executions (deliverables)
+            if (execsRes.success && execsRes.executions) {
+                const savedExecs = execsRes.executions as Record<string, any>;
+                for (const [taskId, execData] of Object.entries(savedExecs)) {
+                    const tid = taskId.includes('_') ? taskId : `${key}_${taskId}`;
+                    const result = (execData as any).result_data;
+                    if (result) {
+                        // Set deliverable
+                        setTaskDeliverables(prev => ({ ...prev, [tid]: result }));
+                        // Mark as completed
+                        setCompletedTasks(prev => {
+                            const s = new Set(prev[key] || []);
+                            s.add(taskId);
+                            s.add(tid);
+                            return { ...prev, [key]: s };
+                        });
+                        // Set autoExec status to done for this subtask index if it's a subtask execution
+                        const stMatch = taskId.match(/_st(\d+)$/);
+                        if (stMatch) {
+                            const parentTid = taskId.replace(/_st\d+$/, '');
+                            const idx = parseInt(stMatch[1], 10) - 1;
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [parentTid]: { ...prev[parentTid], [idx]: result }
+                            }));
+                            setAutoExecStatuses(prev => ({
+                                ...prev,
+                                [parentTid]: { ...prev[parentTid], [idx]: 'done' }
+                            }));
+                        }
+                    }
+                }
+                console.log(`📦 Hydrated ${Object.keys(savedExecs).length} executions for ${key}`);
+            }
+        } catch (err) {
+            console.warn('Failed to hydrate pillar data:', err);
+        }
+    }, [analysisId, apiCall, setTaskSubtasks, setAutoExecSubtasks, setTaskDeliverables, setCompletedTasks, setAutoExecResults, setAutoExecStatuses]);
+
     // ─── Select pillar ───
     const handleSelectPillar = useCallback(async (key: string) => {
         if (businessId) {
@@ -392,13 +440,43 @@ export default function PillarWorkspace({
 
         setLoadingPillar(key);
         try {
+            // Primeiro tenta buscar o estado existente
             const stateResult = await apiCall('pillar-state', { analysis_id: analysisId, pillar_key: key });
             if (stateResult.success && stateResult.plan?.plan_data) {
                 setPillarStates(prev => ({ ...prev, [key]: stateResult }));
+                // Hydrate subtasks and executions from DB
+                hydratePillarData(key);
                 setLoadingPillar(null);
                 return;
             }
 
+            // Se não encontrar estado existente, tenta buscar as tarefas já existentes da análise
+            const tasksResult = await apiCall('get-analysis-tasks', {
+                analysis_id: analysisId,
+                pillar_key: key
+            });
+
+            if (tasksResult.success && tasksResult.data && tasksResult.data.plan_data) {
+                // Encontrou dados existentes, usa eles
+                setPillarStates(prev => ({
+                    ...prev,
+                    [key]: {
+                        success: true,
+                        pillar_key: key,
+                        plan: { plan_data: tasksResult.data.plan_data, status: 'loaded' },
+                        results: tasksResult.data.results || [],
+                        kpis: tasksResult.data.kpis || [],
+                        dependencies: tasksResult.data.dependencies || { ready: true, blockers: [], warnings: [] },
+                        progress: tasksResult.data.progress || { total: tasksResult.data.plan_data?.tarefas?.length || 0, completed: 0 },
+                    },
+                }));
+                // Hydrate subtasks and executions from DB
+                hydratePillarData(key);
+                setLoadingPillar(null);
+                return;
+            }
+
+            // Só gera novas tarefas se não encontrar nada existente
             const result = await apiCall('specialist-tasks', {
                 analysis_id: analysisId, pillar_key: key,
                 business_id: businessId, profile: profile?.profile || profile,
@@ -425,7 +503,7 @@ export default function PillarWorkspace({
         } finally {
             setLoadingPillar(null);
         }
-    }, [pillarStates, analysisId, businessId, profile, apiCall, router]);
+    }, [pillarStates, analysisId, businessId, profile, apiCall, router, hydratePillarData]);
 
     // Listener para o initialActivePillar quando mudar de cima pra baixo (Hub -> Workspace)
     useEffect(() => {
@@ -476,214 +554,7 @@ export default function PillarWorkspace({
         }
     }, [analysisId, businessId, profile, apiCall]);
 
-
-    // ─── Expand subtasks ───
-    const handleExpandSubtasks = useCallback(async (pillarKey: string, task: TaskItem) => {
-        const tid = `${pillarKey}_${task.id}`;
-        setExpandingTask(tid);
-        setExpandedTaskIds(prev => new Set(prev).add(tid));
-        setError('');
-
-        const controller = new AbortController();
-        abortControllersRef.current[tid] = controller;
-
-        try {
-            const result = await apiCall('expand-subtasks', {
-                analysis_id: analysisId, pillar_key: pillarKey,
-                task_data: task, profile: profile?.profile || profile,
-            }, { signal: controller.signal });
-            if (result.success && result.subtasks) {
-                setTaskSubtasks(prev => ({ ...prev, [tid]: result.subtasks }));
-            } else { setError(result.error || 'Erro ao expandir'); }
-        } catch (err: any) {
-            if (err.name === 'AbortError') setError('Ação cancelada pelo usuário.');
-            else setError(err.message || 'Erro');
-        } finally {
-            if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
-            setExpandingTask(null);
-        }
-    }, [analysisId, profile, apiCall]);
-
-    // ─── Auto-execute: reuse existing subtasks or expand first, then execute each sequentially ───
-    const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
-        const tid = `${pillarKey}_${task.id}`;
-        setAutoExecuting(tid);
-        setExpandedTaskIds(prev => new Set(prev).add(tid));
-        setAutoExecStep(0);
-        setAutoExecTotal(0);
-        setAutoExecLog([]);
-        // Clear this task's execution data
-        setAutoExecSubtasks(prev => ({ ...prev, [tid]: [] }));
-        setAutoExecResults(prev => ({ ...prev, [tid]: {} }));
-        setAutoExecStatuses(prev => ({ ...prev, [tid]: {} }));
-        setError('');
-
-        const controller = new AbortController();
-        abortControllersRef.current[tid] = controller;
-
-        try {
-            // Step 1: Use already-expanded subtasks if available, otherwise expand now
-            let existingSubtasks = taskSubtasks[tid];
-            if (!existingSubtasks) {
-                const expandResult = await apiCall('expand-subtasks', {
-                    analysis_id: analysisId, pillar_key: pillarKey,
-                    task_data: task, profile: profile?.profile || profile,
-                });
-                if (!expandResult.success || !expandResult.subtasks) {
-                    throw new Error(expandResult.error || 'Falha ao expandir tarefa');
-                }
-                existingSubtasks = expandResult.subtasks;
-                setTaskSubtasks(prev => ({ ...prev, [tid]: existingSubtasks }));
-            }
-
-            const allItems: any[] = existingSubtasks.subtarefas || [];
-            if (allItems.length === 0) {
-                throw new Error('Nenhuma subtarefa encontrada para esta ação.');
-            }
-
-            // Populate visual list for THIS task
-            setAutoExecSubtasks(prev => ({ ...prev, [tid]: allItems }));
-
-            // Initialize all as waiting
-            const initStatuses: Record<number, 'waiting' | 'running' | 'done' | 'error'> = {};
-            allItems.forEach((_, i) => { initStatuses[i] = 'waiting'; });
-            setAutoExecStatuses(prev => ({ ...prev, [tid]: initStatuses }));
-
-            // Execute ALL subtasks — parent task has been delegated to AI
-            setAutoExecTotal(allItems.length);
-
-            // Step 2: Execute each subtask sequentially, update card in real time
-            const allResults: any[] = [];
-            let aiIndex = 0;
-
-            for (let i = 0; i < allItems.length; i++) {
-                const st = allItems[i];
-
-                setAutoExecStep(aiIndex + 1);
-                setAutoExecStatuses(prev => ({
-                    ...prev,
-                    [tid]: { ...prev?.[tid], [i]: 'running' },
-                }));
-
-                // Build previous results for context chaining
-                const previousResults = allResults.map(r => ({
-                    titulo: safeRender(r.entregavel_titulo || ''),
-                    conteudo: safeRender(r.conteudo || '').slice(0, 800),
-                }));
-
-                const execResult = await apiCall('specialist-execute', {
-                    analysis_id: analysisId, pillar_key: pillarKey,
-                    task_id: `${tid}_st${i + 1}`,
-                    task_data: {
-                        ...st, id: `${tid}_st${i + 1}`,
-                        titulo: st.titulo,
-                        descricao: st.descricao || st.entregavel || '',
-                        entregavel_ia: st.entregavel || st.descricao,
-                    },
-                    business_id: businessId, profile: profile?.profile || profile,
-                    previous_results: previousResults.length > 0 ? previousResults : undefined,
-                }, { signal: controller.signal });
-
-                if (execResult.success && execResult.execution) {
-                    allResults.push(execResult.execution);
-                    setAutoExecResults(prev => ({
-                        ...prev,
-                        [tid]: { ...prev?.[tid], [i]: execResult.execution },
-                    }));
-                    setAutoExecStatuses(prev => ({
-                        ...prev,
-                        [tid]: { ...prev?.[tid], [i]: 'done' },
-                    }));
-                } else {
-                    setAutoExecStatuses(prev => ({
-                        ...prev,
-                        [tid]: { ...prev?.[tid], [i]: 'error' },
-                    }));
-                }
-                aiIndex++;
-            }
-
-            // Combine all results into final deliverable
-            if (allResults.length > 0) {
-                const combinedContent = allResults.map((r) =>
-                    safeRender(r.conteudo) || ''
-                ).filter(Boolean).join('\n\n');
-
-                // Generate Executive Summary for the UI
-                setAutoExecStep(allItems.length + 1);
-
-                const summaryResult = await apiCall('specialist-execute', {
-                    analysis_id: analysisId, pillar_key: pillarKey,
-                    task_id: `${tid}_summary`,
-                    task_data: {
-                        id: `${tid}_summary`,
-                        titulo: 'Resumo Executivo da Tarefa',
-                        descricao: 'Gere um resumo em texto corrido, detalhado e bem formatado, consolidando os principais resultados encontrados nas subtarefas, sem perder as principais informações.',
-                        entregavel_ia: 'Resumo das Subtarefas',
-                        ferramenta: 'analise_dados'
-                    },
-                    business_id: businessId, profile: profile?.profile || profile,
-                    previous_results: [{ titulo: 'Conteúdo Original Completo', conteudo: combinedContent.substring(0, 15000) }],
-                }, { signal: controller.signal });
-
-                let resumo = combinedContent;
-                if (summaryResult.success && summaryResult.execution) {
-                    resumo = safeRender(summaryResult.execution.conteudo);
-                }
-
-                const combinedSources = allResults.flatMap(r => r.sources || r.fontes_consultadas || []);
-                const combinedDeliverable = {
-                    id: tid,
-                    entregavel_titulo: task.entregavel_ia || task.titulo,
-                    entregavel_tipo: 'plano_completo',
-                    conteudo: resumo,
-                    conteudo_completo: combinedContent,
-                    como_aplicar: safeRender(allResults[allResults.length - 1]?.como_aplicar || ''),
-                    impacto_estimado: safeRender(allResults[allResults.length - 1]?.impacto_estimado || ''),
-                    fontes_consultadas: combinedSources,
-                    sources: [...new Set(combinedSources)],
-                    parts: allResults,
-                };
-                setTaskDeliverables(prev => ({ ...prev, [tid]: combinedDeliverable }));
-                setCompletedTasks(prev => {
-                    const s = new Set(prev[pillarKey] || []);
-                    s.add(task.id);
-                    s.add(tid);
-                    return { ...prev, [pillarKey]: s };
-                });
-            }
-
-        } catch (err: any) {
-            if (err.name === 'AbortError') {
-                setError('Execução cancelada pelo usuário.');
-            } else {
-                setError(err.message || 'Erro na execução automática');
-            }
-
-            // Mark task as error state if it failed early
-            setAutoExecStatuses(prev => {
-                const updated = { ...prev?.[tid] };
-                if (Object.keys(updated).length === 0) {
-                    updated[0] = 'error'; // At least show one error
-                } else {
-                    Object.keys(updated).forEach(k => {
-                        if (updated[k as any] === 'running') updated[k as any] = 'error';
-                    });
-                }
-                return { ...prev, [tid]: updated };
-            });
-
-        } finally {
-            if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
-            setTimeout(() => {
-                setAutoExecuting(null);
-                setAutoExecStep(0);
-                // We intentionally leave autoExecTotal/Subtasks intact so the UI shows the error state
-            }, 800);
-        }
-    }, [analysisId, businessId, profile, apiCall, taskSubtasks]);
-
-    // ─── AI tries user task — delegates to specific backend endpoint ───
+    // ─── AI tries user task ───— delegates to specific backend endpoint ───
     const handleAITryUserTask = useCallback(async (pillarKey: string, task: TaskItem) => {
         const tid = `${pillarKey}_${task.id}`;
         setAutoExecuting(tid); // Show general executing state
@@ -966,153 +837,6 @@ export default function PillarWorkspace({
                     </div>
                 )}
 
-                {hasExecPanel && (
-                    <div className="mt-4 rounded-xl border border-white/[0.04] bg-black/10 overflow-hidden">
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.02]">
-                            <div className="flex items-center gap-2">
-                                <ListTree className="w-3.5 h-3.5 opacity-20" style={{ color }} />
-                                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-[0.2em]">
-                                    {isAutoExec ? 'Processando' : 'Ações Realizadas'}
-                                </span>
-                            </div>
-                            {autoExecTotal > 0 && isAutoExec && (
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-16 h-1 bg-zinc-800/50 rounded-full overflow-hidden">
-                                        <div className="h-full rounded-full transition-all duration-700 ease-out"
-                                            style={{ width: `${(Math.min(autoExecStep, autoExecTotal) / autoExecTotal) * 100}%`, backgroundColor: color }} />
-                                    </div>
-                                    <span className="text-[9px] font-mono text-zinc-600">
-                                        {autoExecStep > autoExecTotal ? 'Finalizando...' : `${autoExecStep} de ${autoExecTotal}`}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Subtask cards */}
-                        <div className="flex flex-col gap-1 px-2 pt-2 pb-3">
-                            {taskExecSubtasks.map((st: any, i: number) => {
-                                const status = taskExecStatuses[i] || 'waiting';
-                                const result = taskExecResults[i];
-                                const isAI = st.executavel_por_ia;
-
-                                return (
-                                    <div key={i} className={`transition-colors rounded-xl overflow-hidden ${status === 'running' ? 'bg-violet-500/[0.04]' :
-                                        status === 'error' ? 'bg-red-500/[0.03]' : ''
-                                        }`}>
-                                        {/* Subtask header row */}
-                                        <div className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/[0.02]">
-                                            {/* Status icon */}
-                                            <div className="mt-1 flex-shrink-0 w-4 h-4 flex items-center justify-center">
-                                                {status === 'waiting' && <Circle className="w-3 h-3 text-zinc-900" />}
-                                                {status === 'running' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
-                                                {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500/80" />}
-                                                {status === 'error' && <AlertTriangle className="w-3 h-3 text-red-500/80" />}
-                                            </div>
-
-                                            <div className="flex-1">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <div className="flex items-center gap-2 flex-wrap flex-1">
-                                                        <span className="text-[9px] font-mono text-zinc-900 select-none">{i + 1}</span>
-                                                        <p className={`text-[12px] font-medium leading-relaxed ${status === 'done' ? 'text-zinc-500' :
-                                                            status === 'running' ? 'text-zinc-100 font-semibold' : 'text-zinc-600'}`}>
-                                                            {safeRender(st.titulo)}
-                                                        </p>
-                                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm border-none ${isAI
-                                                            ? 'bg-blue-500/10 text-blue-500/50'
-                                                            : 'bg-white/[0.04] text-zinc-700'
-                                                            }`}>
-                                                            {isAI ? 'IA' : 'VOCÊ'}
-                                                        </span>
-                                                        {status === 'running' && (
-                                                            <span className="text-[8px] text-blue-400/40 uppercase tracking-widest font-bold animate-pulse">Running</span>
-                                                        )}
-                                                    </div>
-
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleRetryAutoExecSubtask(pillarKey, task, i); }}
-                                                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.02] hover:bg-white/[0.06] text-zinc-700 hover:text-zinc-400 transition-all text-[8px] active:scale-95 uppercase tracking-wider font-bold"
-                                                        title="Refazer subtarefa">
-                                                        <RefreshCw className={`w-2 h-2 ${status === 'running' ? 'animate-spin opacity-30' : ''}`} />
-                                                        <span>Refazer</span>
-                                                    </button>
-                                                </div>
-                                                {st.descricao && status === 'waiting' && (
-                                                    <p className="text-[11px] text-zinc-700 mt-1 leading-relaxed">{safeRender(st.descricao)}</p>
-                                                )}
-                                                {st.tempo_estimado && (
-                                                    <span className="text-[9px] text-zinc-900 font-mono flex items-center gap-1 mt-1">
-                                                        <Clock className="w-2.5 h-2.5 opacity-10" />{safeRender(st.tempo_estimado)}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Inline result — shown when subtask is done */}
-                                        {status === 'done' && result && (
-                                            <div className="mx-4 mb-3 px-3 py-2">
-                                                {result.entregavel_titulo && (
-                                                    <p className="text-[10px] font-medium text-zinc-600 italic mb-1">
-                                                        {safeRender(result.entregavel_titulo)}
-                                                    </p>
-                                                )}
-                                                {result.conteudo && (
-                                                    <div className="max-h-48 overflow-y-auto scrollbar-hide">
-                                                        {isAutoExec && i === autoExecStep - 2 ? (
-                                                            <StreamingText text={safeRender(result.conteudo)} speed={6} />
-                                                        ) : (
-                                                            <MarkdownContent content={safeRender(result.conteudo)} />
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {/* Sources inline — staggered when live */}
-                                                {(result.sources?.length > 0 || result.fontes_consultadas?.length > 0) && (
-                                                    <SourceBadgeList sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]} maxVisible={4} />
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Error state */}
-                                        {status === 'error' && (
-                                            <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-red-500/5">
-                                                <p className="text-[11px] text-red-400/80">Erro ao executar esta subtarefa</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* Summary generation indicator */}
-                        {(isAutoExec && autoExecStep > autoExecTotal) || (taskExecSubtasks.length > 0 && !taskDeliverables[tid] && autoExecTotal > 0 && autoExecStep > autoExecTotal && !isAutoExec) ? (
-                            <div className="flex items-start gap-3 px-4 py-3.5 bg-blue-500/[0.02] border-t border-white/[0.02]">
-                                <div className="mt-0.5 flex-shrink-0 w-4 h-4 flex items-center justify-center">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400/60" />
-                                </div>
-                                <div className="flex-1">
-                                    <p className="text-[11px] font-semibold text-blue-400/60 uppercase tracking-wider">Gerando resumo executivo...</p>
-                                    <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed">Sintetizando os resultados para uma visão consolidada no card.</p>
-                                </div>
-                            </div>
-                        ) : null}
-
-
-
-                        {/* Footer: combined result summary */}
-                        {!isAutoExec && Object.values(taskExecStatuses).some(s => s === 'done') && (
-                            <div className="px-4 py-2.5 bg-white/[0.01] border-t border-white/[0.02]">
-                                <p className="text-[9px] text-zinc-700 italic flex items-center gap-1.5 opacity-60">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-500/40" />
-                                    {Object.values(taskExecStatuses).filter(s => s === 'done').length} subtarefas concluídas — resultado consolidado
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                )
-                }
-
-
-
                 {/* Action buttons row — hidden while executing or exec panel exists */}
                 {!isDone && !deliverable && !isAutoExec && !hasExecPanel && (
                     <div className="flex flex-wrap gap-2">
@@ -1204,12 +928,6 @@ export default function PillarWorkspace({
                     (deliverable?.sources?.length > 0 || deliverable?.fontes_consultadas?.length > 0) && (
                         <SourceBadgeList sources={[...(deliverable.sources || []), ...(deliverable.fontes_consultadas || [])]} maxVisible={4} />
                     )
-                }
-
-                {/* Subtasks — hide when exec panel already shows them */}
-                {
-                    subtasks && !isAutoExec && !hasExecPanel && <SubtaskList subtasks={subtasks} color={PILLAR_META[pillarKey]?.color || '#8b5cf6'}
-                        onExecute={() => { }} executingId={null} />
                 }
             </div >
         );
@@ -1483,7 +1201,7 @@ export default function PillarWorkspace({
                 </div>
 
                 {/* Right Column - Tasks */}
-                <div className="w-1/2 flex flex-col pt-0 relative z-30">
+                <div className="w-1/2 flex flex-col pt-0 relative z-30" style={{ backgroundColor: 'lab(5 0 0)' }}>
                     {/* Top Progress Bar - Glued to the top */}
                     {totalTasks > 0 && (
                         <div className="w-full flex-shrink-0">
@@ -1527,10 +1245,11 @@ export default function PillarWorkspace({
                     {/* Tasks List */}
                     {/* Tasks List Area */}
                     <div className="flex-1 px-3 pb-28 overflow-visible flex flex-col relative">
-                        {focusedTaskId ? (
-                            <div className="flex-1 flex flex-col h-full">
+                        {/* Subtasks Execution Area - Above */}
+                        {focusedTaskId && (
+                            <div className="flex flex-col h-full mb-4" style={{ height: '70vh', overflow: 'hidden' }}>
                                 {/* Back UI */}
-                                <div className="px-3 pb-6">
+                                <div className="px-3 pb-4">
                                     <button
                                         onClick={() => setFocusedTaskId(null)}
                                         className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-all text-[10px] uppercase tracking-widest font-bold"
@@ -1538,86 +1257,71 @@ export default function PillarWorkspace({
                                         <ArrowLeft className="w-3 h-3" /> Voltar
                                     </button>
                                 </div>
-
-                                {/* Execution Stream / Subtasks Area */}
-                                <div className="flex-1 px-1 flex flex-col-reverse">
-                                    <div className="flex flex-col gap-2">
-                                        {/* Main content area that grows upwards */}
-                                        {tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId) && (() => {
-                                            const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId)!;
-                                            const tid = focusedTaskId;
-                                            const subtasks = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
-                                            const statuses = autoExecStatuses[tid] || {};
-                                            const results = autoExecResults[tid] || {};
-                                            const isAutoExec = autoExecuting === tid;
-
-                                            return (
-                                                <div className="space-y-2">
-                                                    {subtasks.map((st: any, i: number) => {
-                                                        const status = statuses[i] || 'waiting';
-                                                        if (status === 'waiting' && !isAutoExec) return null;
-                                                        const result = results[i];
-
-                                                        return (
-                                                            <div key={i} className="p-3 bg-white/[0.02] border border-white/[0.03] rounded-lg">
-                                                                <div className="flex items-start gap-3">
-                                                                    <div className="mt-0.5">
-                                                                        {status === 'running' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" /> :
-                                                                            status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> :
-                                                                                <Circle className="w-3.5 h-3.5 text-zinc-900" />}
-                                                                    </div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="flex items-center justify-between mb-1">
-                                                                            <p className={`text-[12px] font-medium leading-relaxed ${status === 'done' ? 'text-zinc-500' : 'text-zinc-100'}`}>
-                                                                                {st.titulo}
-                                                                            </p>
-                                                                            <span className="text-[9px] text-zinc-700 font-mono shrink-0">#{i + 1}</span>
-                                                                        </div>
-                                                                        {status === 'done' && result && (
-                                                                            <div className="mt-2 pt-2 border-t border-white/[0.02]">
-                                                                                <div className="max-h-60 pr-1 text-[11px] text-zinc-400">
-                                                                                    {i === autoExecStep - 2 ? (
-                                                                                        <StreamingText text={safeRender(result.conteudo)} speed={8} />
-                                                                                    ) : (
-                                                                                        <MarkdownContent content={safeRender(result.conteudo)} />
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-
-                                                    {/* Summary generation */}
-                                                    {isAutoExec && autoExecStep > autoExecTotal && autoExecTotal > 0 && (
-                                                        <div className="p-3 flex items-center gap-2">
-                                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                                                            <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Processando...</p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-
-                                {/* Fixed Footer - The Main Task */}
-                                <div className="absolute bottom-8 sm:bottom-10 md:bottom-12 left-0 right-0 pt-4 bg-[#09090b] transform -translate-y-3 sm:-translate-y-5">
-                                    {tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId) && (() => {
-                                        const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId)!;
+                                <div className="w-full border-t border-white/[0.05] pt-4 mt-1 sm:border-t-0 sm:pl-5 sm:pt-0 flex-1 flex flex-col overflow-hidden pb-2">
+                                    {(() => {
+                                        const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId);
+                                        if (!task) return null;
                                         const tid = focusedTaskId;
                                         const isDone = done.has(task.id) || done.has(tid);
-
                                         const isAI = task.executavel_por_ia;
                                         const taskIndex = tarefas.indexOf(task);
 
                                         return (
-                                            <div className="px-1">
-                                                <div className="w-full flex flex-col ">
-                                                    <div className="w-full flex flex-col sm:items-start px-4 py-3 rounded-xl bg-white/[0.06]">
-                                                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                                            <div className="w-full flex flex-col h-full gap-4">
+                                                {/* Subtasks Result Area - ABOVE (Scrollable) */}
+                                                <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
+                                                    {/* Subtasks Result Area - ABOVE */}
+                                                    <TaskSubtasksDisplay
+                                                        key={`result_${subtasksUpdateKey}`}
+                                                        task={task}
+                                                        pillarKey={selectedPillar}
+                                                        tid={tid}
+                                                        isDone={isDone}
+                                                        subtasks={taskSubtasks[tid]}
+                                                        autoExecSubtasks={autoExecSubtasks}
+                                                        autoExecResults={autoExecResults}
+                                                        autoExecStatuses={autoExecStatuses}
+                                                        autoExecuting={autoExecuting}
+                                                        autoExecStep={autoExecStep}
+                                                        autoExecTotal={autoExecTotal}
+                                                        color={PILLAR_META[selectedPillar]?.color}
+                                                        taskDeliverables={taskDeliverables}
+                                                        expandingTask={expandingTask}
+                                                        executingTask={executingTask}
+                                                        handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
+                                                        safeRender={safeRender}
+                                                    />
+                                                </div>
+
+                                                <div className="w-full flex flex-col sm:items-start pt-3 bg-black/20 shrink-0 mt-2 rounded-xl overflow-hidden">
+                                                    {/* Subtasks Execution Area outside lighter div */}
+                                                    <div className="w-full">
+                                                        <TaskSubtasksDisplay
+                                                            key={`lines_${subtasksUpdateKey}`}
+                                                            task={task}
+                                                            pillarKey={selectedPillar}
+                                                            tid={tid}
+                                                            isDone={isDone}
+                                                            subtasks={taskSubtasks[tid]}
+                                                            autoExecSubtasks={autoExecSubtasks}
+                                                            autoExecResults={autoExecResults}
+                                                            autoExecStatuses={autoExecStatuses}
+                                                            autoExecuting={autoExecuting}
+                                                            autoExecStep={autoExecStep}
+                                                            autoExecTotal={autoExecTotal}
+                                                            color={PILLAR_META[selectedPillar]?.color}
+                                                            taskDeliverables={taskDeliverables}
+                                                            expandingTask={expandingTask}
+                                                            executingTask={executingTask}
+                                                            handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
+                                                            safeRender={safeRender}
+                                                            displayMode="lines"
+                                                        />
+                                                    </div>
+
+                                                    {/* Lighter Inner Card for Task Details */}
+                                                    <div className="w-full rounded-xl bg-white/[0.06] p-3 flex flex-col gap-2">
+                                                        <div className="flex flex-col gap-2 flex-1 min-w-0 w-full mb-1">
                                                             <div className="flex items-start gap-2 w-full text-left">
                                                                 <span className="text-[13px] font-medium text-white leading-snug">
                                                                     {task.titulo}
@@ -1643,26 +1347,107 @@ export default function PillarWorkspace({
                                                             </div>
                                                         </div>
 
-                                                        <div className="w-full border-t border-white/[0.05] pt-4 mt-1 sm:border-t-0 sm:pl-5 sm:pt-0">
-                                                            <TaskActions task={task} pillarKey={selectedPillar} tid={tid} isDone={isDone} />
+                                                        {/* AI Selector and Action Buttons */}
+                                                        <div className="w-full border-t border-white/[0.05] pt-3">
+                                                            {/* Single Row Layout */}
+                                                            <div className="flex items-center justify-between w-full">
+                                                                {/* Left Side - AI Model Selector */}
+                                                                <div className="flex items-center gap-2">
+                                                                    {isAI && (
+                                                                        <ModelSelector
+                                                                            value={selectedTaskAiModel}
+                                                                            onChange={setSelectedTaskAiModel}
+                                                                            direction="down"
+                                                                        />
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Right Side - Action Buttons */}
+                                                                <div className="flex items-center gap-1">
+                                                                    {isAI ? (
+                                                                        <>
+                                                                            {(() => {
+                                                                                const isGenerating = autoExecuting === tid && !taskSubtasks[tid];
+                                                                                const isExecutingAuto = autoExecuting === tid && !!taskSubtasks[tid];
+                                                                                return (
+                                                                                    <>
+                                                                                        {!taskSubtasks[tid] && (
+                                                                                            <button
+                                                                                                onClick={() => handleExpandSubtasks(selectedPillar, task)}
+                                                                                                disabled={autoExecuting === tid}
+                                                                                                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                                                                                title={isGenerating ? 'Gerando...' : 'Gerar subtarefas'}
+                                                                                            >
+                                                                                                {isGenerating ? (
+                                                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                                                                                                ) : (
+                                                                                                    <ListTree className="w-3.5 h-3.5 text-zinc-400" />
+                                                                                                )}
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {taskSubtasks[tid] && (
+                                                                                            <button
+                                                                                                onClick={() => handleRedoSubtasks(selectedPillar, tid, task)}
+                                                                                                disabled={autoExecuting === tid}
+                                                                                                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                                                                                title="Refazer subtarefas"
+                                                                                            >
+                                                                                                <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <button
+                                                                                            onClick={() => handleAutoExecute(selectedPillar, task)}
+                                                                                            disabled={!!autoExecuting || expandingTask === tid}
+                                                                                            className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                                                                            title={taskSubtasks[tid]
+                                                                                                ? `Executar ${(taskSubtasks[tid].subtarefas || []).length} subtarefas com IA`
+                                                                                                : 'Executar com IA'}
+                                                                                        >
+                                                                                            {isExecutingAuto ? (
+                                                                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                                                                                            ) : (
+                                                                                                <Play className="w-3.5 h-3.5 text-zinc-400" />
+                                                                                            )}
+                                                                                            {taskSubtasks[tid] && (
+                                                                                                <span className="text-[11px] text-zinc-400 font-medium">
+                                                                                                    {(taskSubtasks[tid].subtarefas || []).length} Tasks
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </button>
+                                                                                    </>
+                                                                                );
+                                                                            })()}
+                                                                        </>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => handleAITryUserTask(selectedPillar, task)}
+                                                                            disabled={!!autoExecuting || executingTask === tid}
+                                                                            className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                                                            title={executingTask === tid ? 'Tentando...' : 'Delegar para IA'}
+                                                                        >
+                                                                            {executingTask === tid ? (
+                                                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                                                                            ) : (
+                                                                                <Wand2 className="w-3.5 h-3.5 text-zinc-400" />
+                                                                            )}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         );
                                     })()}
-                                </div>
+                                </div >
                             </div>
-                        ) : (
-                            <div className="rounded-xl overflow-hidden p-1.5 h-full flex flex-col">
-                                <div className="px-3 pt-2 pb-1.5 flex items-center justify-between">
-                                    <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Tarefas</span>
-                                    <span className="text-[9px] font-mono text-zinc-700 uppercase">
-                                        {completedCount} / {totalTasks}
-                                    </span>
-                                </div>
+                        )}
 
-                                <section className="space-y-0.5 flex-1 pr-1">
+                        {/* Regular Tasks List - Below */}
+                        {!focusedTaskId && (
+                            <div className="rounded-xl overflow-hidden p-1.5 h-full flex flex-col">
+                                <section className="space-y-0.5 flex-1 pr-1 pt-2">
                                     {tarefas.map((task, i) => {
                                         const tid = `${selectedPillar}_${task.id}`;
                                         const isDone = done.has(task.id) || done.has(tid);
@@ -1682,85 +1467,24 @@ export default function PillarWorkspace({
                                         const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
                                         const subtasksCount = subtasksList.length;
 
-                                        // Dynamic Icon Logic
-                                        const tool = (task.ferramenta || '').toLowerCase();
-                                        let baseIcon = null;
-
-                                        if (tool.includes('docs') || tool.includes('document')) {
-                                            baseIcon = <img src="/docs.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Docs" />;
-                                        } else if (tool.includes('sheets') || tool.includes('planilha')) {
-                                            baseIcon = <img src="/sheets.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Sheets" />;
-                                        } else if (tool.includes('canva')) {
-                                            baseIcon = <img src="/canva.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Canva" />;
-                                        } else if (tool.includes('excel')) {
-                                            baseIcon = <img src="/excel.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Excel" />;
-                                        } else if (tool.includes('google') || tool.includes('search')) {
-                                            baseIcon = <img src="/google.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Google" />;
-                                        } else if (isAI) {
-                                            const modelInfo =
-                                                aiModel === 'gemini' ? { img: '/gemini.png', label: 'Gemini' } :
-                                                    aiModel === 'groq' ? { img: '/groq llama.png', label: 'Groq' } :
-                                                        { img: '/openrouter.png', label: 'OpenRouter' };
-                                            baseIcon = <img src={modelInfo.img} className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt={modelInfo.label} />;
-                                        } else {
-                                            baseIcon = <Circle className="w-[26px] h-[26px] text-zinc-800" />;
-                                        }
-
-                                        const taskIcon = (
-                                            <div className="relative">
-                                                {baseIcon}
-                                                {isDone && (
-                                                    <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg border-none">
-                                                        <Check className="w-2.5 h-2.5 text-white" strokeWidth={4} />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-
                                         return (
-                                            <div key={task.id} className="group">
-                                                <button
-                                                    onClick={handleTaskClick}
-                                                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-300 ease-out cursor-pointer ${isExpanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'} ${isFocused ? 'task-card-leave pointer-events-none' : ''}`}
-                                                >
-                                                    <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                                                        {taskIcon}
-                                                    </div>
-
-                                                    <div className="flex-1 min-w-0 flex flex-col items-start gap-0.5">
-                                                        <div className="flex items-center gap-2 w-full text-left">
-                                                            <span className={`text-[13px] font-medium truncate ${isExpanded ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
-                                                                {task.titulo}
-                                                            </span>
-                                                            {isDone && <Check className="w-3.5 h-3.5 text-blue-400" />}
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden text-left">
-                                                            <span className="text-[11px] text-zinc-600">#{i + 1}</span>
-                                                            <span className="text-[11px] text-zinc-600">
-                                                                {isAI ? 'Inteligência Artificial' : 'Ações Manuais'}
-                                                            </span>
-                                                            {task.prioridade && (
-                                                                <>
-                                                                    <span className="w-1 h-1 rounded-full bg-zinc-800" />
-                                                                    <span className={`text-[11px] ${task.prioridade === 'critica' ? 'text-red-500/50' : task.prioridade === 'alta' ? 'text-amber-500/50' : 'text-zinc-600'}`}>
-                                                                        {task.prioridade}
-                                                                    </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="shrink-0 text-zinc-600 group-hover:text-zinc-400 transition-colors">
-                                                        <ChevronRight className="w-3.5 h-3.5" />
-                                                    </div>
-                                                </button>
-                                            </div>
+                                            <TaskCard
+                                                key={task.id}
+                                                task={task}
+                                                index={i}
+                                                isDone={isDone}
+                                                isExpanded={isExpanded}
+                                                isFocused={isFocused}
+                                                isAI={isAI}
+                                                onClick={handleTaskClick}
+                                                aiModel={aiModel}
+                                            />
                                         );
                                     })}
                                 </section>
                             </div>
                         )}
+
                     </div>
                 </div>
             </div>

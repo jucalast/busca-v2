@@ -18,31 +18,18 @@ import time
 # Ensure we can import sibling modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from business_profiler import run_profiler
-from business_scorer import run_scorer
-from business_discovery import discover_business
-from task_assistant import run_assistant
-from chat_consultant import run_chat
-from macro_planner import generate_macro_plan
-from micro_planner import expand_task, run_task_chat
-from specialist_engine import (
-    generate_business_brief, brief_to_text,
-    generate_pillar_plan, record_action_result,
-    get_pillar_full_state, get_all_pillars_state,
-    generate_specialist_tasks, agent_execute_task,
-    check_pillar_dependencies, expand_task_subtasks,
-    ai_try_user_task, SPECIALISTS,
-)
+# ─── LAZY IMPORTS ─────────────────────────────────────────────────────────────
+# Only `database` and std-lib modules are loaded at startup.
+# Heavy AI/search modules are imported JIT inside each action block.
+# This reduces cold-start time from ~7s to < 500ms for DB-only actions.
+# ──────────────────────────────────────────────────────────────────────────────
 import database as db
-
-# Reuse search functions from cli.py
-from cli import search_duckduckgo, scrape_page, call_groq
-
 
 import concurrent.futures
 
 def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
     """Helper function to process a single category in a thread."""
+    from cli import search_duckduckgo, scrape_page
     cat_id = cat.get("id", "")
     query = queries.get(cat_id, f"{cat.get('nome', '')} {perfil_data.get('segmento', '')}")
     
@@ -108,6 +95,11 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
             restriction_instructions += "\n- O negócio JÁ usa Instagram. Não sugira 'criar presença'. Sugira OTIMIZAÇÃO."
 
     try:
+        try:
+            from llm_router import call_llm
+        except ImportError:
+            from .llm_router import call_llm
+
         prompt = f"""Você é um consultor sênior de negócios. Analise dados reais da internet e gere um relatório ÚTIL e VIÁVEL.
 
 O CLIENTE: {description}
@@ -179,6 +171,7 @@ DIMENSION_LABELS = {
 
 def run_dimension_chat(input_data: dict) -> dict:
     """AI chat focused on a specific business dimension with internet search."""
+    from cli import search_duckduckgo, scrape_page, call_groq
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         return {"reply": "Erro: chave da API nao configurada.", "sources": [], "searchQuery": ""}
@@ -289,6 +282,7 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
     Run targeted market searches in PARALLEL to speed up analysis.
     NOW: Passes restrictions to category processing for context-aware results.
     """
+    from cli import search_duckduckgo, scrape_page, call_groq
     # Check for appropriate API key based on provider
     if model_provider == "gemini":
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -384,7 +378,8 @@ def main():
         "expand-subtasks", "ai-try-user-task",
         "list-businesses", "get-business", "create-business", "save-analysis",
         "register", "login", "logout", "validate-session", "delete-business",
-        "run-pillar", "pillar-status", "get-pillar-data", "redo-pillar"
+        "run-pillar", "pillar-status", "get-pillar-data", "get-analysis-tasks", "redo-pillar",
+        "get-subtasks", "get-pillar-executions"
     ])
     parser.add_argument("--input-file", required=True, help="Path to JSON input file")
     args = parser.parse_args()
@@ -410,12 +405,21 @@ def main():
 
     # ━━━ Profile Action ━━━
     if args.action == "profile":
+        from business_profiler import run_profiler
         onboarding = input_data.get("onboarding", {})
         result = run_profiler(onboarding, model_provider=model_provider)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ Analyze Action (full pipeline) ━━━
     elif args.action == "analyze":
+        from business_profiler import run_profiler, identify_dynamic_categories
+        from business_scorer import run_scorer
+        from business_discovery import discover_business
+        from specialist_engine import (
+            generate_business_brief, generate_pillar_plan,
+            get_all_pillars_state, SPECIALISTS,
+        )
+        from cli import search_duckduckgo, scrape_page, call_groq
         profile = input_data.get("profile", {})
         region = input_data.get("region", "br-pt")
         business_id = input_data.get("business_id")  # Optional: for persistence
@@ -597,6 +601,7 @@ def main():
 
     # ━━━ Assist Action ━━━
     elif args.action == "assist":
+        from task_assistant import run_assistant
         task = input_data.get("task", {})
         profile = input_data.get("profile", {})
         result = run_assistant(task, profile)
@@ -606,6 +611,7 @@ def main():
 
     # ━━━ Chat Action (conversational consultant) ━━━
     elif args.action == "chat":
+        from chat_consultant import run_chat
         result = run_chat(input_data)
 
         print("--- CHAT_RESULT ---")
@@ -620,6 +626,7 @@ def main():
 
     # ━━━ Pillar Plan Action (specialist creates professional plan) ━━━
     elif args.action == "pillar-plan":
+        from specialist_engine import generate_business_brief, generate_pillar_plan
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         business_id = input_data.get("business_id")
@@ -667,6 +674,7 @@ def main():
 
     # ━━━ Track Result Action (record completed action + outcome) ━━━
     elif args.action == "track-result":
+        from specialist_engine import record_action_result
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -687,6 +695,7 @@ def main():
 
     # ━━━ Pillar State Action (get full pillar state: diag + plan + results + KPIs) ━━━
     elif args.action == "pillar-state":
+        from specialist_engine import get_pillar_full_state
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
 
@@ -701,6 +710,7 @@ def main():
 
     # ━━━ Specialist Tasks Action (generate tasks with AI/user classification) ━━━
     elif args.action == "specialist-tasks":
+        from specialist_engine import generate_business_brief, generate_specialist_tasks
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         business_id = input_data.get("business_id")
@@ -726,18 +736,26 @@ def main():
             # Load saved market data for context reuse
             market_data = db.get_analysis_market_data(analysis_id)
 
-            result = generate_specialist_tasks(
-                analysis_id, pillar_key, brief,
-                diagnostic=all_diags.get(pillar_key),
-                all_diagnostics=all_diags,
-                market_data=market_data,
-            )
+            # 🔁 Check if a plan already exists — avoid regenerating
+            existing_plan = db.get_pillar_plan(analysis_id, pillar_key)
+            if existing_plan and existing_plan.get("plan_data"):
+                print(f"  ✅ Found existing plan for {pillar_key}, reusing.", file=sys.stderr)
+                print("--- SPECIALIST_TASKS_RESULT ---")
+                print(json.dumps({"success": True, "plan": existing_plan["plan_data"]}, ensure_ascii=False, indent=2))
+            else:
+                result = generate_specialist_tasks(
+                    analysis_id, pillar_key, brief,
+                    diagnostic=all_diags.get(pillar_key),
+                    all_diagnostics=all_diags,
+                    market_data=market_data,
+                )
 
-            print("--- SPECIALIST_TASKS_RESULT ---")
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+                print("--- SPECIALIST_TASKS_RESULT ---")
+                print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ Specialist Execute Action (AI agent executes a task) ━━━
     elif args.action == "specialist-execute":
+        from specialist_engine import generate_business_brief, agent_execute_task
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -778,6 +796,7 @@ def main():
 
     # ━━━ All Pillars State Action (unified dashboard data) ━━━
     elif args.action == "all-pillars-state":
+        from specialist_engine import get_all_pillars_state
         analysis_id = input_data.get("analysis_id")
 
         if not analysis_id:
@@ -790,6 +809,7 @@ def main():
 
     # ━━━ Expand Subtasks Action (break task into micro-steps) ━━━
     elif args.action == "expand-subtasks":
+        from specialist_engine import generate_business_brief, expand_task_subtasks
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_data = input_data.get("task_data", {})
@@ -804,12 +824,32 @@ def main():
                 brief = generate_business_brief(profile_data)
 
             market_data = db.get_analysis_market_data(analysis_id)
-            result = expand_task_subtasks(analysis_id, pillar_key, task_data, brief, market_data=market_data)
-            print("--- EXPAND_SUBTASKS_RESULT ---")
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            task_id = task_data.get("id", "")
+
+            # Check if subtasks already exist for this task
+            existing = db.get_subtasks(analysis_id, pillar_key, task_id)
+            if existing and task_id in existing:
+                print(f"  ✅ Found existing subtasks for {task_id}, reusing.", file=sys.stderr)
+                print("--- EXPAND_SUBTASKS_RESULT ---")
+                print(json.dumps({"success": True, "subtasks": existing[task_id]}, ensure_ascii=False, indent=2))
+            else:
+                result = expand_task_subtasks(analysis_id, pillar_key, task_data, brief, market_data=market_data)
+                
+                # Save subtasks to DB
+                if result.get("success") and result.get("subtasks"):
+                    db.save_subtasks(analysis_id, pillar_key, task_id, result["subtasks"])
+                    print(f"  💾 Subtasks saved for {task_id}", file=sys.stderr)
+                elif result.get("success"):
+                    # Result is the subtasks data directly
+                    db.save_subtasks(analysis_id, pillar_key, task_id, result)
+                    print(f"  💾 Subtasks saved for {task_id}", file=sys.stderr)
+                
+                print("--- EXPAND_SUBTASKS_RESULT ---")
+                print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ AI Try User Task Action (AI attempts a user-classified task) ━━━
     elif args.action == "ai-try-user-task":
+        from specialist_engine import generate_business_brief, ai_try_user_task
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -1022,6 +1062,49 @@ def main():
                 print("--- PILLAR_STATUS_RESULT ---")
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
 
+    # ━━━ Get Analysis Tasks Action ━━━
+    elif args.action == "get-analysis-tasks":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+        
+        if not analysis_id or not pillar_key:
+            print("--- GET_ANALYSIS_TASKS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key are required"}, ensure_ascii=False))
+        else:
+            try:
+                analysis = db.get_analysis(analysis_id)
+                if analysis and "task_data" in analysis:
+                    task_data = analysis["task_data"]
+                    # Buscar tarefas do pilar específico no task_data
+                    pillar_tasks = None
+                    if isinstance(task_data, dict):
+                        # Verificar se há plan_data ou estrutura similar
+                        if "plan_data" in task_data:
+                            plan_data = task_data["plan_data"]
+                            if isinstance(plan_data, dict) and pillar_key in plan_data:
+                                pillar_tasks = plan_data[pillar_key]
+                        elif pillar_key in task_data:
+                            pillar_tasks = task_data[pillar_key]
+                    
+                    if pillar_tasks:
+                        print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                        print(json.dumps({
+                            "success": True, 
+                            "data": {
+                                "plan_data": pillar_tasks,
+                                "status": "loaded"
+                            }
+                        }, ensure_ascii=False, indent=2))
+                    else:
+                        print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                        print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
+                else:
+                    print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                    print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
+            except Exception as e:
+                print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
     # ━━━ Get Pillar Data Action ━━━
     elif args.action == "get-pillar-data":
         business_id = input_data.get("business_id")
@@ -1060,9 +1143,9 @@ def main():
             print(json.dumps({"success": False, "error": "analysis_id, pillar_key, and task_id are required"}, ensure_ascii=False))
         else:
             try:
-                # Delete execution data for this specific task
                 db.delete_specialist_execution(analysis_id, pillar_key, task_id)
                 db.delete_specialist_result(analysis_id, pillar_key, task_id)
+                db.delete_subtasks(analysis_id, pillar_key, task_id)
                 
                 print("--- REDO_TASK_RESULT ---")
                 print(json.dumps({"success": True, "message": "Task data cleared for redo"}, ensure_ascii=False))
@@ -1081,8 +1164,8 @@ def main():
             print(json.dumps({"success": False, "error": "analysis_id, pillar_key, and task_id are required"}, ensure_ascii=False))
         else:
             try:
-                # Delete only subtasks data, keep main task execution
                 db.delete_specialist_subtasks(analysis_id, pillar_key, task_id)
+                db.delete_subtasks(analysis_id, pillar_key, task_id)
                 
                 print("--- REDO_SUBTASKS_RESULT ---")
                 print(json.dumps({"success": True, "message": "Subtasks data cleared for regeneration"}, ensure_ascii=False))
@@ -1102,11 +1185,38 @@ def main():
             try:
                 # Delete all data associated with the pillar
                 db.delete_pillar_data(analysis_id, pillar_key)
+                db.delete_subtasks(analysis_id, pillar_key)
                 print("--- REDO_PILLAR_RESULT ---")
                 print(json.dumps({"success": True, "message": f"All data for pillar {pillar_key} cleared for regeneration"}, ensure_ascii=False))
             except Exception as e:
                 print("--- REDO_PILLAR_RESULT ---")
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+
+    # ━━━ Get Subtasks Action (load persisted subtasks for a pillar) ━━━
+    elif args.action == "get-subtasks":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+
+        if not analysis_id or not pillar_key:
+            print("--- GET_SUBTASKS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            subtasks = db.get_subtasks(analysis_id, pillar_key)
+            print("--- GET_SUBTASKS_RESULT ---")
+            print(json.dumps({"success": True, "subtasks": subtasks or {}}, ensure_ascii=False, indent=2))
+
+    # ━━━ Get Pillar Executions Action (load full execution content) ━━━
+    elif args.action == "get-pillar-executions":
+        analysis_id = input_data.get("analysis_id")
+        pillar_key = input_data.get("pillar_key")
+
+        if not analysis_id or not pillar_key:
+            print("--- GET_PILLAR_EXECUTIONS_RESULT ---")
+            print(json.dumps({"success": False, "error": "analysis_id and pillar_key required"}, ensure_ascii=False))
+        else:
+            executions = db.get_full_executions(analysis_id, pillar_key)
+            print("--- GET_PILLAR_EXECUTIONS_RESULT ---")
+            print(json.dumps({"success": True, "executions": executions or {}}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

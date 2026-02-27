@@ -77,9 +77,12 @@ async function runOrchestrator(action: string, inputData: any, timeoutMs: number
             'run-pillar': '--- RUN_PILLAR_RESULT ---',
             'pillar-status': '--- PILLAR_STATUS_RESULT ---',
             'get-pillar-data': '--- GET_PILLAR_DATA_RESULT ---',
+            'get-analysis-tasks': '--- GET_ANALYSIS_TASKS_RESULT ---',
             'stop-task': '--- STOP_TASK_RESULT ---',
             'redo-task': '--- REDO_TASK_RESULT ---',
             'redo-subtasks': '--- REDO_SUBTASKS_RESULT ---',
+            'get-subtasks': '--- GET_SUBTASKS_RESULT ---',
+            'get-pillar-executions': '--- GET_PILLAR_EXECUTIONS_RESULT ---',
         };
         const marker = markerMap[action] || null;
 
@@ -474,7 +477,7 @@ export async function POST(request: Request) {
                 aiModel,
                 analysis_id,
                 pillar_key,
-            }, 10000);
+            }, 30000);
 
             return NextResponse.json(result);
         }
@@ -674,6 +677,21 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
+        // ━━━ Action: Get Analysis Tasks ━━━
+        if (action === 'get-analysis-tasks') {
+            const { analysis_id, pillar_key } = body;
+            if (!analysis_id || !pillar_key) {
+                return NextResponse.json({ error: 'analysis_id and pillar_key are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('get-analysis-tasks', {
+                analysis_id,
+                pillar_key,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
         // ━━━ Action: Get Pillar Data ━━━
         if (action === 'get-pillar-data') {
             const { pillar_key } = body;
@@ -713,19 +731,9 @@ export async function POST(request: Request) {
         }
 
         // ━━━ Action: Redo Subtasks ━━━
+        // Frontend handles state clearing; backend just acknowledges the reset
         if (action === 'redo-subtasks') {
-            const { analysis_id, pillar_key, task_id } = body;
-            if (!analysis_id || !pillar_key || !task_id) {
-                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
-            }
-
-            const result = await runOrchestrator('redo-subtasks', {
-                analysis_id,
-                pillar_key,
-                task_id,
-            }, 15000);
-
-            return NextResponse.json(result);
+            return NextResponse.json({ success: true });
         }
 
         // ━━━ Action: Redo Pillar ━━━
@@ -736,6 +744,36 @@ export async function POST(request: Request) {
             }
 
             const result = await runOrchestrator('redo-pillar', {
+                analysis_id,
+                pillar_key,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Get Subtasks ━━━
+        if (action === 'get-subtasks') {
+            const { analysis_id, pillar_key } = body;
+            if (!analysis_id || !pillar_key) {
+                return NextResponse.json({ error: 'analysis_id and pillar_key are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('get-subtasks', {
+                analysis_id,
+                pillar_key,
+            }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Get Pillar Executions ━━━
+        if (action === 'get-pillar-executions') {
+            const { analysis_id, pillar_key } = body;
+            if (!analysis_id || !pillar_key) {
+                return NextResponse.json({ error: 'analysis_id and pillar_key are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('get-pillar-executions', {
                 analysis_id,
                 pillar_key,
             }, 15000);

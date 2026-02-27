@@ -9,6 +9,7 @@ export interface PillarWorkspaceProps {
     onRedo: () => void;
     onStateChange?: (pillarStates: Record<string, any>, completedTasks: Record<string, Set<string>>) => void;
     initialActivePillar?: string | null;
+    aiModel?: any;
 }
 
 export interface TaskItem {

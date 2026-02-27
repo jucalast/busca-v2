@@ -31,9 +31,10 @@ const MODEL_OPTIONS = [
 interface ModelSelectorProps {
     value: string;
     onChange: (value: string) => void;
+    direction?: 'up' | 'down';
 }
 
-export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
+export default function ModelSelector({ value, onChange, direction = 'down' }: ModelSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
 
@@ -58,26 +59,26 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
             {/* Trigger */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2.5 h-9 px-4 rounded-lg bg-transparent hover:bg-white/5 hover:ring-1 hover:ring-zinc-600 transition-all duration-200 cursor-pointer"
+                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer"
             >
                 <Image
                     src={selected.logo}
                     alt={selected.label}
-                    width={20}
-                    height={20}
+                    width={16}
+                    height={16}
                     className="rounded shrink-0 object-contain"
                 />
-                <span className="text-[13px] font-medium text-zinc-300">{selected.label}</span>
+                <span className="text-[11px] font-medium text-zinc-300">{selected.label}</span>
                 <ChevronDown
-                    className={`w-3 h-3 text-zinc-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                    className={`w-2.5 h-2.5 text-zinc-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                 />
             </button>
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute top-full right-0 mt-1.5 z-50 min-w-[240px] p-1.5 bg-[#111113] rounded-xl shadow-2xl shadow-black/70 overflow-hidden">
-                    <div className="px-3 pt-2 pb-1.5">
-                        <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">Modelo</span>
+                <div className={`absolute ${direction === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} right-0 z-50 min-w-[200px] p-1 bg-[#111113] rounded-lg shadow-xl shadow-black/70 overflow-hidden`}>
+                    <div className="px-2 pt-1.5 pb-1">
+                        <span className="text-[9px] font-semibold text-zinc-600 uppercase tracking-wider">Modelo</span>
                     </div>
 
                     {MODEL_OPTIONS.map((opt) => {
@@ -86,26 +87,26 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
                             <button
                                 key={opt.value}
                                 onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer ${active ? 'bg-zinc-800' : 'hover:bg-[#1b1b1f]'
+                                className={`w-full flex items-center gap-2 px-2 py-2 rounded transition-all duration-150 cursor-pointer ${active ? 'bg-zinc-800' : 'hover:bg-[#1b1b1f]'
                                     }`}
                             >
                                 <Image
                                     src={opt.logo}
                                     alt={opt.label}
-                                    width={22}
-                                    height={22}
+                                    width={18}
+                                    height={18}
                                     className="rounded shrink-0 object-contain"
                                 />
 
-                                <div className="flex-1 flex items-center gap-2 text-left min-w-0 whitespace-nowrap">
-                                    <span className={`text-[13px] font-medium ${active ? 'text-white' : 'text-zinc-400'}`}>
+                                <div className="flex-1 flex items-center gap-1.5 text-left min-w-0 whitespace-nowrap">
+                                    <span className={`text-[11px] font-medium ${active ? 'text-white' : 'text-zinc-400'}`}>
                                         {opt.label}
                                     </span>
-                                    <span className="text-[11px] text-zinc-600">{opt.sub}</span>
+                                    <span className="text-[10px] text-zinc-600">{opt.sub}</span>
                                 </div>
 
                                 {active && (
-                                    <Check className="w-3.5 h-3.5 shrink-0" style={{ color: opt.accent }} />
+                                    <Check className="w-3 h-3 shrink-0" style={{ color: opt.accent }} />
                                 )}
                             </button>
                         );
