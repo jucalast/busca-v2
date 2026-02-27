@@ -25,7 +25,11 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cli import call_groq, search_duckduckgo, scrape_page
+from cli import search_duckduckgo, scrape_page
+try:
+    from llm_router import call_llm
+except ImportError:
+    from .llm_router import call_llm
 import database as db
 
 # ═══════════════════════════════════════════════════════════════════
@@ -392,6 +396,7 @@ def generate_pillar_plan(
     brief: dict,
     diagnostic: dict = None,
     all_diagnostics: dict = None,
+    model_provider: str = "groq",
 ) -> dict:
     """
     A specialist creates a professional ACTION PLAN for their pillar.
@@ -404,10 +409,8 @@ def generate_pillar_plan(
     - Execution history (Layer 5)
     - Fresh web research (RAG)
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
-
+    # Removed GROQ_API_KEY check since call_llm handles keys per provider
+    
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -536,11 +539,11 @@ JSON OBRIGATÓRIO:
 Retorne APENAS o JSON."""
 
     try:
-        result = call_groq(
-            api_key, prompt,
+        result = call_llm(
+            provider=model_provider,
+            prompt=prompt,
             temperature=0.3,
-            model="llama-3.3-70b-versatile",
-            force_json=True
+            json_mode=True
         )
         result["sources"] = sources
         result["pillar_key"] = pillar_key
@@ -554,11 +557,12 @@ Retorne APENAS o JSON."""
         print(f"  ❌ Specialist plan error for {pillar_key}: {e}", file=sys.stderr)
         # Fallback to smaller model
         try:
-            result = call_groq(
-                api_key, prompt,
+            result = call_llm(
+                provider=model_provider,
+                prompt=prompt,
                 temperature=0.3,
-                model="llama-3.1-8b-instant",
-                force_json=True
+                json_mode=True,
+                prefer_small=True
             )
             result["sources"] = sources
             result["pillar_key"] = pillar_key
@@ -732,6 +736,114 @@ REQUIRES_USER_ACTION = [
 ]
 
 
+def _should_search_for_task(task_title: str, task_desc: str, market_context: str) -> bool:
+    """
+    Intelligent decision: when to search for specific task data.
+    Combines context length with task specificity analysis.
+    """
+    # Rule 1: Always search if context is thin (original logic)
+    if len(market_context) < 500:
+        return True
+    
+    # Rule 2: Search for specific task types that need fresh data
+    specific_keywords = [
+        "pesquisar", "analisar", "benchmark", "concorrência", "tendências",
+        "estatísticas", "dados", "mercado", "estudo", "pesquisa de mercado",
+        "análise competitiva", "oportunidades", "cenário", "perfil", "persona"
+    ]
+    
+    title_lower = task_title.lower()
+    desc_lower = task_desc.lower()
+    
+    # Check if task contains specific research keywords
+    for keyword in specific_keywords:
+        if keyword in title_lower or keyword in desc_lower:
+            return True
+    
+    # Rule 3: Search for tasks mentioning specific industries, tools, or methodologies
+    industry_keywords = [
+        "indústria", "setor", "segmento", "nichos", "público-alvo",
+        "ferramentas", "plataformas", "software", "tecnologia", "métodos"
+    ]
+    
+    for keyword in industry_keywords:
+        if keyword in title_lower or keyword in desc_lower:
+            return True
+    
+    # Rule 4: Search for tasks asking for current/trending information
+    time_keywords = [
+        "2025", "atual", "recente", "tendências", "futuro", "próximos",
+        "hoje", "agora", "moderno", "inovação"
+    ]
+    
+    for keyword in time_keywords:
+        if keyword in title_lower or keyword in desc_lower:
+            return True
+    
+    return False
+
+
+def _build_smart_search_query(task_title: str, task_desc: str, segmento: str, pillar_key: str) -> str:
+    """
+    Builds intelligent search queries based on task characteristics.
+    """
+    # Extract key concepts from task
+    title_words = task_title.lower().split()
+    desc_words = task_desc.lower().split()
+    
+    # Identify main action verbs
+    action_verbs = ["pesquisar", "analisar", "definir", "criar", "desenvolver", "estabelecer"]
+    main_action = "analisar"  # default
+    
+    for verb in action_verbs:
+        if verb in title_words or verb in desc_words:
+            main_action = verb
+            break
+    
+    # Identify core subject
+    # Remove common words to focus on substance
+    stop_words = {"o", "a", "os", "as", "de", "do", "da", "em", "para", "com", "sem", "um", "uma"}
+    title_keywords = [w for w in title_words if w not in stop_words and len(w) > 2]
+    desc_keywords = [w for w in desc_words if w not in stop_words and len(w) > 2]
+    
+    # Combine keywords, prioritizing title
+    keywords = list(dict.fromkeys(title_keywords + desc_keywords))  # remove duplicates, keep order
+    core_subjects = keywords[:3]  # top 3 most relevant
+    
+    # Build contextual query based on pillar
+    pillar_contexts = {
+        "publico_alvo": ["público-alvo", "persona", "cliente ideal", "segmentação"],
+        "branding": ["branding", "marca", "identidade", "posicionamento"],
+        "identidade_visual": ["identidade visual", "logo", "design", "cores"],
+        "canais_venda": ["canais de venda", "vendas", "distribuição", "e-commerce"],
+        "trafego_organico": ["tráfego orgânico", "seo", "conteúdo", "blog"],
+        "trafego_pago": ["tráfego pago", "anúncios", "mídia paga", "performance"],
+        "processo_vendas": ["processo de vendas", "vendas", "conversão", "funil"]
+    }
+    
+    context_terms = pillar_contexts.get(pillar_key, [])
+    
+    # Assemble smart query
+    query_parts = []
+    
+    # Add main action + core subject
+    if core_subjects:
+        query_parts.append(f"{main_action} {' '.join(core_subjects)}")
+    
+    # Add segmento if available
+    if segmento:
+        query_parts.append(segmento)
+    
+    # Add pillar context
+    if context_terms:
+        query_parts.append(context_terms[0])  # most relevant context term
+    
+    # Add temporal and quality indicators
+    query_parts.extend(["2025", "dados", "estatísticas"])
+    
+    return " ".join(query_parts)
+
+
 def _extract_market_for_pillar(pillar_key: str, market_data: dict) -> str:
     """Extract relevant market research data for a specific pillar.
     Reuses the same relevance scoring as the scorer to ensure consistency."""
@@ -786,6 +898,7 @@ def generate_specialist_tasks(
     diagnostic: dict = None,
     all_diagnostics: dict = None,
     market_data: dict = None,
+    model_provider: str = "groq",
 ) -> dict:
     """
     The specialist creates TASKS for their pillar, classifying each as:
@@ -795,9 +908,7 @@ def generate_specialist_tasks(
     Uses saved market research data from Phase 1 as primary context.
     RAG search is supplemental — only runs if market data is thin.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
+    # Removed GROQ_API_KEY check since call_llm handles keys per provider
 
     print(f"DEBUG: generate_specialist_tasks(analysis_id={analysis_id}, pillar_key={pillar_key})", file=sys.stderr)
     
@@ -899,9 +1010,12 @@ def generate_specialist_tasks(
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
 
-    if total_context_len < 500:
-        search_query = f"{dim_cfg.get('label', pillar_key)} {segmento} como implementar passo a passo 2025"
-        print(f"  🔍 Supplemental search (thin context: {total_context_len} chars): {search_query[:80]}...", file=sys.stderr)
+    # Smart supplemental search based on task specificity and context richness
+    pillar_label = dim_cfg.get('label', pillar_key)
+    if _should_search_for_task(pillar_label, f"Plano de ação para o pilar de {pillar_label}", market_context + cross_pillar):
+        # Use smart query building for task-specific research
+        search_query = _build_smart_search_query(pillar_label, f"Estratégias para {pillar_label}", segmento, pillar_key)
+        print(f"  🔍 Smart plan generation search: {search_query[:80]}...", file=sys.stderr)
         search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
         for i, r in enumerate(search_results or []):
             url = r.get("href", "")
@@ -912,7 +1026,7 @@ def generate_specialist_tasks(
                 if content:
                     research += f"Detalhes: {content[:2000]}\n"
     else:
-        print(f"  ✅ Cascade context rico ({total_context_len} chars: market={len(market_context)}, upstream={len(cross_pillar)}) — sem busca web", file=sys.stderr)
+        print(f"  ✅ Contexto de planejamento rico ({total_context_len} chars: market={len(market_context)}, upstream={len(cross_pillar)}) — sem busca web", file=sys.stderr)
 
     # Combine research context
     all_research = ""
@@ -1030,11 +1144,11 @@ JSON OBRIGATÓRIO:
 Retorne APENAS o JSON."""
 
     try:
-        result = call_groq(
-            api_key, prompt,
+        result = call_llm(
+            provider=model_provider,
+            prompt=prompt,
             temperature=0.3,
-            model="llama-3.3-70b-versatile",
-            force_json=True
+            json_mode=True
         )
         result["sources"] = sources
         result["pillar_key"] = pillar_key
@@ -1054,11 +1168,12 @@ Retorne APENAS o JSON."""
     except Exception as e:
         print(f"  ❌ Task generation error for {pillar_key}: {e}", file=sys.stderr)
         try:
-            result = call_groq(
-                api_key, prompt,
+            result = call_llm(
+                provider=model_provider,
+                prompt=prompt,
                 temperature=0.3,
-                model="llama-3.1-8b-instant",
-                force_json=True
+                json_mode=True,
+                prefer_small=True
             )
             result["sources"] = sources
             result["pillar_key"] = pillar_key
@@ -1114,6 +1229,7 @@ def agent_execute_task(
     all_diagnostics: dict = None,
     market_data: dict = None,
     previous_results: list = None,
+    model_provider: str = "groq",
 ) -> dict:
     """
     The AI specialist EXECUTES a task — generates the actual deliverable.
@@ -1124,9 +1240,7 @@ def agent_execute_task(
     
     Uses saved market research + targeted RAG search for task-specific details.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
+    # Removed GROQ_API_KEY check since call_llm handles keys per provider
 
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
@@ -1250,6 +1364,7 @@ JSON:
 {{
     "entregavel_titulo": "Título do entregável",
     "entregavel_tipo": "texto|estrategia|analise|calendario|script|template|plano",
+    "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Use um tom conversacional e pessoal (ex: 'pelo o que eu analisei...', 'que legal essa informação...'). Mínimo 4 linhas de texto corrido.",
     "conteudo": "O ENTREGÁVEL COMPLETO aqui — texto formatado, detalhado e pronto para uso",
     "como_aplicar": "Instruções de como o usuário deve aplicar este entregável",
     "proximos_passos": "O que fazer depois que aplicar",
@@ -1260,12 +1375,42 @@ JSON:
 Retorne APENAS o JSON."""
 
     try:
-        result = call_groq(
-            api_key, prompt,
+        # DEBUG: Log prompt length and research size
+        print(f"  📝 Prompt length: {len(prompt)} chars | Research length: {len(all_research)} chars", file=sys.stderr)
+        print(f"  📄 Research preview: {all_research[:300]}...", file=sys.stderr)
+        
+        result = call_llm(
+            provider=model_provider,
+            prompt=prompt,
             temperature=0.4,
-            model="llama-3.3-70b-versatile",
-            force_json=True
+            json_mode=True
         )
+        
+        # Validate result has minimum required content
+        content = result.get("conteudo", "")
+        content_len = len(content)
+        print(f"  📤 Generated content length: {content_len} chars", file=sys.stderr)
+        
+        if content_len < 50:
+            print(f"  ⚠️ Content too short! Retrying with fallback model...", file=sys.stderr)
+            # Try with fallback model
+            result = call_llm(
+                provider=model_provider,
+                prompt=prompt,
+                temperature=0.3,
+                json_mode=True,
+                prefer_small=True
+            )
+            content = result.get("conteudo", "")
+            content_len = len(content)
+            print(f"  📤 Fallback content length: {content_len} chars", file=sys.stderr)
+        
+        if content_len < 200:
+            # Ensure content is string before slicing
+            content_str = str(content) if content is not None else ""
+            print(f"  ⚠️ Content seems short! Preview: {content_str[:200]}", file=sys.stderr)
+
+        # Add required metadata
         result["task_id"] = task_id
         result["sources"] = sources
 
@@ -1281,13 +1426,23 @@ Retorne APENAS o JSON."""
         return {"success": True, "execution": result}
 
     except Exception as e:
+        error_msg = str(e)
         print(f"  ❌ Agent execution error: {e}", file=sys.stderr)
+        
+        # Check for rate limit errors
+        if any(keyword in error_msg.lower() for keyword in ['rate limit', 'tpd', '429', 'limit exceeded', 'quota']):
+            return {
+                "success": False, 
+                "error": f"Rate limit atingido. Tente outro modelo: {error_msg[:200]}"
+            }
+        
         try:
-            result = call_groq(
-                api_key, prompt,
+            result = call_llm(
+                provider=model_provider,
+                prompt=prompt,
                 temperature=0.4,
-                model="llama-3.1-8b-instant",
-                force_json=True
+                json_mode=True,
+                prefer_small=True
             )
             result["task_id"] = task_id
             result["sources"] = sources
@@ -1358,16 +1513,13 @@ def expand_task_subtasks(
     task_data: dict,
     brief: dict,
     market_data: dict = None,
+    model_provider: str = "groq",
 ) -> dict:
     """
     Break a single task into 3-6 concrete subtasks.
     Each subtask is small enough for the AI to execute in one shot.
     This is the 'macro plan' concept applied at task level.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
-
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -1390,13 +1542,18 @@ def expand_task_subtasks(
     market_context = _extract_market_for_pillar(pillar_key, market_data)
     sources = []
 
-    # Supplemental: only search if market data is thin
+    # Smart supplemental search based on task specificity
     research = ""
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
-    if len(market_context) < 500:
-        search_query = f"{task_title} {segmento} passo a passo detalhado 2025"
-        print(f"  🔍 Subtask expansion search: {search_query[:80]}...", file=sys.stderr)
+    
+    # Enhanced search logic: considers both context length AND task specificity
+    needs_specific_search = _should_search_for_task(task_title, task_desc, market_context)
+    
+    if needs_specific_search:
+        # Build intelligent query based on task type
+        search_query = _build_smart_search_query(task_title, task_desc, segmento, pillar_key)
+        print(f"  🔍 Smart subtask search: {search_query[:80]}...", file=sys.stderr)
         search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
         for i, r in enumerate(search_results or []):
             url = r.get("href", "")
@@ -1469,22 +1626,18 @@ JSON OBRIGATÓRIO:
 Retorne APENAS o JSON."""
 
     try:
-        result = call_groq(
-            api_key, prompt,
+        from llm_router import call_llm
+        result = call_llm(
+            provider=model_provider,
+            prompt=prompt,
             temperature=0.3,
-            model="llama-3.3-70b-versatile",
-            force_json=True
+            json_mode=True
         )
         result["sources"] = sources
         return {"success": True, "subtasks": result}
     except Exception as e:
         print(f"  ❌ Subtask expansion error: {e}", file=sys.stderr)
-        try:
-            result = call_groq(api_key, prompt, temperature=0.3, model="llama-3.1-8b-instant", force_json=True)
-            result["sources"] = sources
-            return {"success": True, "subtasks": result}
-        except Exception as e2:
-            return {"success": False, "error": f"Erro ao expandir subtarefas: {str(e2)[:200]}"}
+        return {"success": False, "error": f"Erro ao expandir subtarefas: {str(e)[:200]}"}
 
 
 def ai_try_user_task(
@@ -1495,16 +1648,13 @@ def ai_try_user_task(
     brief: dict,
     all_diagnostics: dict = None,
     market_data: dict = None,
+    model_provider: str = "groq",
 ) -> dict:
     """
     AI attempts a task that was classified as user-required.
     It generates the best possible deliverable it CAN produce,
     clearly stating what the user still needs to do manually.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
-
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -1531,12 +1681,20 @@ def ai_try_user_task(
             sources.extend(cat.get("fontes", [])[:2])
         sources = list(dict.fromkeys(sources))
 
-    # Task-specific RAG search
+    # Smart task-specific RAG search
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
-    search_query = f"{task_title} {segmento} guia completo exemplo 2025"
-    print(f"  🤖 AI trying user task: {task_title[:60]}...", file=sys.stderr)
-    search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
+    
+    # Use intelligent search decision
+    if _should_search_for_task(task_title, task_desc, market_context):
+        search_query = _build_smart_search_query(task_title, task_desc, segmento, pillar_key)
+        print(f"  🤖 Smart AI task attempt: {search_query[:80]}...", file=sys.stderr)
+        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
+    else:
+        # Fallback to simple query for non-specific tasks
+        search_query = f"{task_title} {segmento} guia completo exemplo 2025"
+        print(f"  🤖 AI trying user task: {task_title[:60]}...", file=sys.stderr)
+        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
 
     research = ""
     for i, r in enumerate(search_results or []):
@@ -1583,6 +1741,7 @@ JSON:
 {{
     "entregavel_titulo": "O que a IA produziu",
     "entregavel_tipo": "texto|guia|pesquisa|briefing|plano|template",
+    "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Use um tom conversacional e pessoal (ex: 'pelo o que eu analisei...', 'que legal essa informação...'). Mínimo 4 linhas de texto corrido.",
     "conteudo": "ENTREGÁVEL COMPLETO — o máximo que a IA consegue fazer",
     "passos_restantes_usuario": [
         "Passo 1 que o usuário precisa fazer manualmente",
@@ -1596,15 +1755,28 @@ JSON:
 Retorne APENAS o JSON."""
 
     try:
-        result = call_groq(
-            api_key, prompt,
+        # DEBUG: Log prompt length and research size
+        print(f"  📝 AI Try Prompt length: {len(prompt)} chars | Research length: {len(all_research)} chars", file=sys.stderr)
+        print(f"  📄 AI Try Research preview: {all_research[:300]}...", file=sys.stderr)
+        from llm_router import call_llm
+        result = call_llm(
+            provider=model_provider,
+            prompt=prompt,
             temperature=0.4,
-            model="llama-3.3-70b-versatile",
-            force_json=True
+            json_mode=True
         )
         result["task_id"] = task_id
         result["sources"] = sources
         result["was_user_task"] = True
+
+        # DEBUG: Log generated content length
+        content = result.get("conteudo", "")
+        content_len = len(content)
+        print(f"  📤 AI Try Generated content length: {content_len} chars", file=sys.stderr)
+        if content_len < 200:
+            # Ensure content is string before slicing
+            content_str = str(content) if content is not None else ""
+            print(f"  ⚠️ AI Try Content seems short! Preview: {content_str[:200]}", file=sys.stderr)
 
         db.save_execution_result(
             analysis_id, pillar_key, task_id, task_title,
@@ -1617,17 +1789,4 @@ Retorne APENAS o JSON."""
 
     except Exception as e:
         print(f"  ❌ AI try user task error: {e}", file=sys.stderr)
-        try:
-            result = call_groq(api_key, prompt, temperature=0.4, model="llama-3.1-8b-instant", force_json=True)
-            result["task_id"] = task_id
-            result["sources"] = sources
-            result["was_user_task"] = True
-            db.save_execution_result(
-                analysis_id, pillar_key, task_id, task_title,
-                status="ai_partial", outcome=result.get("entregavel_titulo", "IA tentou executar"),
-                business_impact=result.get("impacto_estimado", ""),
-                result_data=result
-            )
-            return {"success": True, "execution": result}
-        except Exception as e2:
-            return {"success": False, "error": f"Erro: {str(e2)[:200]}"}
+        return {"success": False, "error": f"Erro: {str(e)[:200]}"}

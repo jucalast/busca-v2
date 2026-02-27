@@ -1,5 +1,5 @@
 import React from 'react';
-import { getServerSession } from 'next-auth';
+import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import { runOrchestrator } from '@/lib/orchestrator';
 import AnalysisClientWrapper from '../ClientWrapper';
@@ -8,7 +8,7 @@ import AnalysisClientWrapper from '../ClientWrapper';
 export const dynamic = 'force-dynamic';
 
 export default async function AnalysisSlugPage({ params }: { params: Promise<{ businessId: string; slug: string }> }) {
-    const session = await getServerSession();
+    const session = await auth();
 
     if (!session || !session.user) {
         redirect('/');

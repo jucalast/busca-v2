@@ -7,6 +7,93 @@ import crypto from 'crypto';
 
 const execPromise = util.promisify(exec);
 
+type CacheRecord = {
+    expiresAt: number;
+    data: any;
+};
+
+const CACHEABLE_ACTIONS = new Set([
+    'get-business',
+    'list-businesses',
+    'pillar-state',
+    'all-pillars-state',
+    'get-pillar-data',
+    'get-analysis-tasks',
+    'get-subtasks',
+    'get-pillar-executions',
+]);
+
+const CACHE_INVALIDATING_ACTIONS = new Set([
+    'save-analysis',
+    'create-business',
+    'delete-business',
+    'analyze',
+    'redo-pillar',
+    'redo-task',
+    'redo-subtasks',
+    'specialist-tasks',
+    'specialist-execute',
+    'ai-try-user-task',
+    'expand-subtasks',
+    'run-pillar',
+    'track-result',
+]);
+
+const DEFAULT_CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutes
+const CACHE_TTL_MS = Number(process.env.GROWTH_CACHE_TTL_MS || DEFAULT_CACHE_TTL_MS);
+
+const orchestratorCache = new Map<string, CacheRecord>();
+
+type RunOrchestratorOptions = {
+    timeoutMs?: number;
+    skipCache?: boolean;
+};
+
+function normalizeOptions(optionsOrTimeout?: number | RunOrchestratorOptions): RunOrchestratorOptions {
+    if (typeof optionsOrTimeout === 'number') {
+        return { timeoutMs: optionsOrTimeout };
+    }
+    return optionsOrTimeout || {};
+}
+
+function buildCacheKey(action: string, inputData: any): string | null {
+    try {
+        return `${action}:${JSON.stringify(inputData)}`;
+    } catch (err) {
+        console.warn('[Orchestrator] Failed to build cache key:', err);
+        return null;
+    }
+}
+
+function getCachedResult(action: string, inputData: any, skipCache: boolean) {
+    if (skipCache || !CACHEABLE_ACTIONS.has(action)) return null;
+    const key = buildCacheKey(action, inputData);
+    if (!key) return null;
+    const cached = orchestratorCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt < Date.now()) {
+        orchestratorCache.delete(key);
+        return null;
+    }
+    return cached.data;
+}
+
+function saveCachedResult(action: string, inputData: any, result: any, skipCache: boolean) {
+    if (skipCache || !CACHEABLE_ACTIONS.has(action)) return;
+    const key = buildCacheKey(action, inputData);
+    if (!key) return;
+    orchestratorCache.set(key, {
+         data: result,
+         expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+}
+
+function invalidateCacheIfNeeded(action: string) {
+    if (CACHE_INVALIDATING_ACTIONS.has(action)) {
+        orchestratorCache.clear();
+    }
+}
+
 /**
  * Write input JSON to a temp file so we don't hit Windows command-line limits.
  * Returns the temp file path.
@@ -23,15 +110,29 @@ export function writeTempInput(data: any): string {
  * Run the growth orchestrator with given action and input data.
  * Uses temp files to pass large JSON payloads safely on Windows.
  */
-export async function runOrchestrator(action: string, inputData: any, timeoutMs: number = 300000): Promise<any> {
+export async function runOrchestrator(
+    action: string,
+    inputData: any,
+    optionsOrTimeout?: number | RunOrchestratorOptions,
+): Promise<any> {
+    const options = normalizeOptions(optionsOrTimeout);
+    const timeoutMs = options.timeoutMs ?? 300000;
+    const skipCache = options.skipCache ?? false;
+
+    const cached = getCachedResult(action, inputData, skipCache);
+    if (cached) {
+        console.log(`[Growth Orchestrator Server] Cache hit: ${action}`);
+        return cached;
+    }
+
     const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
     const scriptPath = path.join(process.cwd(), 'backend', 'src', 'search_summarizer', 'growth_orchestrator.py');
     const env = { ...process.env, PYTHONIOENCODING: 'utf-8', GLOBAL_AI_MODEL: inputData.aiModel || 'groq' };
-
-    // Write input to temp file
-    const tmpPath = writeTempInput(inputData);
+    let tmpPath: string | null = null;
 
     try {
+        // Write input to temp file only when necessary
+        tmpPath = writeTempInput(inputData);
         const cmd = `${pythonCommand} "${scriptPath}" --action ${action} --input-file "${tmpPath}"`;
         console.log(`[Growth Orchestrator Server] Running: ${action} (timeout: ${timeoutMs}ms)`);
 
@@ -85,21 +186,29 @@ export async function runOrchestrator(action: string, inputData: any, timeoutMs:
             const markerIdx = stdout.indexOf(marker);
             if (markerIdx !== -1) {
                 const jsonStr = stdout.substring(markerIdx + marker.length).trim();
-                return JSON.parse(jsonStr);
+                const result = JSON.parse(jsonStr);
+                invalidateCacheIfNeeded(action);
+                saveCachedResult(action, inputData, result, skipCache);
+                return result;
             }
         }
 
         // Fallback: find last complete JSON object in output
         const jsonMatch = stdout.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
+            const result = JSON.parse(jsonMatch[0]);
+            invalidateCacheIfNeeded(action);
+            saveCachedResult(action, inputData, result, skipCache);
+            return result;
         }
 
         throw new Error(`No JSON found in output. stdout preview: ${stdout.substring(0, 300)}`);
 
     } finally {
         // Clean up temp file
-        try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        if (tmpPath) {
+            try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        }
     }
 }
 

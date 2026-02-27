@@ -5,18 +5,13 @@ import time
 from groq import Groq
 from openai import OpenAI
 import warnings
-warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 
 try:
-    import google.genai as genai
+    from google import genai
     HAS_NEW_GENAI = True
 except ImportError:
-    try:
-        import google.generativeai as genai
-        HAS_NEW_GENAI = False
-    except ImportError:
-        genai = None
-        HAS_NEW_GENAI = False
+    genai = None
+    HAS_NEW_GENAI = False
 
 from dotenv import load_dotenv
 
@@ -151,8 +146,8 @@ def call_groq(api_key: str, prompt: str, temperature: float = 0.3, max_retries: 
 
 def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, max_retries: int = 4):
     """Executes call via Google Gemini API with aggressive retry for 429 rate limits."""
-    if not genai:
-        raise RuntimeError("A biblioteca google.genai não está instalada.")
+    if not HAS_NEW_GENAI:
+        raise RuntimeError("A biblioteca google-genai não está instalada.")
     
     import re as _re
     
@@ -162,8 +157,13 @@ def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: 
                 return _call_gemini_once(api_key, prompt, temperature, json_mode, messages, model_name=model_name)
             except Exception as e:
                 err_str = str(e)
-                is_429 = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                is_429 = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()
+                is_404 = "404" in err_str or "not found" in err_str.lower()
                 
+                if is_404:
+                     print(f"  ⚠️ Modelo {model_name} não encontrado (404). Trocando modelo...", file=sys.stderr)
+                     break # Try next model
+                     
                 if is_429 and _is_daily_quota(err_str):
                     # Daily quota exhausted → switch model immediately
                     print(f"  ⚠️ Cota diária do {model_name} esgotada. Trocando modelo...", file=sys.stderr)
@@ -187,79 +187,42 @@ def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: 
     raise Exception("Todos os modelos Gemini esgotaram a cota ou estão indisponíveis.")
 
 
-def _call_gemini_once(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, model_name: str = "gemini-2.5-flash"):
+def _call_gemini_once(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, model_name: str = "gemini-2.0-flash"):
     """Single Gemini API call (no retries)."""
-    if not genai:
-        raise RuntimeError("A biblioteca google.genai não está instalada.")
+    if not HAS_NEW_GENAI:
+        raise RuntimeError("A biblioteca google-genai não está instalada corretamente.")
     
-    # Check if we're using the new google.genai or old google.generativeai
-    if HAS_NEW_GENAI:
-        # New google.genai API
-        client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key)
+    
+    # Configure generation
+    config = {
+        "temperature": temperature,
+    }
+    
+    if json_mode:
+        config["response_mime_type"] = "application/json"
+    
+    if messages:
+        # Chat mode
+        contents = []
+        for m in messages:
+            role = "user" if m["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": m["content"]}]})
         
-        # Configure generation
-        config = {
-            "temperature": temperature,
-        }
-        
-        if json_mode:
-            config["response_mime_type"] = "application/json"
-        
-        if messages:
-            # Chat mode
-            contents = []
-            for m in messages:
-                role = "user" if m["role"] == "user" else "model"
-                contents.append({"role": role, "parts": [{"text": m["content"]}]})
-            
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config
-            )
-            return response.text
-        else:
-            # Single prompt mode
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[{"role": "user", "parts": [{"text": prompt}]}],
-                config=config
-            )
-            return response.text
-    else:
-        # Old google.generativeai API (fallback)
-        genai.configure(api_key=api_key)
-        
-        generation_config = {
-            "temperature": temperature,
-        }
-        
-        if json_mode:
-            generation_config["response_mime_type"] = "application/json"
-            
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            generation_config=generation_config,
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config
         )
-
-        if messages:
-            # Chat mode - convert OpenAI style messages to Gemini style
-            history = []
-            last_user_msg = ""
-            for m in messages:
-                role = "user" if m["role"] == "user" else "model"
-                if m == messages[-1] and m["role"] == "user":
-                    last_user_msg = m["content"]
-                else:
-                    history.append({"role": role, "parts": [m["content"]]})
-                    
-            chat = model.start_chat(history=history)
-            response = chat.send_message(last_user_msg)
-            return response.text
-        else:
-            # Single prompt mode
-            response = model.generate_content(prompt)
-            return response.text
+        return response.text
+    else:
+        # Single prompt mode
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=config
+        )
+        return response.text
 
 
 def call_openrouter(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, max_retries: int = 4):

@@ -14,18 +14,8 @@ import { useSession, signIn } from 'next-auth/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
-// ─── Pillar metadata ───
-const PILLAR_META: Record<string, { label: string; icon: any; color: string; ordem: number }> = {
-    publico_alvo: { label: 'Público-Alvo', icon: Users, color: '#8b5cf6', ordem: 1 },
-    branding: { label: 'Branding', icon: Palette, color: '#f59e0b', ordem: 2 },
-    identidade_visual: { label: 'Identidade Visual', icon: Eye, color: '#ec4899', ordem: 3 },
-    canais_venda: { label: 'Canais de Venda', icon: ShoppingBag, color: '#3b82f6', ordem: 4 },
-    trafego_organico: { label: 'Tráfego Orgânico', icon: TrendingUp, color: '#10b981', ordem: 5 },
-    trafego_pago: { label: 'Tráfego Pago', icon: Megaphone, color: '#f97316', ordem: 6 },
-    processo_vendas: { label: 'Processo de Vendas', icon: HandCoins, color: '#6366f1', ordem: 7 },
-};
-
-const PILLAR_ORDER = Object.keys(PILLAR_META).sort((a, b) => PILLAR_META[a].ordem - PILLAR_META[b].ordem);
+// ─── Constants ───
+import { PILLAR_META, PILLAR_ORDER } from './constants';
 
 // ─── Imports Modulares ───
 import { PillarWorkspaceProps, TaskItem } from './types';
@@ -38,18 +28,58 @@ import { SubtaskList } from './components/SubtaskList';
 import { SourceBadgeList } from './components/SourceBadgeList';
 import { MarkdownContent } from './components/MarkdownContent';
 import { StreamingText } from './components/StreamingText';
+import RateLimitWarning from '../RateLimitWarning';
 import TaskCard from '../TaskCard';
 import TaskActionButtons from '../TaskActionButtons';
 import TaskSubtasksDisplay from '../TaskSubtasksDisplay';
 import ModelSelector from '../ModelSelector';
+import { SpecialistGrid } from './components/SpecialistGrid';
+
+// Sub-component for auto-scrolling container
+function AutoScrollContainer({ children }: { children: React.ReactNode }) {
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    React.useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+
+        const observer = new MutationObserver(() => {
+            el.scrollTop = el.scrollHeight;
+        });
+
+        observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
+
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={scrollRef} className="absolute inset-x-0 top-0 bottom-0 overflow-y-auto pb-48 scrollbar-hide flex flex-col">
+            <div className="mt-auto">
+                {children}
+            </div>
+        </div>
+    );
+}
 
 export default function PillarWorkspace({
-    score, specialists, analysisId, businessId, profile, marketData, userProfile, onRedo, onStateChange, initialActivePillar, aiModel
+    score,
+    specialists,
+    analysisId,
+    businessId,
+    profile,
+    marketData,
+    userProfile,
+    onRedo,
+    onStateChange,
+    initialActivePillar,
+    aiModel,
+    reanalysisState
 }: PillarWorkspaceProps) {
     const { data: session } = useSession();
     const { aiModel: authAiModel } = useAuth();
     const router = useRouter();
-    const currentAiModel = aiModel || authAiModel;
+    const DEFAULT_TASK_AI_MODEL = 'groq';
+    const currentAiModel = aiModel || authAiModel || DEFAULT_TASK_AI_MODEL;
     const [loadingDoc, setLoadingDoc] = useState<string | null>(null);
     const [loadingFullExport, setLoadingFullExport] = useState(false);
     const [selectedPillar, setSelectedPillar] = useState<string | null>(initialActivePillar || null);
@@ -77,17 +107,49 @@ export default function PillarWorkspace({
     // Force re-render key for TaskSubtasksDisplay
     const [subtasksUpdateKey, setSubtasksUpdateKey] = useState(0);
     const abortControllersRef = React.useRef<Record<string, AbortController>>({});
-    const [selectedTaskAiModel, setSelectedTaskAiModel] = useState<string>(currentAiModel || 'groq');
+    const [selectedTaskAiModel, setSelectedTaskAiModel] = useState<string>(DEFAULT_TASK_AI_MODEL);
+
+    // Rate limit states
+    const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
+    const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+    const [isRetrying, setIsRetrying] = useState(false);
+
+    // Rate limit handlers
+    const handleRetryWithNewModel = useCallback(async () => {
+        setIsRetrying(true);
+        setShowRateLimitWarning(false);
+        // Retry logic would go here - for now just reset state
+        setTimeout(() => {
+            setIsRetrying(false);
+            setRateLimitError(null);
+        }, 2000);
+    }, []);
+
+    const handleCloseRateLimitWarning = useCallback(() => {
+        setShowRateLimitWarning(false);
+        setRateLimitError(null);
+    }, []);
+
+    const handleModelChange = useCallback((newModel: string) => {
+        console.log('PillarWorkspace handleModelChange:', newModel);
+        setSelectedTaskAiModel(newModel);
+        // Close rate limit warning when user changes model
+        if (showRateLimitWarning) {
+            handleCloseRateLimitWarning();
+        }
+    }, [showRateLimitWarning, handleCloseRateLimitWarning]);
 
     // ─── localStorage persistence ───
     const prevAnalysisIdRef = React.useRef<string | null | undefined>(undefined);
+    const [isStorageLoaded, setIsStorageLoaded] = useState(false);
 
     // Combined load / reset effect — uses ref to distinguish first mount from reanalysis
     useEffect(() => {
         if (!analysisId) return;
 
-        const isFirstMount = prevAnalysisIdRef.current === undefined;
-        const isReanalysis = !isFirstMount && prevAnalysisIdRef.current !== analysisId;
+        const previousAnalysisId = prevAnalysisIdRef.current;
+        const isFirstMount = previousAnalysisId === undefined;
+        const isReanalysis = !isFirstMount && previousAnalysisId !== analysisId;
         prevAnalysisIdRef.current = analysisId;
 
         if (isReanalysis) {
@@ -97,6 +159,7 @@ export default function PillarWorkspace({
 
             // Reset all states
             setPillarStates({});
+            setTaskDeliverables({});
             setTaskSubtasks({});
             setAutoExecuting(null);
             setAutoExecStep(0);
@@ -105,23 +168,23 @@ export default function PillarWorkspace({
             setAutoExecSubtasks({});
             setAutoExecResults({});
             setAutoExecStatuses({});
-            setShowKPIs(false);
-            setSelectedTaskAiModel(currentAiModel || 'groq');
-            setError('');
-        } else {
-            setPillarStates({});
-            setTaskDeliverables({});
-            setTaskSubtasks({});
             setCompletedTasks({});
             setExpandedTaskIds(new Set());
-            setSelectedPillar(null);
-            setLoadingPillar(null);
-            setExecutingTask(null);
-            setExpandingTask(null);
+            setShowKPIs(false);
+            setSelectedTaskAiModel(DEFAULT_TASK_AI_MODEL);
+            setError('');
+            setIsStorageLoaded(true);
+
+            // Only clear localStorage for the previous analysis (avoid hydrating dados antigos)
+            if (previousAnalysisId) {
+                localStorage.removeItem(`pillar_workspace_${previousAnalysisId}`);
+            }
+        } else if (isFirstMount) {
+            // On first mount, we will load from localStorage in the next effect
+            // We don't want to reset states here because it might wipe what we just restored
+            console.log('🏗️ Initial mount for analysis:', analysisId);
         }
-        localStorage.removeItem(`pillar_workspace_${analysisId}`);
-        return;
-    }, [analysisId]);
+    }, [analysisId, currentAiModel]);
 
     // First mount: load persisted state from localStorage
     useEffect(() => {
@@ -129,24 +192,26 @@ export default function PillarWorkspace({
 
         try {
             const saved = localStorage.getItem(`pillar_workspace_${analysisId}`);
-            if (!saved) return;
-            const data = JSON.parse(saved);
-            if (data.completedTasks) {
-                const restored: Record<string, Set<string>> = {};
-                for (const [k, v] of Object.entries(data.completedTasks)) {
-                    restored[k] = new Set(v as string[]);
+            if (saved) {
+                const data = JSON.parse(saved);
+                if (data.completedTasks) {
+                    const restored: Record<string, Set<string>> = {};
+                    for (const [k, v] of Object.entries(data.completedTasks)) {
+                        restored[k] = new Set(v as string[]);
+                    }
+                    setCompletedTasks(restored);
                 }
-                setCompletedTasks(restored);
+                if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
+                if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
+                if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
+                if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
+                if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
+                if (data.pillarStates) setPillarStates(data.pillarStates);
             }
-            if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
-            if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
-            if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
-            if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
-            if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
-            if (data.pillarStates) setPillarStates(data.pillarStates);
         } catch (e) {
             console.warn('Failed to load persisted state:', e);
         }
+        setIsStorageLoaded(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analysisId]);
 
@@ -221,9 +286,11 @@ export default function PillarWorkspace({
 
     // ─── API Cache ───
     const apiCache = React.useRef<Map<string, { data: any; timestamp: number }>>(new Map());
-    const CACHE_DURATION = 30000; // 30 segundos
+    const CACHE_DURATION = 300000; // 5 minutos (evita refetching constante em navegação lateral)
 
     // ─── API helper with Cache ───
+    const normalizedReanalysisState = reanalysisState ?? { isReanalyzing: false };
+    const isReanalyzing = normalizedReanalysisState.isReanalyzing;
     const apiCall = useCallback(async (action: string, data: any, options?: { signal?: AbortSignal; skipCache?: boolean }) => {
         const cacheKey = `${action}-${JSON.stringify(data)}`;
         const cached = apiCache.current.get(cacheKey);
@@ -234,11 +301,12 @@ export default function PillarWorkspace({
             return cached.data;
         }
 
-        console.log('🌐 Making fresh API call for:', action);
+        console.log('🌐 Making fresh API call for:', action, 'with model:', selectedTaskAiModel);
+        const requestBody = { action, ...data, aiModel: selectedTaskAiModel || currentAiModel };
         const res = await fetch('/api/growth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, aiModel: selectedTaskAiModel || currentAiModel, ...data }),
+            body: JSON.stringify(requestBody),
             signal: options?.signal,
         });
 
@@ -332,13 +400,13 @@ export default function PillarWorkspace({
             await apiCall('redo-pillar', {
                 analysis_id: analysisId,
                 pillar_key: pillarKey,
-            });
+            }, { skipCache: true });
 
             // Reload the pillar to get brand new tasks
             const result = await apiCall('specialist-tasks', {
                 analysis_id: analysisId, pillar_key: pillarKey,
                 business_id: businessId, profile: profile?.profile || profile,
-            });
+            }, { skipCache: true });
 
             if (result.success && result.plan) {
                 setPillarStates(prev => ({
@@ -367,6 +435,12 @@ export default function PillarWorkspace({
 
     // ─── Hydrate subtasks and executions from DB ───
     const hydratePillarData = useCallback(async (key: string) => {
+        // Skip if we already have some data for this pillar to avoid flickering/redundancy
+        if (pillarStates[key]?.plan && Object.keys(taskSubtasks).some(tid => tid.startsWith(key + '_'))) {
+            console.log(`⏩ Skipping hydration for ${key}, already has data.`);
+            return;
+        }
+
         try {
             // Fetch subtasks and executions in parallel
             const [subtasksRes, execsRes] = await Promise.all([
@@ -378,7 +452,7 @@ export default function PillarWorkspace({
             if (subtasksRes.success && subtasksRes.subtasks) {
                 const savedSubtasks = subtasksRes.subtasks as Record<string, any>;
                 for (const [taskId, stData] of Object.entries(savedSubtasks)) {
-                    const tid = `${key}_${taskId}`;
+                    const tid = taskId.includes('_') ? taskId : `${key}_${taskId}`;
                     setTaskSubtasks(prev => ({ ...prev, [tid]: stData }));
                     // Also set up autoExec display data
                     const items = (stData as any)?.subtarefas || [];
@@ -392,6 +466,8 @@ export default function PillarWorkspace({
             // Hydrate executions (deliverables)
             if (execsRes.success && execsRes.executions) {
                 const savedExecs = execsRes.executions as Record<string, any>;
+                const maxIdxPerTask: Record<string, number> = {};
+
                 for (const [taskId, execData] of Object.entries(savedExecs)) {
                     const tid = taskId.includes('_') ? taskId : `${key}_${taskId}`;
                     const result = (execData as any).result_data;
@@ -408,19 +484,22 @@ export default function PillarWorkspace({
                         // Set autoExec status to done for this subtask index if it's a subtask execution
                         const stMatch = taskId.match(/_st(\d+)$/);
                         if (stMatch) {
-                            const parentTid = taskId.replace(/_st\d+$/, '');
+                            const rawParentTid = taskId.replace(/_st\d+$/, '');
+                            const parentTid = rawParentTid.includes('_') ? rawParentTid : `${key}_${rawParentTid}`;
                             const idx = parseInt(stMatch[1], 10) - 1;
+
                             setAutoExecResults(prev => ({
                                 ...prev,
-                                [parentTid]: { ...prev[parentTid], [idx]: result }
+                                [parentTid]: { ...prev[parentTid] || {}, [idx]: result }
                             }));
                             setAutoExecStatuses(prev => ({
                                 ...prev,
-                                [parentTid]: { ...prev[parentTid], [idx]: 'done' }
+                                [parentTid]: { ...prev[parentTid] || {}, [idx]: 'done' }
                             }));
                         }
                     }
                 }
+
                 console.log(`📦 Hydrated ${Object.keys(savedExecs).length} executions for ${key}`);
             }
         } catch (err) {
@@ -505,12 +584,15 @@ export default function PillarWorkspace({
         }
     }, [pillarStates, analysisId, businessId, profile, apiCall, router, hydratePillarData]);
 
+    const initialPillarRef = React.useRef<string | null>(null);
+
     // Listener para o initialActivePillar quando mudar de cima pra baixo (Hub -> Workspace)
     useEffect(() => {
-        if (initialActivePillar) {
+        if (isStorageLoaded && initialActivePillar && initialActivePillar !== initialPillarRef.current) {
+            initialPillarRef.current = initialActivePillar;
             handleSelectPillar(initialActivePillar);
         }
-    }, [initialActivePillar, handleSelectPillar]);
+    }, [isStorageLoaded, initialActivePillar, handleSelectPillar]);
 
     // Reset any visual "expanded" highlight once the user leaves the task focus view
     useEffect(() => {
@@ -537,6 +619,10 @@ export default function PillarWorkspace({
             }, { signal: controller.signal });
             if (result.success && result.execution) {
                 const executionData = { ...result.execution, id: result.execution.id || task.id };
+                // Ensure conteudo_completo exists for openInGoogleDocs consistency
+                if (!executionData.conteudo_completo && executionData.conteudo) {
+                    executionData.conteudo_completo = executionData.conteudo;
+                }
                 setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
                 setCompletedTasks(prev => {
                     const s = new Set(prev[pillarKey] || []);
@@ -546,8 +632,22 @@ export default function PillarWorkspace({
                 });
             } else { setError(result.error || 'Erro na execução'); }
         } catch (err: any) {
-            if (err.name === 'AbortError') setError('Execução cancelada pelo usuário.');
-            else setError(err.message || 'Erro ao executar tarefa');
+            if (err.name === 'AbortError') {
+                setError('Execução cancelada pelo usuário.');
+            } else {
+                // Check for rate limit errors
+                const errorMessage = err.message || '';
+                if (errorMessage.includes('rate limit') ||
+                    errorMessage.includes('TPD esgotado') ||
+                    errorMessage.includes('429') ||
+                    errorMessage.includes('limit exceeded')) {
+                    setRateLimitError(errorMessage);
+                    setShowRateLimitWarning(true);
+                    setError('Limite de uso do modelo atingido. Tente outro modelo.');
+                } else {
+                    setError(err.message || 'Erro ao executar tarefa');
+                }
+            }
         } finally {
             if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
             setExecutingTask(null);
@@ -581,6 +681,13 @@ export default function PillarWorkspace({
             }, { signal: controller.signal });
 
             if (execResult.success && execResult.execution) {
+                // Normalize deliverable to include conteudo_completo for openInGoogleDocs
+                const executionData = { ...execResult.execution, id: execResult.execution.id || task.id };
+                if (!executionData.conteudo_completo && executionData.conteudo) {
+                    executionData.conteudo_completo = executionData.conteudo;
+                }
+                // Save as deliverable so the "Abrir" button works
+                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
                 // Success
                 setAutoExecResults(prev => ({
                     ...prev,
@@ -995,10 +1102,11 @@ export default function PillarWorkspace({
             );
         }
 
-        const totalTasks = tarefas.length;
-        const completedCount = tarefas.filter(t => done.has(t.id)).length;
-        const aiTasks = tarefas.filter(t => t.executavel_por_ia);
-        const userTasks = tarefas.filter(t => !t.executavel_por_ia);
+        const visibleTasks = tarefas.filter(t => t.executavel_por_ia);
+        const totalTasks = visibleTasks.length;
+        const completedCount = visibleTasks.filter(t => done.has(t.id)).length;
+        const aiTasks = visibleTasks;
+        const userTasks: TaskItem[] = [];
         const planSources = plan.sources || [];
         const entregaveis = plan.entregaveis || []; // Declaração local dentro do escopo do render
 
@@ -1139,7 +1247,24 @@ export default function PillarWorkspace({
                                                         transform: `translateX(${translateX}px) rotate(${angle}deg) translateY(${Math.abs(angle) * 0.5}px) translateZ(${zIndex}px)`,
                                                         zIndex: zIndex,
                                                     }}
-                                                    onClick={() => handleReorderEntregaveis(originalIndex)}
+                                                    onClick={() => {
+                                                        if (isMiddleCard) {
+                                                            // If clicked card is the center one, open it
+                                                            // We format it to match the deliverable structure expected by openInGoogleDocs
+                                                            const tid = entregavel.tarefa_origem ? `${selectedPillar}_${entregavel.tarefa_origem}` : null;
+                                                            const generatedDeliverable = tid ? taskDeliverables[tid] : null;
+
+                                                            if (!generatedDeliverable) {
+                                                                setError('Execute a tarefa para gerar o entregável completo antes de abrir no Google Docs.');
+                                                                return;
+                                                            }
+
+                                                            openInGoogleDocs(generatedDeliverable, meta.label, session, setLoadingDoc, entregavel.id);
+                                                        } else {
+                                                            // Otherwise, move to center
+                                                            handleReorderEntregaveis(originalIndex);
+                                                        }
+                                                    }}
                                                     role="button"
                                                     tabIndex={0}
                                                     onKeyDown={(e) => {
@@ -1184,7 +1309,11 @@ export default function PillarWorkspace({
                                                                 T{entregavel.tarefa_origem}
                                                             </span>
                                                         )}
-                                                        {displayIndex !== 0 && (
+                                                        {isMiddleCard ? (
+                                                            <span className="text-[8px] text-blue-400 italic">
+                                                                Clique para abrir no {toolInfo.name}
+                                                            </span>
+                                                        ) : (
                                                             <span className="text-[8px] text-zinc-600 italic">
                                                                 Clique para mover
                                                             </span>
@@ -1202,21 +1331,26 @@ export default function PillarWorkspace({
 
                 {/* Right Column - Tasks */}
                 <div className="w-1/2 flex flex-col pt-0 relative z-30" style={{ backgroundColor: 'lab(5 0 0)' }}>
-                    {/* Top Progress Bar - Glued to the top */}
+                    {/* Top Top Bar: Task Progress & Back Button (aligned with header) */}
                     {totalTasks > 0 && (
-                        <div className="w-full flex-shrink-0">
-                            <div className="h-[2px] w-full bg-zinc-800/30">
-                                <div className="h-full transition-all duration-700 ease-out"
-                                    style={{ width: `${(completedCount / totalTasks) * 100}%`, backgroundColor: meta.color }} />
-                            </div>
-                            <div className="px-6 py-1">
-                                <span className="text-[9px] font-mono text-zinc-600 uppercase">
-                                    {completedCount} de {totalTasks} tarefas
-                                </span>
-                            </div>
+                        <div className="flex items-center justify-between px-6 pt-5 pb-3">
+                            <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest">
+                                {completedCount} de {totalTasks} tarefas
+                            </span>
                         </div>
                     )}
-                    <div className="p-6 pb-4">
+
+                    <div className="px-6 pb-4 pt-2">
+                        {focusedTaskId && (
+                            <div className="mb-6 flex items-center justify-between relative z-20">
+                                <button
+                                    onClick={() => setFocusedTaskId(null)}
+                                    className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm"
+                                >
+                                    <ArrowLeft className="w-4 h-4" /> Voltar
+                                </button>
+                            </div>
+                        )}
                         {/* Dependencies */}
                         {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
                             <div className={`mb-4 p-3 rounded-lg ${deps.blockers?.length > 0
@@ -1247,53 +1381,45 @@ export default function PillarWorkspace({
                     <div className="flex-1 px-3 pb-28 overflow-visible flex flex-col relative">
                         {/* Subtasks Execution Area - Above */}
                         {focusedTaskId && (
-                            <div className="flex flex-col h-full mb-4" style={{ height: '70vh', overflow: 'hidden' }}>
-                                {/* Back UI */}
-                                <div className="px-3 pb-4">
-                                    <button
-                                        onClick={() => setFocusedTaskId(null)}
-                                        className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-all text-[10px] uppercase tracking-widest font-bold"
-                                    >
-                                        <ArrowLeft className="w-3 h-3" /> Voltar
-                                    </button>
-                                </div>
-                                <div className="w-full border-t border-white/[0.05] pt-4 mt-1 sm:border-t-0 sm:pl-5 sm:pt-0 flex-1 flex flex-col overflow-hidden pb-2">
+                            <div className="flex-1 flex flex-col mb-4 overflow-hidden pt-2">
+                                <div className="w-full sm:pt-0 flex-1 flex flex-col overflow-hidden pb-2">
                                     {(() => {
-                                        const task = tarefas.find(t => `${selectedPillar}_${t.id}` === focusedTaskId);
+                                        const task = visibleTasks.find(t => `${selectedPillar}_${t.id}` === focusedTaskId);
                                         if (!task) return null;
                                         const tid = focusedTaskId;
                                         const isDone = done.has(task.id) || done.has(tid);
                                         const isAI = task.executavel_por_ia;
-                                        const taskIndex = tarefas.indexOf(task);
+                                        const taskIndex = visibleTasks.indexOf(task);
 
                                         return (
                                             <div className="w-full flex flex-col h-full gap-4">
-                                                {/* Subtasks Result Area - ABOVE (Scrollable) */}
-                                                <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
-                                                    {/* Subtasks Result Area - ABOVE */}
-                                                    <TaskSubtasksDisplay
-                                                        key={`result_${subtasksUpdateKey}`}
-                                                        task={task}
-                                                        pillarKey={selectedPillar}
-                                                        tid={tid}
-                                                        isDone={isDone}
-                                                        subtasks={taskSubtasks[tid]}
-                                                        autoExecSubtasks={autoExecSubtasks}
-                                                        autoExecResults={autoExecResults}
-                                                        autoExecStatuses={autoExecStatuses}
-                                                        autoExecuting={autoExecuting}
-                                                        autoExecStep={autoExecStep}
-                                                        autoExecTotal={autoExecTotal}
-                                                        color={PILLAR_META[selectedPillar]?.color}
-                                                        taskDeliverables={taskDeliverables}
-                                                        expandingTask={expandingTask}
-                                                        executingTask={executingTask}
-                                                        handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
-                                                        safeRender={safeRender}
-                                                    />
+                                                <div className="flex-1 relative overflow-hidden">
+                                                    <AutoScrollContainer>
+                                                        <TaskSubtasksDisplay
+                                                            key={`result_${subtasksUpdateKey}`}
+                                                            task={task}
+                                                            pillarKey={selectedPillar}
+                                                            tid={tid}
+                                                            isDone={isDone}
+                                                            subtasks={taskSubtasks[tid]}
+                                                            autoExecSubtasks={autoExecSubtasks}
+                                                            autoExecResults={autoExecResults}
+                                                            autoExecStatuses={autoExecStatuses}
+                                                            autoExecuting={autoExecuting}
+                                                            autoExecStep={autoExecStep}
+                                                            autoExecTotal={autoExecTotal}
+                                                            color={PILLAR_META[selectedPillar]?.color}
+                                                            taskDeliverables={taskDeliverables}
+                                                            expandingTask={expandingTask}
+                                                            executingTask={executingTask}
+                                                            handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
+                                                            safeRender={safeRender}
+                                                            displayMode="result"
+                                                        />
+                                                    </AutoScrollContainer>
                                                 </div>
 
-                                                <div className="w-full flex flex-col sm:items-start pt-3 bg-black/20 shrink-0 mt-2 rounded-xl overflow-hidden">
+                                                <div className="absolute bottom-6 left-4 right-4 max-w-4xl mx-auto flex flex-col gap-3 p-3 bg-[#09090b]/90 backdrop-blur-md border border-white/[0.05] shadow-2xl rounded-xl overflow-hidden z-50">
                                                     {/* Subtasks Execution Area outside lighter div */}
                                                     <div className="w-full">
                                                         <TaskSubtasksDisplay
@@ -1315,7 +1441,7 @@ export default function PillarWorkspace({
                                                             executingTask={executingTask}
                                                             handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
                                                             safeRender={safeRender}
-                                                            displayMode="lines"
+                                                            displayMode="subtasks"
                                                         />
                                                     </div>
 
@@ -1357,7 +1483,6 @@ export default function PillarWorkspace({
                                                                         <ModelSelector
                                                                             value={selectedTaskAiModel}
                                                                             onChange={setSelectedTaskAiModel}
-                                                                            direction="down"
                                                                         />
                                                                     )}
                                                                 </div>
@@ -1446,9 +1571,9 @@ export default function PillarWorkspace({
 
                         {/* Regular Tasks List - Below */}
                         {!focusedTaskId && (
-                            <div className="rounded-xl overflow-hidden p-1.5 h-full flex flex-col">
+                            <div className="rounded-xl overflow-visible p-1.5 h-full flex flex-col">
                                 <section className="space-y-0.5 flex-1 pr-1 pt-2">
-                                    {tarefas.map((task, i) => {
+                                    {visibleTasks.map((task, i) => {
                                         const tid = `${selectedPillar}_${task.id}`;
                                         const isDone = done.has(task.id) || done.has(tid);
                                         const isAI = task.executavel_por_ia;
@@ -1463,9 +1588,8 @@ export default function PillarWorkspace({
                                             }
                                         };
 
-                                        const deliverable = taskDeliverables[tid];
-                                        const subtasksList = taskSubtasks[tid]?.subtarefas || autoExecSubtasks[tid] || [];
-                                        const subtasksCount = subtasksList.length;
+                                        // Persist subtasks visibility when executing even if collapsed
+                                        const isActiveInList = (autoExecuting === tid || executingTask === tid || expandingTask === tid);
 
                                         return (
                                             <TaskCard
@@ -1477,8 +1601,30 @@ export default function PillarWorkspace({
                                                 isFocused={isFocused}
                                                 isAI={isAI}
                                                 onClick={handleTaskClick}
-                                                aiModel={aiModel}
-                                            />
+                                                aiModel={selectedTaskAiModel}
+                                                disabled={normalizedReanalysisState.isReanalyzing}
+                                            >
+                                                {isActiveInList && (
+                                                    <div className="px-3 pb-2 pt-1">
+                                                        <TaskSubtasksDisplay
+                                                            task={task}
+                                                            pillarKey={selectedPillar}
+                                                            tid={tid}
+                                                            isDone={isDone}
+                                                            subtasks={taskSubtasks[tid]}
+                                                            autoExecSubtasks={autoExecSubtasks}
+                                                            autoExecResults={autoExecResults}
+                                                            autoExecStatuses={autoExecStatuses}
+                                                            autoExecuting={autoExecuting}
+                                                            autoExecStep={autoExecStep}
+                                                            autoExecTotal={autoExecTotal}
+                                                            expandingTask={expandingTask}
+                                                            executingTask={executingTask}
+                                                            displayMode="lines"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </TaskCard>
                                         );
                                     })}
                                 </section>
@@ -1492,161 +1638,30 @@ export default function PillarWorkspace({
     }
 
     return (
-        <div className="min-h-screen bg-[#09090b]">
-            <div className="max-w-4xl mx-auto px-6 py-12">
-
-                {/* Header with score + business info */}
-                <div className="text-center mb-8">
-                    <h1 className="text-2xl font-bold text-white tracking-tight">{userProfile.name}</h1>
-                    <p className="text-zinc-500 text-sm mt-1">{userProfile.segment}</p>
-                    <div className="mt-4 flex justify-center">
-                        <ScoreRing score={scoreGeral} size={72} color={scoreGeral >= 70 ? '#10b981' : scoreGeral >= 40 ? '#f59e0b' : '#ef4444'} />
-                    </div>
-                    {classificacao && (
-                        <span className={`inline-block mt-3 text-xs font-medium px-3 py-1 rounded-full ${scoreGeral >= 70
-                            ? 'text-emerald-400 bg-emerald-500/10'
-                            : scoreGeral >= 40 ? 'text-amber-400 bg-amber-500/10'
-                                : 'text-red-400 bg-red-500/10'}`}>
-                            {safeRender(classificacao)}
-                        </span>
-                    )}
-                    {resumo && (
-                        <p className="text-zinc-400 text-sm mt-3 max-w-xl mx-auto leading-relaxed">{safeRender(resumo)}</p>
-                    )}
-                </div>
-
-                {/* Action bar */}
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em]">
-                        Seus 7 Especialistas
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => exportFullAnalysis(session, setLoadingFullExport, {
-                                profile, score, specialists, marketData, taskPlan: pillarStates
-                            }, userProfile.name)}
-                            disabled={loadingFullExport}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-400 hover:text-zinc-200'}`}>
-                            {loadingFullExport ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-                                    Gerando Doc...
-                                </>
-                            ) : (
-                                <>
-                                    <img src="/docs.png" alt="" className="w-5 h-5" />
-                                    {!session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
-                                </>
-                            )}
-                        </button>
-                        <button onClick={onRedo}
-                            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
-                            <RefreshCw className="w-3 h-3" /> Reanalisar
-                        </button>
-                    </div>
-                </div>
-
-                {error && (
-                    <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
-                        {error}
-                        <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
-                    </div>
-                )}
-
-                {/* Pillar Cards with diagnostic info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {PILLAR_ORDER.map((key) => {
-                        const meta = PILLAR_META[key];
-                        const Icon = meta.icon;
-                        const dim = dims[key] || {};
-                        const s = typeof dim.score === 'number' ? dim.score : 0;
-                        const spec = specialists[key] || {};
-                        const isLoading = loadingPillar === key;
-                        const statusBadge = s >= 70 ? { text: 'Forte', cls: 'text-emerald-400 bg-emerald-500/10' }
-                            : s >= 40 ? { text: 'Atenção', cls: 'text-amber-400 bg-amber-500/10' }
-                                : s > 0 ? { text: 'Crítico', cls: 'text-red-400 bg-red-500/10' }
-                                    : { text: 'Sem dados', cls: 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20' };
-                        const cached = pillarStates[key];
-                        const hasPlan = cached?.plan?.plan_data;
-                        const progress = cached?.progress;
-
-                        return (
-                            <div key={key}
-                                className="flex flex-col text-left p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] transition-all duration-200 group cursor-pointer relative"
-                                onClick={() => !isLoading && handleSelectPillar(key)}>
-
-                                <div className="flex-1">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="p-2 rounded-lg" style={{ backgroundColor: `${meta.color}12` }}>
-                                            <Icon className="w-4 h-4" style={{ color: meta.color }} />
-                                        </div>
-                                        {isLoading
-                                            ? <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
-                                            : <ChevronRight className="w-4 h-4 text-zinc-800 group-hover:text-zinc-500 transition-colors" />}
-                                    </div>
-
-                                    <h3 className="text-white text-sm font-semibold mb-0.5">{meta.label}</h3>
-                                    <p className="text-zinc-600 text-[11px] mb-2">{spec.cargo || ''}</p>
-
-                                    <div className="flex items-center gap-2.5 mb-2">
-                                        <ScoreRing score={s} size={36} color={meta.color} />
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${statusBadge.cls}`}>
-                                            {statusBadge.text}
-                                        </span>
-                                    </div>
-
-                                    {/* Diagnostic justificativa inline */}
-                                    {dim.justificativa && (
-                                        <p className="text-zinc-600 text-[10px] leading-relaxed line-clamp-2 mb-1">
-                                            {safeRender(dim.justificativa)}
-                                        </p>
-                                    )}
-
-                                    {hasPlan && progress && (
-                                        <div className="mt-1">
-                                            <div className="flex items-center justify-between text-[10px] text-zinc-600 mb-1">
-                                                <span>{progress.completed || 0}/{progress.total || 0} tarefas</span>
-                                            </div>
-                                            <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                                                <div className="h-full rounded-full transition-all"
-                                                    style={{ width: `${progress.total > 0 ? ((progress.completed || 0) / progress.total) * 100 : 0}%`, backgroundColor: meta.color }} />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Actions Footer */}
-                                <div className="mt-4 pt-3 border-t border-white/[0.05] flex justify-end">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-
-                                            // Format the context for export
-                                            const mktCat = marketData?.categories?.find((c: any) => c.id === key);
-                                            const mktInsights = mktCat?.resumo?.visao_geral ? `\n\n**Visão de Mercado:**\n${safeRender(mktCat.resumo.visao_geral)}\n${(mktCat.resumo.pontos_chave || []).map((p: any) => `• ${safeRender(p)}`).join('\n')}` : '';
-
-                                            // Format the context to look like a deliverable
-                                            const contextDeliverable = {
-                                                id: `context_${key}`,
-                                                entregavel_titulo: `Contexto de Análise: ${meta.label}`,
-                                                conteudo_completo: `**Diagnóstico da IA:**\n${safeRender(dim.justificativa || 'Sem dados diagnósticos.')}\n\n**Meta do Pilar:**\n${safeRender(dim.meta_pilar || 'Não definida.')}\n\n**Principal Desafio/Oportunidade:**\n${safeRender(dim.dado_chave || 'Não identificado.')}${mktInsights}`,
-                                                fontes_consultadas: mktCat?.fontes || []
-                                            };
-
-                                            openInGoogleDocs(contextDeliverable, meta.label, session, setLoadingDoc, `ctx_${key}`);
-                                        }}
-                                        disabled={loadingDoc === `ctx_${key}`}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${!session?.accessToken ? 'bg-blue-500/10 text-blue-400' : 'bg-white/[0.03] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]'}`}
-                                    >
-                                        {loadingDoc === `ctx_${key}` ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" /> : <img src="/docs.png" alt="" className="w-4 h-4" />}
-                                        {loadingDoc === `ctx_${key}` ? 'Gerando Doc...' : !session?.accessToken ? 'Login c/ Google' : 'Abrir no Docs'}
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        </div>
+        <SpecialistGrid
+            userProfile={userProfile}
+            scoreGeral={scoreGeral}
+            classificacao={classificacao}
+            resumo={resumo}
+            dims={dims}
+            specialists={specialists}
+            loadingPillar={loadingPillar}
+            pillarStates={pillarStates}
+            completedTasks={completedTasks}
+            marketData={marketData}
+            session={session}
+            profile={profile}
+            score={score}
+            analysisId={analysisId}
+            businessId={businessId}
+            loadingFullExport={loadingFullExport}
+            setLoadingFullExport={setLoadingFullExport}
+            loadingDoc={loadingDoc}
+            setLoadingDoc={setLoadingDoc}
+            onRedo={onRedo}
+            handleSelectPillar={handleSelectPillar}
+            error={error}
+            setError={setError}
+        />
     );
 }

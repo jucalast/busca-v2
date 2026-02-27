@@ -171,10 +171,13 @@ DIMENSION_LABELS = {
 
 def run_dimension_chat(input_data: dict) -> dict:
     """AI chat focused on a specific business dimension with internet search."""
-    from cli import search_duckduckgo, scrape_page, call_groq
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"reply": "Erro: chave da API nao configurada.", "sources": [], "searchQuery": ""}
+    from cli import search_duckduckgo, scrape_page
+    try:
+        from llm_router import call_llm
+    except ImportError:
+        from .llm_router import call_llm
+        
+    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "groq")))
 
     dimension = input_data.get("dimension", "")
     context = input_data.get("context", {})
@@ -260,12 +263,12 @@ PERGUNTA DO USUARIO: {user_message}
 Responda de forma direta e util:"""
 
     try:
-        reply = call_groq(api_key, prompt, temperature=0.4, model="llama-3.3-70b-versatile", force_json=False)
+        reply = call_llm(provider=model_provider, prompt=prompt, temperature=0.4, json_mode=False)
     except Exception as e:
         print(f"  Erro no LLM: {e}", file=sys.stderr)
         # Fallback to smaller model
         try:
-            reply = call_groq(api_key, prompt, temperature=0.4, model="llama-3.1-8b-instant", force_json=False)
+            reply = call_llm(provider=model_provider, prompt=prompt, temperature=0.4, json_mode=False, prefer_small=True)
         except Exception as e2:
             reply = f"Desculpe, nao consegui gerar uma resposta. Erro: {str(e2)[:200]}"
 
@@ -419,21 +422,33 @@ def main():
             generate_business_brief, generate_pillar_plan,
             get_all_pillars_state, SPECIALISTS,
         )
-        from cli import search_duckduckgo, scrape_page, call_groq
+        from cli import search_duckduckgo, scrape_page
         profile = input_data.get("profile", {})
         region = input_data.get("region", "br-pt")
         business_id = input_data.get("business_id")  # Optional: for persistence
         user_id = input_data.get("user_id", "default_user")
         analysis_id = input_data.get("analysis_id")  # Optional: for persistence
 
-        # Step 0: Clear existing task data for this analysis (reanalysis support)
+        # Step 0: Load enriched profile if reanalyzing
+        if analysis_id:
+            try:
+                previous_analysis = db.get_analysis(analysis_id)
+                if previous_analysis and previous_analysis.get("profile_data"):
+                    profile = previous_analysis["profile_data"]
+                    print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
+            except Exception as e:
+                print(f"  ⚠️ Erro ao carregar perfil anterior: {e}", file=sys.stderr)
+
+        # Step 1: Clear existing task data for this analysis (reanalysis support)
         if analysis_id:
             print("🗑️ Limpando dados de tarefas anteriores (reanálise)...", file=sys.stderr)
             try:
-                # Delete specialist plans, executions, and results for this analysis
+                # Delete specialist plans, executions, results, subtasks and KPIs for this analysis
                 db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
                 db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
                 db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
+                db.conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
+                db.conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
                 db.conn.commit()
                 print("  ✅ Dados de tarefas anteriores removidos", file=sys.stderr)
             except Exception as e:
@@ -516,7 +531,7 @@ def main():
         if business_id:
             print("THOUGHT: Salvando análise no banco de dados...")
             print("💾 Salvando análise...", file=sys.stderr)
-            analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
         else:
             # Create new business if no business_id provided
@@ -529,7 +544,7 @@ def main():
             business_id = business["id"]
             print(f"  ✅ Negócio criado: {business_id}", file=sys.stderr)
             
-            analysis = db.create_analysis(business_id, score_data, task_plan, market_data)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
         # Step 5: Generate Compact Business Brief (CBB)
@@ -653,6 +668,7 @@ def main():
                 analysis_id, pillar_key, brief,
                 diagnostic=all_diags.get(pillar_key),
                 all_diagnostics=all_diags,
+                model_provider=model_provider,
             )
 
             print("--- PILLAR_PLAN_RESULT ---")
@@ -748,6 +764,7 @@ def main():
                     diagnostic=all_diags.get(pillar_key),
                     all_diagnostics=all_diags,
                     market_data=market_data,
+                    model_provider=model_provider,
                 )
 
                 print("--- SPECIALIST_TASKS_RESULT ---")
@@ -789,6 +806,7 @@ def main():
                 all_diagnostics=all_diags,
                 market_data=market_data,
                 previous_results=previous_results,
+                model_provider=model_provider,
             )
 
             print("--- SPECIALIST_EXECUTE_RESULT ---")
@@ -833,7 +851,7 @@ def main():
                 print("--- EXPAND_SUBTASKS_RESULT ---")
                 print(json.dumps({"success": True, "subtasks": existing[task_id]}, ensure_ascii=False, indent=2))
             else:
-                result = expand_task_subtasks(analysis_id, pillar_key, task_data, brief, market_data=market_data)
+                result = expand_task_subtasks(analysis_id, pillar_key, task_data, brief, market_data=market_data, model_provider=model_provider)
                 
                 # Save subtasks to DB
                 if result.get("success") and result.get("subtasks"):
@@ -865,7 +883,7 @@ def main():
                 brief = generate_business_brief(profile_data)
 
             market_data = db.get_analysis_market_data(analysis_id)
-            result = ai_try_user_task(analysis_id, pillar_key, task_id, task_data, brief, market_data=market_data)
+            result = ai_try_user_task(analysis_id, pillar_key, task_id, task_data, brief, market_data=market_data, model_provider=model_provider)
             print("--- AI_TRY_USER_TASK_RESULT ---")
             print(json.dumps(result, ensure_ascii=False, indent=2))
 

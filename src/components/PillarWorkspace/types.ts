@@ -10,6 +10,11 @@ export interface PillarWorkspaceProps {
     onStateChange?: (pillarStates: Record<string, any>, completedTasks: Record<string, Set<string>>) => void;
     initialActivePillar?: string | null;
     aiModel?: any;
+    reanalysisState?: {
+        isReanalyzing: boolean;
+        progress?: string;
+        thoughts?: string[];
+    };
 }
 
 export interface TaskItem {

@@ -12,8 +12,10 @@ interface TaskCardProps {
   isFocused: boolean;
   isAI: boolean;
   onClick: () => void;
+  aiModel?: string;
   children?: React.ReactNode;
   shouldHide?: boolean; // Nova prop para controlar se o card deve ser escondido
+  disabled?: boolean;
 }
 
 // Import the same icon logic from PillarWorkspace
@@ -61,19 +63,21 @@ export default function TaskCard({
   isFocused,
   isAI,
   onClick,
-  children,
   aiModel,
-  shouldHide = false
-}: TaskCardProps & { aiModel?: string }) {
+  children,
+  shouldHide = false,
+  disabled = false
+}: TaskCardProps) {
   const taskIcon = getTaskIcon(task, isDone, aiModel);
 
   return (
     <div className={`group transition-all duration-500 ease-out ${shouldHide ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}>
       <button
-        onClick={onClick}
+        onClick={disabled ? undefined : onClick}
+        disabled={disabled}
         className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-300 ease-out cursor-pointer ${
           isExpanded ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
-        } ${isFocused ? 'task-card-leave pointer-events-none' : ''}`}
+        } ${isFocused ? 'task-card-leave pointer-events-none' : ''} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
       >
         <div className="w-8 h-8 flex items-center justify-center shrink-0">
           {taskIcon}

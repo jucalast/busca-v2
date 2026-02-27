@@ -77,12 +77,40 @@
     transform: translateY(0) scale(1);
     opacity: 1;
   }
+
   40% {
     transform: translateY(24px) scale(0.98);
     opacity: 0.9;
   }
+
   100% {
     transform: translateY(320px) scale(0.92);
     opacity: 0;
+  }
+}
+
+@keyframes shimmer-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+
+@keyframes dot-pulse {
+
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
   }
 }

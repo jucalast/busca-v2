@@ -327,7 +327,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
   }, []);
 
   return (
-    <div className="relative w-full h-full min-h-[80vh] bg-black flex flex-col items-center justify-center overflow-hidden cursor-crosshair">
+    <div className="relative w-full h-screen min-h-screen bg-black flex flex-col items-center justify-center overflow-hidden cursor-crosshair">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"

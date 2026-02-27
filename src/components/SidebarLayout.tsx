@@ -132,25 +132,8 @@ export default function SidebarLayout({
 
   return (
     <div className="relative h-screen bg-[#09090b] overflow-hidden">
-      {/* Top Bar - Full Width */}
-      <header className="absolute inset-x-0 top-0 h-20 flex items-center justify-between px-6 z-50 bg-[#09090b]/90 backdrop-blur-sm border-b border-white/5">
-        {/* Logo */}
-        <div className="flex items-center gap-4 relative z-10">
-          <img
-            src="/logo.png"
-            alt="Logo"
-            className="h-12 w-auto object-contain"
-          />
-        </div>
-
-        {/* Global AI Model Selector */}
-        <div className="flex items-center gap-3 px-4 relative z-50">
-          <ModelSelector value={aiModel} onChange={setAiModel} />
-        </div>
-      </header>
-
       {/* Bottom Area - Sidebar + Main Content */}
-      <div className="absolute inset-x-0 top-20 bottom-0">
+      <div className="absolute inset-x-0 top-0 bottom-0">
         <div className="flex h-full overflow-hidden relative">
           {/* Sidebar */}
           <aside

@@ -4,9 +4,10 @@ import React, { useState, useCallback, useEffect } from 'react';
 import PillarWorkspace from '@/components/PillarWorkspace';
 import BusinessMindMap from '@/components/BusinessMindMap';
 import SidebarLayout from '@/components/SidebarLayout';
-import GrowthHub from '@/components/GrowthHub';
-import { useRouter } from 'next/navigation';
+import ParticleLoader from '@/components/ParticleLoader';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 interface AnalysisClientWrapperProps {
     initialGrowthData: any;
@@ -26,7 +27,7 @@ export default function AnalysisClientWrapper({
     activeSlug = 'especialistas'
 }: AnalysisClientWrapperProps) {
     const router = useRouter();
-    const { logout } = useAuth();
+    const { logout, aiModel } = useAuth();
 
     // Derived UI View from URL Match
     const viewMode = activeSlug === 'especialistas' ? 'hub' : 'workspace';
@@ -38,61 +39,97 @@ export default function AnalysisClientWrapper({
     const [mindMapPillarStates, setMindMapPillarStates] = useState<Record<string, any>>({});
     const [mindMapCompletedTasks, setMindMapCompletedTasks] = useState<Record<string, Set<string>>>({});
     const [pillarStatus, setPillarStatus] = useState<Record<string, any>>({});
+    const [isReanalyzing, setIsReanalyzing] = useState(false);
+    const [reanalyzeProgress, setReanalyzeProgress] = useState('');
+    const [reanalyzeThoughts, setReanalyzeThoughts] = useState<string[]>([]);
+
+    const { setRightSidebarContent } = useSidebar();
 
     // ─── Re-Analysis Handling ───
-    const handleRedoAnalysis = async () => {
-        // Here we'd typically trigger the same SSE stream for re-analysis, 
-        // for now just redirecting back to home for re-onboarding if they want a full redo
-        router.push('/');
-    };
+    const handleRedoAnalysis = useCallback(async () => {
+        if (!profile || !growthData?.analysis_id) {
+            router.push('/');
+            return;
+        }
+
+        setIsReanalyzing(true);
+        setReanalyzeProgress('Iniciando nova análise...');
+        setReanalyzeThoughts([]);
+
+        try {
+            const res = await fetch('/api/growth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'analyze',
+                    aiModel,
+                    profile,
+                    region: 'br-pt',
+                    business_id: currentBusinessId,
+                    user_id: userId,
+                    analysis_id: growthData.analysis_id,
+                }),
+            });
+
+            if (!res.ok || !res.body) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Falha na reanálise');
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() ?? '';
+
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith('data: ')) continue;
+
+                    const payload = JSON.parse(line.slice(6));
+                    if (payload.type === 'thought') {
+                        setReanalyzeThoughts(prev => [payload.text, ...prev].slice(0, 15));
+                        setReanalyzeProgress(payload.text);
+                    } else if (payload.type === 'result') {
+                        const data = payload.data;
+                        if (!data.success) throw new Error(data.error || 'Falha na reanálise');
+
+                        // refresh state and route (reuse same page if business_id unchanged)
+                        setGrowthData(data);
+                        setProfile(data.profile);
+                        setMindMapPillarStates({});
+                        setMindMapCompletedTasks({});
+
+                        if (data.business_id && data.business_id !== currentBusinessId) {
+                            router.push(`/analysis/${data.business_id}`);
+                        }
+                    } else if (payload.type === 'error') {
+                        throw new Error(payload.message || 'Erro na reanálise');
+                    }
+                }
+            }
+        } catch (err: any) {
+            setReanalyzeProgress(err.message || 'Erro na reanálise');
+        } finally {
+            setIsReanalyzing(false);
+        }
+    }, [aiModel, currentBusinessId, growthData?.analysis_id, profile, router, userId]);
 
     const handlePillarStateChange = useCallback((states: Record<string, any>, completed: Record<string, Set<string>>) => {
         setMindMapPillarStates(states);
         setMindMapCompletedTasks(completed);
     }, []);
 
-    // ─── Sidebar Handlers ───
-    const handleSelectBusiness = (businessId: string) => {
-        router.push(`/analysis/${businessId}`);
-    };
-
-    const handleCreateNewBusiness = () => {
-        router.push('/');
-    };
-
-    const handleDeleteBusiness = async (businessId: string) => {
-        try {
-            const res = await fetch('/api/growth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'delete-business', business_id: businessId }),
-            });
-
-            const result = await res.json();
-            if (!result.success) throw new Error(result.error);
-
-            if (businessId === currentBusinessId) {
-                router.push('/');
-            }
-        } catch (err: any) {
-            alert('Erro ao excluir negócio: ' + err.message);
-        }
-    };
-
-    const handleLogout = async () => {
-        await logout();
-        router.push('/login');
-    };
-
-    return (
-        <SidebarLayout
-            userId={userId}
-            currentBusinessId={currentBusinessId}
-            onSelectBusiness={handleSelectBusiness}
-            onCreateNew={handleCreateNewBusiness}
-            onDeleteBusiness={handleDeleteBusiness}
-            onLogout={handleLogout}
-            rightSidebar={growthData ? (
+    // Update the persistent sidebar content (Mind Map)
+    useEffect(() => {
+        if (growthData) {
+            setRightSidebarContent(
                 <BusinessMindMap
                     score={growthData.score}
                     specialists={growthData.specialists || {}}
@@ -101,31 +138,37 @@ export default function AnalysisClientWrapper({
                     completedTasks={mindMapCompletedTasks}
                     userProfile={userProf}
                 />
-            ) : undefined}
-        >
-            {viewMode === 'hub' ? (
-                <GrowthHub
-                    data={growthData}
-                    userProfile={userProf}
-                    onSelectDimension={(dim) => {
-                        router.push(`/analysis/${currentBusinessId}/${dim}`);
-                    }}
-                    onRedo={handleRedoAnalysis}
-                />
-            ) : (
-                <PillarWorkspace
-                    score={growthData.score}
-                    specialists={growthData.specialists || {}}
-                    analysisId={growthData.analysis_id || null}
-                    businessId={currentBusinessId}
-                    profile={profile}
-                    marketData={growthData.marketData || null}
-                    userProfile={userProf}
-                    onRedo={handleRedoAnalysis}
-                    onStateChange={handlePillarStateChange}
-                    initialActivePillar={activePillarTarget}
-                />
+            );
+        } else {
+            setRightSidebarContent(null);
+        }
+
+        // Cleanup when unmounting or changing
+        return () => setRightSidebarContent(null);
+    }, [growthData, mindMapPillarStates, mindMapCompletedTasks, userProf, setRightSidebarContent]);
+
+    return (
+        <div className="relative h-full">
+            <PillarWorkspace
+                score={growthData.score}
+                specialists={growthData.specialists || {}}
+                analysisId={growthData.analysis_id || null}
+                businessId={currentBusinessId}
+                profile={profile}
+                marketData={growthData.marketData || null}
+                userProfile={userProf}
+                onRedo={handleRedoAnalysis}
+                onStateChange={handlePillarStateChange}
+                initialActivePillar={activePillarTarget}
+                aiModel={aiModel}
+                reanalysisState={{ isReanalyzing, progress: reanalyzeProgress, thoughts: reanalyzeThoughts }}
+            />
+
+            {isReanalyzing && (
+                <div className="absolute inset-0 z-50">
+                    <ParticleLoader progress={reanalyzeProgress} thoughts={reanalyzeThoughts} />
+                </div>
             )}
-        </SidebarLayout>
+        </div>
     );
 }

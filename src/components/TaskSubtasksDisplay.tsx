@@ -1,12 +1,89 @@
 'use client';
 
 import React from 'react';
-import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp } from 'lucide-react';
+import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { TaskItem } from './PillarWorkspace/types';
 import { SourceBadgeList } from './PillarWorkspace/components/SourceBadgeList';
 import { MarkdownContent } from './PillarWorkspace/components/MarkdownContent';
 import { StreamingText } from './PillarWorkspace/components/StreamingText';
 import { cleanMarkdown } from './PillarWorkspace/utils';
+
+// Sub-component so useState is used at the top level of a real component
+function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, activeIndex = -1, execStatuses = {} }: {
+    subtasks: any;
+    safeRender: (t: string) => string;
+    isLoading?: boolean;
+    isDone?: boolean;
+    activeIndex?: number;
+    execStatuses?: Record<number, string>;
+}) {
+    const [isExp, setIsExp] = React.useState(false);
+    const renderList: any[] = subtasks?.subtarefas || [];
+
+    // When not expanded, show the active subtask if it's within range, otherwise show the first one.
+    const effectiveIndex = (activeIndex >= 0 && activeIndex < renderList.length) ? activeIndex : 0;
+    const itemsToShow = isExp ? renderList : [renderList[effectiveIndex]];
+
+    return (
+        <>
+            <style>{`
+                @keyframes subtask-shimmer {
+                    0%   { transform: translateX(-100%); }
+                    100% { transform: translateX(200%); }
+                }
+            `}</style>
+            <div className="flex flex-col gap-1 w-full">
+                {itemsToShow.map((st: any, arrayIdx: number) => {
+                    const i = isExp ? arrayIdx : effectiveIndex;
+                    const status = execStatuses[i] || 'waiting';
+
+                    return (
+                        <div
+                            key={i}
+                            className="relative overflow-hidden transition-colors rounded-lg flex items-center gap-3 px-3 w-full hover:bg-white/[0.04] border border-transparent hover:border-white/[0.02]"
+                        >
+                            {/* Shimmer sweep — only on the currently running subtask or if overall loading at this index */}
+                            {((isLoading && i === activeIndex) || status === 'running') && (
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '50%',
+                                        height: '100%',
+                                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)',
+                                        animation: 'subtask-shimmer 1.6s ease-in-out infinite',
+                                        pointerEvents: 'none',
+                                        zIndex: 0,
+                                    }}
+                                />
+                            )}
+                            {/* Done badge — per subtask or whole task done */}
+                            {(isDone || status === 'done')
+                                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 relative z-10" />
+                                : status === 'running' || (isLoading && i === activeIndex)
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500 shrink-0 relative z-10" />
+                                    : <Circle className="w-3.5 h-3.5 text-zinc-600 shrink-0 relative z-10" />
+                            }
+                            <span className={`text-[12px] font-medium truncate flex-1 relative z-10 ${status === 'done' || isDone ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                                {safeRender(st.titulo)}
+                            </span>
+                            {arrayIdx === 0 && renderList.length > 1 && (
+                                <button
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExp(p => !p); }}
+                                    className="relative z-10 flex items-center justify-center p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors ml-2"
+                                    title={isExp ? 'Recolher' : 'Expandir'}
+                                >
+                                    {isExp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </>
+    );
+}
 
 interface TaskSubtasksDisplayProps {
     task: TaskItem;
@@ -28,7 +105,7 @@ interface TaskSubtasksDisplayProps {
     onAutoExecute?: () => void;
     handleRetryAutoExecSubtask?: (pillarKey: string, task: TaskItem, subtaskIndex: number) => void;
     safeRender?: (text: string) => string;
-    displayMode?: 'all' | 'result' | 'lines';
+    displayMode?: 'all' | 'result' | 'lines' | 'subtasks';
 }
 
 export default function TaskSubtasksDisplay({
@@ -66,9 +143,16 @@ export default function TaskSubtasksDisplay({
 
     if (isDone && !deliverable && !hasExecPanel) return null;
 
-    const getOpinionText = (result: any) => {
+    const getOpinionText = (result: any, allowFallback = false) => {
         if (!result) return '';
-        const base = result.opiniao || result.resumo || result.conteudo || '';
+        // Prioritize opiniao or resumo for the activity feed/thoughts
+        let base = result.opiniao || result.resumo || '';
+
+        // If done and still no opinion, use conteudo as a safe fallback (truncated)
+        if (!base && allowFallback && result.conteudo) {
+            base = result.conteudo;
+        }
+
         return cleanMarkdown(safeRender(base));
     };
 
@@ -110,74 +194,98 @@ export default function TaskSubtasksDisplay({
     const renderResult = () => {
         if (!hasExecPanel) return null;
 
-        // Find the latest subtask with a result or currently streaming
-        let latestStepWithResult = -1;
-        for (let i = taskExecSubtasks.length - 1; i >= 0; i--) {
-            if (taskExecStatuses[i] === 'done' || (isAutoExec && i === (autoExecStep || 0) - 2)) {
-                latestStepWithResult = i;
-                break;
+        // Collect all subtasks that have results or are currently streaming
+        const items: { index: number; result: any; isStreaming: boolean }[] = [];
+        const currentStep = (autoExecStep || 0) - 2; // index of the step currently streaming
+
+        for (let i = 0; i < taskExecSubtasks.length; i++) {
+            const status = taskExecStatuses[i];
+            const result = taskExecResults[i];
+            const isStreaming = isAutoExec && i === currentStep;
+
+            if (status === 'done' || isStreaming || result) {
+                items.push({ index: i, result, isStreaming });
             }
         }
 
-        if (latestStepWithResult >= 0) {
-            const result = taskExecResults[latestStepWithResult];
-            const isStreaming = isAutoExec && latestStepWithResult === (autoExecStep || 0) - 2;
-            const opinionText = getOpinionText(result);
-            const streamingText = safeRender(result?.conteudo || opinionText || '');
+        if (items.length === 0) return null;
 
-            if (result || isStreaming) {
-                return (
-                    <div className="w-full mb-4 px-5 py-4 rounded-2xl bg-gradient-to-br from-zinc-900/70 to-zinc-900/30 border border-white/[0.05] shadow-xl backdrop-blur">
-                        <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-white/[0.05]">
-                            <div className="flex items-center gap-2">
-                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-violet-500/20 text-violet-300 font-bold text-[11px]">
-                                    {latestStepWithResult + 1}
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">{safeRender(taskExecSubtasks[latestStepWithResult]?.titulo || '')}</span>
-                                    {result?.entregavel_titulo && (
-                                        <span className="text-[13px] font-semibold text-white/90">{safeRender(result.entregavel_titulo)}</span>
-                                    )}
-                                </div>
+        return (
+            <div className="w-full space-y-6 px-1 pt-3">
+                <style>{`
+                    @keyframes result-block-fade-in {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to   { opacity: 1; transform: translateY(0); }
+                    }
+                `}</style>
+                {items.map(({ index, result, isStreaming }) => {
+                    const status = taskExecStatuses[index];
+                    const opinionText = getOpinionText(result, status === 'done');
+                    // Use opinion/resumo for streaming, never use the full technical content (conteudo) in the feed
+                    const streamingText = safeRender(result?.opiniao || result?.resumo || '');
+                    const hasSources = result && (result.sources?.length > 0 || result.fontes_consultadas?.length > 0);
+                    const subtaskTitle = safeRender(taskExecSubtasks[index]?.titulo || '');
+
+                    return (
+                        <div key={index} className="w-full" style={{
+                            animation: 'result-block-fade-in 0.5s ease-out forwards',
+                            opacity: 0
+                        }}>
+                            {/* Subtask title */}
+                            <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                                {subtaskTitle}
                             </div>
-                            <span className="text-[10px] font-semibold tracking-[0.3em] text-violet-200/60 uppercase">Opinião da IA</span>
-                        </div>
 
-                        {(opinionText || isStreaming) ? (
-                            <div className="space-y-3">
-                                {isStreaming ? (
-                                    <StreamingText text={streamingText || 'Gerando opinião...'} speed={6} className="text-[13px] text-zinc-100" />
+                            {/* Sources first */}
+                            {hasSources && (
+                                <div className="mb-3">
+                                    <SourceBadgeList
+                                        sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]}
+                                        maxVisible={4}
+                                        animated={isStreaming || taskExecStatuses[index] === 'done'}
+                                    />
+                                </div>
+                            )}
+
+                            {/* AI opinion / streaming */}
+                            {(opinionText || isStreaming) ? (
+                                isStreaming ? (
+                                    streamingText ? (
+                                        <StreamingText text={streamingText} speed={6} className="text-[13px] text-zinc-300 leading-relaxed" />
+                                    ) : (
+                                        <div className="flex items-center gap-0.5 py-2">
+                                            {[0, 1, 2].map(i => (
+                                                <span
+                                                    key={i}
+                                                    className="w-1 h-1 rounded-full bg-zinc-500"
+                                                    style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                                                />
+                                            ))}
+                                        </div>
+                                    )
                                 ) : (
                                     <div className="space-y-2">
                                         {renderOpinionParagraphs(opinionText)}
                                     </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-2 text-zinc-500 text-[11px] py-4">
-                                <Loader2 className="w-4 h-4 animate-spin text-violet-500" /> Elaborando opinião...
-                            </div>
-                        )}
-
-                        {result && (result.sources?.length > 0 || result.fontes_consultadas?.length > 0) && (
-                            <div className="mt-5 pt-4 border-t border-white/[0.05]">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="flex gap-1">
-                                        {Array.from({ length: 3 }).map((_, idx) => (
-                                            <span key={idx} className="w-1.5 h-1.5 rounded-full bg-violet-400/60 animate-pulse" style={{ animationDelay: `${idx * 120}ms` }} />
-                                        ))}
-                                    </div>
-                                    <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Fontes analisadas</div>
+                                )
+                            ) : (
+                                <div className="flex items-center gap-0.5 py-2">
+                                    {[0, 1, 2].map(i => (
+                                        <span
+                                            key={i}
+                                            className="w-1 h-1 rounded-full bg-zinc-500"
+                                            style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                                        />
+                                    ))}
                                 </div>
-                                <SourceBadgeList sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]} maxVisible={4} />
-                            </div>
-                        )}
-                    </div>
-                );
-            }
-        }
-        return null;
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        );
     };
+
 
     const renderLines = () => {
         const [isExpanded, setIsExpanded] = React.useState(false);
@@ -188,13 +296,7 @@ export default function TaskSubtasksDisplay({
 
         return (
             <div className="w-full">
-                {/* Expanding spinner — shown only before subtasks load for THIS task */}
-                {isAutoExec && !hasExecPanel && (
-                    <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-violet-500/[0.03] border border-violet-500/10 mb-3">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
-                        <span className="text-[11px] font-medium text-violet-300/80 uppercase tracking-wider">Criando subtarefas...</span>
-                    </div>
-                )}
+
 
                 {hasExecPanel && (
                     <div className="mt-1">
@@ -209,7 +311,8 @@ export default function TaskSubtasksDisplay({
                                     if (runningIndex !== -1) {
                                         defaultIndexToShow = runningIndex;
                                     } else {
-                                        const waitingIndex = taskExecSubtasks.findIndex((_: any, i: number) => taskExecStatuses[i] === 'waiting');
+                                        // Also look for undefined as waiting
+                                        const waitingIndex = taskExecSubtasks.findIndex((_: any, i: number) => !taskExecStatuses[i] || taskExecStatuses[i] === 'waiting');
                                         if (waitingIndex !== -1) {
                                             defaultIndexToShow = waitingIndex;
                                         } else {
@@ -230,7 +333,7 @@ export default function TaskSubtasksDisplay({
                                     const isAI = st.executavel_por_ia;
                                     const isFirstItemInList = arrayIndex === 0;
                                     const resultForSubtask = taskExecResults[i];
-                                    const subtaskOpinionText = getOpinionText(resultForSubtask);
+                                    const subtaskOpinionText = getOpinionText(resultForSubtask, status === 'done');
 
                                     const renderSubtaskOpinion = () => {
                                         if (!resultForSubtask || !subtaskOpinionText) return null;
@@ -251,7 +354,7 @@ export default function TaskSubtasksDisplay({
                                             <div className="flex items-center gap-3 px-3 w-full">
                                                 <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center">
                                                     {status === 'waiting' && <Circle className="w-3.5 h-3.5 text-zinc-600" />}
-                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />}
+                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
                                                     {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
                                                     {status === 'error' && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
                                                 </div>
@@ -316,46 +419,39 @@ export default function TaskSubtasksDisplay({
                     </div>
                 )}
 
-                {/* Regular subtasks list */}
-                {subtasks && !isAutoExec && !hasExecPanel && (
-                    <div className="mt-1">
-                        <div className="flex flex-col gap-1 px-1 pb-2">
-                            {(() => {
-                                const renderList = subtasks.subtarefas || [];
-                                const itemsToShow = isExpanded ? renderList : renderList.slice(0, 1);
-
-                                return itemsToShow.map((st: any, i: number) => {
-                                    const isFirstItemInList = i === 0;
-                                    return (
-                                        <div key={i} className="transition-colors rounded-lg overflow-hidden flex items-center gap-3 px-3 w-full hover:bg-white/[0.04] border border-transparent hover:border-white/[0.02]">
-                                            <Circle className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                                            <span className="text-[12px] font-medium text-zinc-300 truncate flex-1">
-                                                {safeRender(st.titulo)}
-                                            </span>
-
-                                            {/* Expand/Collapse Toggle on First Item */}
-                                            {isFirstItemInList && renderList.length > 1 && (
-                                                <button
-                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(!isExpanded); }}
-                                                    className="flex items-center justify-center p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors ml-2"
-                                                    title={isExpanded ? 'Recolher' : 'Expandir'}
-                                                >
-                                                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                });
-                            })()}
-                        </div>
-                    </div>
+                {/* Regular subtasks list — shown in bottom card; with shimmer when auto-executing */}
+                {displayMode === 'lines' && subtasks && !hasExecPanel && (
+                    <SubtaskList subtasks={subtasks} safeRender={safeRender} isLoading={isAutoExec} />
                 )}
+
             </div>
         );
     };
 
     if (displayMode === 'result') return renderResult();
     if (displayMode === 'lines') return renderLines();
+    if (displayMode === 'subtasks') {
+        if (!subtasks) {
+            if (isExpanding || isAutoExec) {
+                return (
+                    <div className="flex items-center gap-0.5 px-3 py-2">
+                        {[0, 1, 2].map(i => (
+                            <span
+                                key={i}
+                                className="w-1 h-1 rounded-full bg-zinc-500"
+                                style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                            />
+                        ))}
+                    </div>
+                );
+            }
+            return null;
+        }
+        // Find which subtask is currently running
+        const runningIdx = taskExecSubtasks.findIndex((_, i) => taskExecStatuses[i] === 'running');
+        const activeIndex = runningIdx !== -1 ? runningIdx : isAutoExec ? (autoExecStep ?? 1) - 1 : -1;
+        return <SubtaskList subtasks={subtasks} safeRender={safeRender} isLoading={isAutoExec} isDone={isDone} activeIndex={activeIndex} execStatuses={taskExecStatuses} />;
+    }
 
     return (
         <div className="mt-3 space-y-3 w-full">

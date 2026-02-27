@@ -87,18 +87,18 @@ export const useTaskHandlers = (
                 setSubtasksUpdateKey(prev => prev + 1);
             }
 
-            const allItems: any[] = existingSubtasks.subtarefas || [];
-            if (allItems.length === 0) {
+            const executionSubtasks: any[] = existingSubtasks.subtarefas || [];
+            if (executionSubtasks.length === 0) {
                 throw new Error('Nenhuma subtarefa encontrada para esta ação.');
             }
 
             // Populate visual list for THIS task
-            setAutoExecSubtasks(prev => ({ ...prev, [tid]: allItems }));
-            setAutoExecTotal(allItems.length);
+            setAutoExecSubtasks(prev => ({ ...prev, [tid]: executionSubtasks }));
+            setAutoExecTotal(executionSubtasks.length + 1); // inclui etapa final de gerar arquivo
 
             // Step 2: Execute each subtask sequentially
-            for (let i = 0; i < allItems.length; i++) {
-                const subtask = allItems[i];
+            for (let i = 0; i < executionSubtasks.length; i++) {
+                const subtask = executionSubtasks[i];
                 setAutoExecStep(i + 1);
                 setAutoExecStatuses(prev => ({
                     ...prev,
@@ -140,16 +140,58 @@ export const useTaskHandlers = (
                 await new Promise(resolve => setTimeout(resolve, 800));
             }
 
-            // Step 3: Combine all results into a single deliverable
-            const allResults = Object.values(autoExecResults[tid] || {});
-            const combinedSources = allResults.flatMap((r: any) => r.sources || []);
+            // Step 3: Combine all results into a single string
+            const allResultsObj = autoExecResults[tid] || {};
+            const allResults = [];
+            for (let i = 0; i < executionSubtasks.length; i++) {
+                if (allResultsObj[i]) allResults.push(allResultsObj[i]);
+            }
+            const combinedSources = allResults.flatMap((r: any) => r.sources || r.fontes_consultadas || []);
             const combinedContent = allResults.map((r: any, i: number) =>
-                `## ${i + 1}. ${allItems[i]?.titulo || `Subtarefa ${i + 1}`}\n\n${r.conteudo || ''}`
+                `## ${i + 1}. ${executionSubtasks[i]?.titulo || `Subtarefa ${i + 1}`}\n\n${r.conteudo || ''}`
             ).join('\n\n---\n\n');
 
+            // Step 4: Generate final Executive Summary
+            setAutoExecStep(executionSubtasks.length + 1);
+            setAutoExecLog(prev => [...prev, `Gerando resumo executivo final...`]);
+
+            let finalSummary = combinedContent;
+            try {
+                const summaryResult = await apiCall('specialist-execute', {
+                    analysis_id: analysisId, pillar_key: pillarKey,
+                    task_id: `${tid}_summary`,
+                    task_data: {
+                        id: `${tid}_summary`,
+                        titulo: 'Resumo Executivo da Tarefa',
+                        descricao: 'Gere um resumo em texto corrido (2-4 parágrafos), consolidando os principais resultados encontrados nas subtarefas de forma a entregar a "última opinião" do consultor. Não use cabeçalhos h1/h2 estruturais pesados.',
+                        entregavel_ia: 'Resumo das Subtarefas',
+                        ferramenta: 'analise_dados'
+                    },
+                    profile: profile?.profile || profile,
+                    previous_results: [{ titulo: 'Conteúdo Original das Subtarefas', conteudo: combinedContent.substring(0, 15000) }],
+                }, { signal: controller.signal });
+
+                if (summaryResult.success && summaryResult.execution && summaryResult.execution.conteudo) {
+                    finalSummary = summaryResult.execution.conteudo;
+                    setAutoExecLog(prev => [...prev, `✅ Resumo gerado com sucesso`]);
+                } else {
+                    setAutoExecLog(prev => [...prev, `⚠️ Mantendo conteúdo completo`]);
+                }
+            } catch (err: any) {
+                console.warn('Erro summary:', err);
+                setAutoExecLog(prev => [...prev, `⚠️ Erro ao gerar resumo`]);
+            }
+
             const combinedDeliverable = {
+                id: tid,
+                entregavel_titulo: task.entregavel_ia || task.titulo,
+                entregavel_tipo: 'plano_completo',
                 titulo: `Resultado: ${task.titulo}`,
-                conteudo: combinedContent,
+                conteudo: finalSummary,
+                conteudo_completo: combinedContent,
+                como_aplicar: allResults[allResults.length - 1]?.como_aplicar || '',
+                impacto_estimado: allResults[allResults.length - 1]?.impacto_estimado || '',
+                fontes_consultadas: combinedSources,
                 sources: [...new Set(combinedSources)],
                 parts: allResults,
             };
@@ -162,6 +204,27 @@ export const useTaskHandlers = (
             });
             // Force update of TaskSubtasksDisplay
             setSubtasksUpdateKey(prev => prev + 1);
+
+            // Step 5: Registrar subtask visual para geração de arquivo no Google Docs
+            const docSubtask = {
+                id: `${tid}_doc_export`,
+                titulo: 'Gerar documento final no Google Docs',
+                descricao: 'Clique no botão “Abrir no Google Docs” do card de entregáveis para baixar o arquivo completo gerado pela IA.',
+                executavel_por_ia: true,
+                tempo_estimado: '1 min',
+            };
+
+            setAutoExecSubtasks(prev => {
+                const current = prev[tid] ? [...prev[tid]] : [];
+                if (current.some(st => st.id === docSubtask.id)) return prev;
+                return { ...prev, [tid]: [...current, docSubtask] };
+            });
+            setAutoExecStatuses(prev => ({
+                ...prev,
+                [tid]: { ...(prev[tid] || {}), [executionSubtasks.length]: 'done' }
+            }));
+            setAutoExecLog(prev => [...prev, '📝 Gerando arquivo final no Google Docs...']);
+            setAutoExecStep(executionSubtasks.length + 1);
 
             // Clear execution state on success
             setAutoExecuting(null);
