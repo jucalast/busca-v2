@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import ParticleLoader from '@/components/ParticleLoader';
-import GrowthChat from '@/components/GrowthChat';
-import SidebarLayout from '@/components/SidebarLayout';
+import ParticleLoader from '@/features/shared/components/particle-loader';
+import GrowthChat from '@/features/shared/components/growth-chat';
+import SidebarLayout from '@/components/layout/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';

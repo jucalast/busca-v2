@@ -1,90 +1,37 @@
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import path from 'path';
-import util from 'util';
 
-const execPromise = util.promisify(exec);
+const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { query, maxResults, maxPages, maxSentences, noGroq, verbose, region, businessMode, modelProvider } = body;
+        const { query, businessMode } = body;
 
         if (!query) {
             return NextResponse.json({ error: 'Query is required' }, { status: 400 });
         }
 
-        const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
-        const scriptPath = path.join(process.cwd(), 'backend', 'src', 'search_summarizer', 'cli.py');
+        const endpoint = businessMode ? '/api/v1/search/business' : '/api/v1/search/simple';
+        const url = `${FASTAPI_URL}${endpoint}`;
 
-        // Escape the query for shell safety
-        const escapedQuery = query.replace(/"/g, '\\"');
-        let cmd = `${pythonCommand} "${scriptPath}" "${escapedQuery}"`;
+        console.log(`Forwarding search to FastAPI: ${url}`);
 
-        if (maxResults) cmd += ` --max-results ${maxResults}`;
-        if (maxPages) cmd += ` --max-pages ${maxPages}`;
-        if (maxSentences) cmd += ` --max-sentences ${maxSentences}`;
-        if (region) cmd += ` --region ${region}`;
-        if (businessMode) cmd += ` --business`;
-        if (noGroq) cmd += ` --no-groq`;
-        if (verbose) cmd += ` --verbose`;
-        if (modelProvider) cmd += ` --model ${modelProvider}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
 
-        const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
-
-        console.log(`Executing: ${cmd}`);
-
-        // Business mode needs more time (multiple searches + AI calls)
-        const timeout = businessMode ? 180000 : 30000;
-        const maxBuffer = businessMode ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
-
-        const { stdout, stderr } = await execPromise(cmd, { env, timeout, maxBuffer });
-
-        if (stderr && verbose) {
-            console.error('Python Stderr:', stderr);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('FastAPI error:', errorText);
+            return NextResponse.json({ error: `FastAPI responded with ${response.status}`, details: errorText }, { status: response.status });
         }
 
-        const outputString = stdout.toString();
-
-        // Parse output
-        const jsonStartMarker = "--- Resumo ---";
-        const jsonstart = outputString.indexOf(jsonStartMarker);
-        const splitParts = outputString.split("Fontes utilizadas:");
-
-        if (jsonstart !== -1) {
-            const jsonString = outputString.substring(
-                jsonstart + jsonStartMarker.length,
-                splitParts.length > 1 ? outputString.lastIndexOf("Fontes utilizadas:") : undefined
-            ).trim();
-
-            try {
-                const parsed = JSON.parse(jsonString);
-
-                // Business mode returns a different structure
-                if (parsed.businessMode) {
-                    return NextResponse.json(parsed);
-                }
-
-                // Simple mode
-                return NextResponse.json({
-                    structured: parsed.structured,
-                    sources: parsed.sources || [],
-                    rawOutput: outputString
-                });
-            } catch (e) {
-                console.error("Failed to parse Python JSON output", e, jsonString.substring(0, 500));
-                return NextResponse.json({
-                    error: 'Failed to parse synthesis result',
-                    raw: outputString.substring(0, 1000)
-                }, { status: 500 });
-            }
-        } else {
-            console.warn("No JSON marker found in output");
-            return NextResponse.json({
-                error: 'Invalid response format from backend',
-                raw: outputString.substring(0, 1000)
-            }, { status: 500 });
-        }
+        const data = await response.json();
+        return NextResponse.json(data);
 
     } catch (error: any) {
         console.error('Search API Error:', error);

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
-import { runOrchestrator, runOrchestratorStreaming } from '@/lib/orchestrator';
+import { runOrchestrator, runOrchestratorStreaming } from '@/lib/api/client';
 
 // ─────────────────────────────────────────────
 // Growth Mode API
@@ -533,9 +533,20 @@ export async function POST(request: Request) {
         }
 
         // ━━━ Action: Redo Subtasks ━━━
-        // Frontend handles state clearing; backend just acknowledges the reset
         if (action === 'redo-subtasks') {
-            return NextResponse.json({ success: true });
+            const { analysis_id, pillar_key, task_id } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('redo-subtasks', {
+                aiModel,
+                analysis_id,
+                pillar_key,
+                task_id,
+            }, 15000);
+
+            return NextResponse.json(result);
         }
 
         // ━━━ Action: Redo Pillar ━━━
@@ -579,6 +590,40 @@ export async function POST(request: Request) {
                 analysis_id,
                 pillar_key,
             }, 15000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Execute All Subtasks (Background) ━━━
+        if (action === 'execute-all-subtasks') {
+            const { analysis_id, pillar_key, task_id, task_data } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('execute-all-subtasks', {
+                aiModel,
+                analysis_id,
+                pillar_key,
+                task_id,
+                task_data: task_data || {},
+                profile: profile || {},
+            }, 10000);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Poll Background Status ━━━
+        if (action === 'poll-background-status') {
+            const { analysis_id, task_id } = body;
+            if (!analysis_id || !task_id) {
+                return NextResponse.json({ error: 'analysis_id and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('poll-background-status', {
+                analysis_id,
+                task_id,
+            }, 5000);
 
             return NextResponse.json(result);
         }

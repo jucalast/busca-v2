@@ -1,7 +1,7 @@
 'use client';
 
 import React, { use } from 'react';
-import SidebarLayout from '@/components/SidebarLayout';
+import SidebarLayout from '@/components/layout/sidebar';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';

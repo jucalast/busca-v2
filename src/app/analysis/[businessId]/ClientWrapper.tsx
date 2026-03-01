@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import PillarWorkspace from '@/components/PillarWorkspace';
-import BusinessMindMap from '@/components/BusinessMindMap';
-import SidebarLayout from '@/components/SidebarLayout';
-import ParticleLoader from '@/components/ParticleLoader';
+import PillarWorkspace from '@/features/workspace/components/pillar-workspace';
+import BusinessMindMap from '@/features/analysis/components/business-mind-map';
+import SidebarLayout from '@/components/layout/sidebar';
+import ParticleLoader from '@/features/shared/components/particle-loader';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/SidebarContext';

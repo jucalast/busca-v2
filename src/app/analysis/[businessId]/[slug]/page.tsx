@@ -1,7 +1,7 @@
 import React from 'react';
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
-import { runOrchestrator } from '@/lib/orchestrator';
+import { runOrchestrator } from '@/lib/api/client';
 import AnalysisClientWrapper from '../ClientWrapper';
 
 // Adicionamos Next.js Cache Revalidation Behavior
