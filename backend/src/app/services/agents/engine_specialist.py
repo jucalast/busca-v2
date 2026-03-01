@@ -19,15 +19,20 @@ Key Innovation: "Resultado = Novo Dado"
 After execution, results become NEW DATA that feeds back into the business profile.
 """
 
-import json
-import os
-import sys
-import time
+# ═══════════════════════════════════════════════════════════════════
+# IMPORTS CENTRALIZADOS (ANTES: 5 imports duplicados)
+# ═══════════════════════════════════════════════════════════════════
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from app.core.web_utils import search_duckduckgo, scrape_page
-from app.core.llm_router import call_llm
-from app.core import database as db
+from app.services.common import (
+    json, sys, os, time,  # Python basics
+    call_llm,            # LLM
+    search_duckduckgo, scrape_page,  # Web utils
+    db,                  # Database
+    log_info, log_error, log_warning, log_success, log_debug,  # Logging
+    safe_json_dumps, safe_json_loads,  # Serialization
+    CommonConfig,    # Config
+    get_timestamp, format_duration, safe_get, retry_with_delay  # Utils
+)
 
 # ═══════════════════════════════════════════════════════════════════
 # SPECIALIST PERSONAS — Each pillar is a real professional
@@ -268,7 +273,7 @@ def build_cross_pillar_context(analysis_id: str, target_pillar: str, all_diagnos
     This is the ASSEMBLY LINE: downstream specialists read upstream reports
     instead of re-searching the web. Token-efficient and hyper-coherent.
     """
-    from app.services.analysis.business_scorer import DIMENSIONS
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
 
     upstream_keys = DIMENSIONS.get(target_pillar, {}).get("upstream", [])
     if not upstream_keys:
@@ -412,7 +417,7 @@ def generate_pillar_plan(
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
-    from app.services.analysis.business_scorer import DIMENSIONS
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
     dim_cfg = DIMENSIONS.get(pillar_key, {})
 
     # Load diagnostic if not provided
@@ -655,7 +660,7 @@ def check_pillar_dependencies(analysis_id: str, pillar_key: str) -> dict:
     Check if prerequisite pillars are ready for this specialist to work.
     Returns dependency status with actionable messages.
     """
-    from app.services.analysis.business_scorer import DIMENSIONS
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
 
     dim_cfg = DIMENSIONS.get(pillar_key, {})
     upstream = dim_cfg.get("upstream", [])
@@ -910,15 +915,11 @@ def generate_specialist_tasks(
     model_provider: str = "groq",
 ) -> dict:
     """
-    The specialist creates TASKS for their pillar, classifying each as:
-    - executavel_por_ia: True → AI can generate the deliverable
-    - executavel_por_ia: False → User must do it (instructions provided)
-
-    Uses saved market research data from Phase 1 as primary context.
-    RAG search is supplemental — only runs if market data is thin.
+    The specialist creates TASKS for their pillar using context-aware generation.
+    
+    NEW: Uses context-aware generation based on scores and diagnostics.
+    FALLBACK: Maintains backward compatibility with original system.
     """
-    # Removed GROQ_API_KEY check since call_llm handles keys per provider
-
     print(f"DEBUG: generate_specialist_tasks(analysis_id={analysis_id}, pillar_key={pillar_key})", file=sys.stderr)
     
     # Comprehensive normalization (convert all hyphens to underscores)
@@ -929,50 +930,71 @@ def generate_specialist_tasks(
         print(f"DEBUG: Specialist not found for {pillar_key}", file=sys.stderr)
         return {"success": False, "error": f"Pilar desconhecido: {pillar_key}"}
 
-    from app.services.analysis.business_scorer import DIMENSIONS
-    dim_cfg = DIMENSIONS.get(pillar_key, {})
+    # Try NEW context-aware generation first
+    try:
+        from app.services.analysis.generator_task_context_aware import generate_context_aware_tasks, has_context_aware_tasks
+        
+        # Check if we already have context-aware tasks
+        if has_context_aware_tasks(analysis_id, pillar_key):
+            print(f"  ✅ Context-aware tasks already exist for {pillar_key}", file=sys.stderr)
+            plan = db.get_pillar_plan(analysis_id, pillar_key)
+            return {"success": True, "plan": plan}
+        
+        # Load score data for context-aware generation
+        analysis_data = db.get_analysis(analysis_id)
+        if not analysis_data:
+            print(f"  ⚠️ No analysis data found for {pillar_key}, falling back to original method", file=sys.stderr)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+        
+        score_data = analysis_data.get("score_data", {})
+        discovery_data = analysis_data.get("discovery_data", {})
+        
+        if not score_data:
+            print(f"  ⚠️ No score data found for {pillar_key}, falling back to original method", file=sys.stderr)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+        
+        # Generate context-aware tasks
+        print(f"  🎯 Using context-aware generation for {pillar_key}", file=sys.stderr)
+        result = generate_context_aware_tasks(
+            analysis_id=analysis_id,
+            pillar_key=pillar_key,
+            profile=brief,
+            score_data=score_data,
+            market_data=market_data or {},
+            discovery_data=discovery_data,
+            model_provider=model_provider
+        )
+        
+        if result.get("success"):
+            print(f"  ✅ Context-aware generation successful for {pillar_key}", file=sys.stderr)
+            return result
+        else:
+            print(f"  ⚠️ Context-aware generation failed for {pillar_key}: {result.get('error')}", file=sys.stderr)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+            
+    except ImportError as e:
+        print(f"  ⚠️ Context-aware module not available for {pillar_key}: {e}", file=sys.stderr)
+        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+    except Exception as e:
+        print(f"  ❌ Context-aware generation error for {pillar_key}: {e}", file=sys.stderr)
+        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
 
+
+def _fallback_to_original_generation(analysis_id: str, pillar_key: str, brief: dict, model_provider: str) -> dict:
+    """Fallback to original generation method for backward compatibility."""
+    print(f"  🔄 Using original generation method for {pillar_key}", file=sys.stderr)
+    
     # Load all diagnostics for cross-pillar context
     all_diags_list = db.get_all_diagnostics(analysis_id)
     all_diagnostics = {d["pillar_key"].replace("-", "_"): d for d in all_diags_list}
     print(f"DEBUG: Found {len(all_diagnostics)} diagnostics for analysis {analysis_id}", file=sys.stderr)
-
-    # 1. Start with the pillar diagnostic
-    diagnostic = all_diagnostics.get(pillar_key)
+    
+    # Load diagnostic for this pillar
+    diagnostic = db.get_pillar_diagnostic(analysis_id, pillar_key)
     if not diagnostic:
-        diagnostic = db.get_pillar_diagnostic(analysis_id, pillar_key)
-        
-    # 🚨 EMERGENCY FALLBACK: Load from the main analyses table if individual diags are missing
-    if not diagnostic:
-        print(f"DEBUG: Diagnostic for {pillar_key} missing in pillar_diagnostics. Trying fallback to analyses table...", file=sys.stderr)
-        analysis = db.get_analysis(analysis_id)
-        if analysis and "score_data" in analysis:
-            dims = analysis["score_data"].get("dimensoes", {})
-            # Try both underscore and hyphen versions in the JSON
-            dv = dims.get(pillar_key) or dims.get(pillar_key.replace("_", "-"))
-            if dv:
-                print(f"  ✅ Fallback successful: Found {pillar_key} in score_data", file=sys.stderr)
-                diagnostic = {
-                    "score": dv.get("score", 50),
-                    "status": dv.get("status", "atencao"),
-                    "estado_atual": {
-                        "justificativa": dv.get("justificativa", ""),
-                        "dado_chave": dv.get("dado_chave", ""),
-                        "meta_pilar": dv.get("meta_pilar", ""),
-                    },
-                    "gaps": [a.get("acao", str(a)) if isinstance(a, dict) else str(a) for a in dv.get("acoes_imediatas", [])],
-                    "oportunidades": [dv.get("dado_chave", "")] if dv.get("dado_chave") else [],
-                    "fontes": dv.get("fontes_utilizadas", []),
-                }
+        return {"success": False, "error": f"Diagnostic not found for pillar {pillar_key}"}
 
-    if not diagnostic:
-        print(f"DEBUG: FATAL - No diagnostic found for {pillar_key} even after fallback", file=sys.stderr)
-        return {"success": False, "error": f"Diagnóstico não encontrado para {pillar_key}. Re-execute a análise principal."}
-
-    # Load market data from DB if not passed
-    if not market_data:
-        market_data = db.get_analysis_market_data(analysis_id)
-
+    # ... (rest of the code remains the same)
     # Check dependencies first
     deps = check_pillar_dependencies(analysis_id, pillar_key)
 
@@ -1296,7 +1318,7 @@ def agent_execute_task(
         if not spec:
             return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
-        from app.services.analysis.business_scorer import DIMENSIONS
+        from app.services.analysis.analyzer_business_scorer import DIMENSIONS
         dim_cfg = DIMENSIONS.get(pillar_key, {})
 
         # Load market data from DB if not passed
@@ -1545,7 +1567,7 @@ Retorne APENAS o JSON."""
 
 def get_all_pillars_state(analysis_id: str) -> dict:
     """Get the state of ALL 7 pillars at once — for the unified dashboard."""
-    from app.services.analysis.business_scorer import DIMENSIONS, DIMENSION_ORDER
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS, DIMENSION_ORDER
 
     pillars = {}
     for pk in DIMENSION_ORDER:
@@ -1605,17 +1627,68 @@ def expand_task_subtasks(
     Break a single task into 3-6 concrete subtasks.
     Each subtask is small enough for the AI to execute in one shot.
     This is the 'macro plan' concept applied at task level.
+    
+    NEW: Uses unified_research for intelligent subtask research.
     """
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
-    from app.services.analysis.business_scorer import DIMENSIONS
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
     dim_cfg = DIMENSIONS.get(pillar_key, {})
 
     # Load market data from DB if not passed
     if not market_data:
         market_data = db.get_analysis_market_data(analysis_id)
+
+    # Try to use unified research for subtask research
+    try:
+        from app.services.research.unified_research import research_engine
+        
+        # Use unified research for subtask level
+        research_data = research_engine.search_subtasks(
+            task_title=task_data.get("titulo", ""),
+            task_desc=task_data.get("descricao", ""),
+            pillar_key=pillar_key,
+            segmento=brief.get("dna", {}).get("segmento", ""),
+            task_context=task_data,
+            force_refresh=False
+        )
+        
+        research_text = research_data.get("content", "")
+        research_sources = research_data.get("sources", [])
+        
+        print(f"  📦 Used unified research for subtasks: {len(research_sources)} sources", file=sys.stderr)
+        
+    except Exception as e:
+        print(f"  ⚠️ Unified research failed for subtasks: {e}, using fallback", file=sys.stderr)
+        # Fallback to original method
+        research_text = ""
+        research_sources = []
+        
+        # Original research logic as fallback
+        queries = pillar["search_queries_template"]
+        for qi, query_tpl in enumerate(queries):
+            query = query_tpl.format(
+                segmento=brief.get("dna", {}).get("segmento", ""),
+                localizacao=brief.get("localizacao", ""),
+                nome=brief.get("nome_negocio", brief.get("nome", "")),
+            )
+            
+            results = search_duckduckgo(query, max_results=4, region='br-pt')
+            for i, r in enumerate(results or []):
+                url = r.get("href", "")
+                research_sources.append(url)
+                snippet = r.get("body", "")
+                title = r.get("title", "")
+                research_text += f"[Fonte {len(research_sources)}] {title}: {snippet}\n"
+
+                if i < 1:  # Scrape top result per query
+                    content = scrape_page(url, timeout=4)
+                    if content:
+                        research_text += f"Conteúdo: {content[:2500]}\n\n"
+
+            time.sleep(1)  # Rate limit courtesy
 
     brief_text = brief_to_text(brief)
     exec_history = build_execution_context(analysis_id, pillar_key)
@@ -1677,6 +1750,7 @@ def expand_task_subtasks(
 TAREFA PRINCIPAL: {task_title}
 DESCRIÇÃO: {task_desc}
 TIPO: {"Executável por IA" if is_ai else "Requer ação do usuário"}
+ENTREGÁVEL: {task_data.get('entregavel_ia', 'N/A')}
 
 {all_research}
 
@@ -1687,6 +1761,8 @@ Para cada subtarefa, classifique se a IA pode executar ou se o usuário precisa 
 REGRA ANTI-INVASÃO DE ESCOPO (CRÍTICO): PARE DE INVENTAR EXTRAS. Esta tarefa é EXCLUSIVAMENTE sobre: "{task_title}". NÃO INCLUA NUNCA sub-passos referentes a escopos de outras tarefas maiores do mesmo pilar. Exemplo: se a tarefa for ESTRITAMENTE sobre "Criar Documento de Persona", é ESTRITAMENTE PROIBIDO colocar uma subtarefa sobre "Desenvolver Jornada do Cliente" no meio. Mantenha o escopo isolado apenas no entregável desta tarefa específica.
 
 REGRA DE CASCATA: É OBRIGATÓRIO desenhar as subtarefas usando as variáveis, personas e estratégias já definidas pelos pilares anteriores. NÃO sub-divida tarefas de forma genérica.
+
+REGRA DO ENTREGÁVEL: Se a tarefa tiver um "ENTREGÁVEL" especificado (como "{task_data.get('entregavel_ia', '')}"), é OBRIGATÓRIO incluir uma subtarefa específica para "Criar {task_data.get('entregavel_ia', 'arquivo entregável')}" como uma das subtarefas finais. Esta subtarefa deve focar exclusivamente na produção do arquivo/documento entregável.
 
 REGRA IMPORTANTE: Todas as subtarefas devem estar DENTRO do escopo acima.
 NÃO crie subtarefas que envolvam ações listadas em 🚫 PROIBIDO.
@@ -1745,7 +1821,7 @@ def ai_try_user_task(
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
-    from app.services.analysis.business_scorer import DIMENSIONS
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
     dim_cfg = DIMENSIONS.get(pillar_key, {})
 
     # Load market data from DB if not passed

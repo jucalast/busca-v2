@@ -163,8 +163,16 @@ export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480
     return new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
+            let controllerClosed = false;
+            
             const send = (obj: object) => {
-                try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); } catch { /* stream closed */ }
+                if (!controllerClosed) {
+                    try { 
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); 
+                    } catch { 
+                        controllerClosed = true; /* stream closed */ 
+                    }
+                }
             };
 
             try {
@@ -187,13 +195,28 @@ export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    controller.enqueue(value);
+                    if (!controllerClosed) {
+                        try {
+                            controller.enqueue(value);
+                        } catch {
+                            controllerClosed = true;
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
-                controller.close();
+                if (!controllerClosed) {
+                    controllerClosed = true;
+                    controller.close();
+                }
             } catch (error: any) {
                 console.error('[Growth SSE Proxy Error]', error);
                 send({ type: 'error', message: error.message });
-                try { controller.close(); } catch { /* ignore */ }
+                if (!controllerClosed) {
+                    controllerClosed = true;
+                    try { controller.close(); } catch { /* ignore */ }
+                }
             }
         },
     });

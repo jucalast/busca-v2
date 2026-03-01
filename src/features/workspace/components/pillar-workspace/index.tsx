@@ -349,6 +349,7 @@ export default function PillarWorkspace({
         setCompletedTasks,
         setSubtasksUpdateKey,
         setError,
+        setExpandingTask,
         abortControllersRef
     );
 

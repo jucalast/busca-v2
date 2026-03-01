@@ -15,18 +15,25 @@ Architecture:
 5. Return discovery_data dict that feeds into all scorer dimensions
 """
 
-import json
-import os
+# ═══════════════════════════════════════════════════════════════════
+# IMPORTS CENTRALIZADOS (ANTES: 5 imports duplicados)
+# ═══════════════════════════════════════════════════════════════════
+
+from app.services.common import (
+    json, os, sys, time,  # Python basics
+    call_llm,            # LLM
+    search_duckduckgo, scrape_page,  # Web utils
+    log_info, log_error, log_warning, log_success, log_debug, log_research,  # Logging
+    safe_json_dumps, safe_json_loads,  # Serialization
+    CommonConfig,    # Config
+    get_timestamp, format_duration, safe_get  # Utils
+)
+
+# Imports específicos deste módulo
 import re
-import sys
-import time
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Import search tools from cli.py
-from app.core.web_utils import search_duckduckgo, scrape_page
-from app.core.llm_router import call_llm
 
 
 def _extract_search_hints(profile: dict) -> dict:
@@ -292,7 +299,7 @@ def _run_discovery_search(query_spec: dict, region: str = "br-pt") -> dict:
     purpose = query_spec["purpose"]
     direct_url = query_spec.get("direct_url")
 
-    print(f"  🔎 Discovery: {query}", file=sys.stderr)
+    log_research(f"Discovery: {query}")
 
     # Direct URL scrape (e.g. known site URL)
     if direct_url:
@@ -307,12 +314,12 @@ def _run_discovery_search(query_spec: dict, region: str = "br-pt") -> dict:
                 "extract_fields": query_spec.get("extract", []),
             }
         # Fall through to search if scrape failed
-        print(f"    ⚠️ Scrape direto falhou, tentando busca: {direct_url}", file=sys.stderr)
+        log_warning(f"Scrape direto falhou, tentando busca: {direct_url}")
 
     results = search_duckduckgo(query, max_results=5, region=region)
 
     if not results:
-        print(f"    ⚠️ Nenhum resultado para: {query}", file=sys.stderr)
+        log_warning(f"Nenhum resultado para: {query}")
         return {
             "id": query_spec["id"],
             "purpose": purpose,

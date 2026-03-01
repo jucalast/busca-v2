@@ -1,17 +1,26 @@
-import os
-import sys
-import json
-import concurrent.futures
+# ═══════════════════════════════════════════════════════════════════
+# IMPORTS CENTRALIZADOS (ANTES: 5 imports duplicados)
+# ═══════════════════════════════════════════════════════════════════
 
-from app.core.web_utils import search_duckduckgo, scrape_page
-from app.core.llm_router import call_llm
+from app.services.common import (
+    json, os, sys,  # Python basics
+    call_llm,            # LLM
+    search_duckduckgo, scrape_page,  # Web utils
+    log_info, log_error, log_warning, log_success, log_debug,  # Logging
+    safe_json_dumps, safe_json_loads,  # Serialization
+    CommonConfig,    # Config
+    get_timestamp, format_duration, safe_get  # Utils
+)
+
+# Imports específicos deste módulo
+import concurrent.futures
 
 def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
     """Helper function to process a single category in a thread."""
     cat_id = cat.get("id", "")
     query = queries.get(cat_id, f"{cat.get('nome', '')} {perfil_data.get('segmento', '')}")
     
-    print(f"  [{cat.get('icone', '📊')}] Buscando: {query}", file=sys.stderr)
+    log_info(f"[{cat.get('icone', '📊')}] Buscando: {query}")
 
     results = search_duckduckgo(query, max_results=5, region=region)
 
@@ -19,11 +28,11 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         segmento = perfil_data.get('segmento', '')
         foco_words = cat.get('foco', '').split(',')[0].strip()[:60]
         fallback_query = f"{foco_words} {segmento}".strip()
-        print(f"    ↪️ Sem resultados, tentando: {fallback_query}", file=sys.stderr)
+        log_warning(f"Sem resultados, tentando: {fallback_query}")
         results = search_duckduckgo(fallback_query, max_results=5, region=region)
 
     if not results:
-        print(f"    ⚠️ Nenhum resultado para {cat_id} mesmo com retry", file=sys.stderr)
+        log_warning(f"Nenhum resultado para {cat_id} mesmo com retry")
         return {
             "id": cat_id,
             "nome": cat.get("nome", ""),
@@ -250,7 +259,7 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
     categories = profile.get("categorias_relevantes", profile.get("categories", []))
 
     if not categories:
-        from app.services.analysis.business_profiler import _VALID_PILLAR_IDS
+        from app.services.analysis.analyzer_business_profiler import _VALID_PILLAR_IDS
         _DEFAULT_META = {
             "mercado": {"nome": "Panorama do Mercado", "icone": "📊", "cor": "#10B981", "foco": "tamanho, crescimento, tendências"},
             "concorrentes": {"nome": "Mapa de Concorrentes", "icone": "🎯", "cor": "#F59E0B", "foco": "concorrentes diretos, diferenciais, preços"},

@@ -23,7 +23,7 @@ Architecture:
 
 import json
 import os
-from app.services.analysis.business_discovery import format_discovery_for_scorer
+from app.services.analysis.analyzer_business_discovery import format_discovery_for_scorer
 import re
 import sys
 import time
@@ -665,13 +665,17 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
     return deduped
 
 
-def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, model_provider: str = "groq") -> dict:
+def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, model_provider: str = "groq", generate_tasks: bool = True) -> dict:
     """
     Main entry point. Scores each of 7 sales pillars in chain order.
-    Returns score data AND per-pillar task plans.
+    Returns score data AND per-pillar task plans (if generate_tasks=True).
     
-    Chain context: each pillar produces a compact summary that feeds
-    into downstream pillars, creating interconnected analysis.
+    Args:
+        profile: Business profile data
+        market_data: Market research data
+        discovery_data: Business discovery data
+        model_provider: LLM provider to use
+        generate_tasks: Whether to generate tasks (default: True for backward compatibility)
     """
     # Check for appropriate API key based on provider
     if model_provider == "gemini":
@@ -830,16 +834,25 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
         "pillar_plans": pillar_plans,
     }
 
-    task_plan = {
-        "tasks": all_tasks,
-        "resumo_plano": resumo,
-        "meta_principal": f"Priorizar {DIMENSIONS[weakest_key]['label']} para destravar vendas",
-    }
+    # ── Task Plan Generation (Conditional) ──
+    task_plan = None
+    if generate_tasks:
+        # Post-processing: cross-dimension dedup
+        all_tasks = _dedup_actions_cross_dimension(all_tasks)
+        
+        task_plan = {
+            "tasks": all_tasks,
+            "resumo_plano": resumo,
+            "meta_principal": f"Priorizar {DIMENSIONS[weakest_key]['label']} para destravar vendas",
+        }
+        print(f"  ✅ Generated {len(all_tasks)} tasks across {len(dimensoes)} pillars", file=sys.stderr)
+    else:
+        print(f"  ⚡ Skipping task generation (generate_tasks=False)", file=sys.stderr)
 
     print(f"  ✅ Score geral: {score_geral}/100 ({classificacao})", file=sys.stderr)
 
     return {
         "success": True,
         "score": score_output,
-        "taskPlan": task_plan,
+        "taskPlan": task_plan,  # None if generate_tasks=False
     }

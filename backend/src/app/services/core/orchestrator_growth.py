@@ -9,23 +9,24 @@ Actions:
     assist    → Runs task assistant for a specific task
 """
 
+# ═══════════════════════════════════════════════════════════════════
+# IMPORTS CENTRALIZADOS (ANTES: 6 imports duplicados)
+# ═══════════════════════════════════════════════════════════════════
+
 import argparse
-import json
-import sys
-import os
-import time
-
-# Ensure we can import sibling modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# ─── LAZY IMPORTS ─────────────────────────────────────────────────────────────
-# Only `database` and std-lib modules are loaded at startup.
-# Heavy AI/search modules are imported JIT inside each action block.
-# This reduces cold-start time from ~7s to < 500ms for DB-only actions.
-# ──────────────────────────────────────────────────────────────────────────────
-from app.core import database as db
-
 import concurrent.futures
+
+from app.services.common import (
+    json, sys, os, time,  # Python basics
+    db,                    # Database
+    log_info, log_error, log_warning, log_success, log_debug,  # Logging
+    safe_json_dumps, safe_json_loads,  # Serialization
+    CommonConfig,    # Config
+    get_timestamp, format_duration, safe_get  # Utils
+)
+
+# Imports específicos deste módulo
+from dotenv import load_dotenv
 
 def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
     """Helper function to process a single category in a thread."""
@@ -38,8 +39,8 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
     query = queries.get(cat_id, f"{cat_name} {segmento}").strip()
     
     # Debug log
-    print(f"  🔍 DEBUG: cat_id={cat_id}, cat_name='{cat_name}', segmento='{segmento}'", file=sys.stderr)
-    print(f"  🔍 DEBUG: original query='{query}'", file=sys.stderr)
+    log_debug(f"cat_id={cat_id}, cat_name='{cat_name}', segmento='{segmento}'")
+    log_debug(f"original query='{query}'")
     
     # Ensure query is not empty
     if not query or len(query) < 3:
@@ -50,11 +51,11 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         if segmento and len(segmento.strip()) > 2:
             query_parts.append(segmento.strip())
         query = " ".join(query_parts)
-        print(f"  🔍 DEBUG: fallback query='{query}'", file=sys.stderr)
+        log_debug(f"fallback query='{query}'")
     
     # Final validation
     if not query or len(query) < 3:
-        print(f"    ❌ Query muito curta para {cat_id}: '{query}'", file=sys.stderr)
+        log_error(f"Query muito curta para {cat_id}: '{query}'")
         return {
             "id": cat_id,
             "nome": cat_name,
@@ -65,7 +66,7 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
             "fontes": []
         }
     
-    print(f"  [{cat.get('icone', '📊')}] Buscando: {query}", file=sys.stderr)
+    log_info(f"[{cat.get('icone', '📊')}] Buscando: {query}")
 
     # Search (DuckDuckGo is fast, no rate limit usually)
     results = search_duckduckgo(query, max_results=5, region=region)
@@ -75,11 +76,11 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         segmento = perfil_data.get('segmento', '')
         foco_words = cat.get('foco', '').split(',')[0].strip()[:60]
         fallback_query = f"{foco_words} {segmento}".strip()
-        print(f"    ↪️ Sem resultados, tentando: {fallback_query}", file=sys.stderr)
+        log_warning(f"Sem resultados, tentando: {fallback_query}")
         results = search_duckduckgo(fallback_query, max_results=5, region=region)
 
     if not results:
-        print(f"    ⚠️ Nenhum resultado para {cat_id} mesmo com retry", file=sys.stderr)
+        log_warning(f"Nenhum resultado para {cat_id} mesmo com retry")
         return {
             "id": cat_id,
             "nome": cat.get("nome", ""),
@@ -389,7 +390,7 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
         categories = categories[:5]
 
     if not categories:
-        from business_profiler import _VALID_PILLAR_IDS
+        from app.services.analysis.analyzer_business_profiler import _VALID_PILLAR_IDS
         _DEFAULT_META = {
             "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6", "foco": "quem compra, segmentos, comportamento"},
             "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6", "foco": "posicionamento, diferencial, proposta de valor"},
@@ -491,17 +492,17 @@ def main():
 
     # ━━━ Profile Action ━━━
     if args.action == "profile":
-        from app.services.analysis.business_profiler import run_profiler
+        from app.services.analysis.analyzer_business_profiler import run_profiler
         onboarding = input_data.get("onboardingData", {})
         result = run_profiler(onboarding, model_provider=model_provider)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ Analyze Action (full pipeline) ━━━
     elif args.action == "analyze":
-        from app.services.analysis.business_profiler import run_profiler, identify_dynamic_categories
-        from app.services.analysis.business_scorer import run_scorer
-        from app.services.analysis.business_discovery import discover_business
-        from app.services.agents.specialist_engine import (
+        from app.services.analysis.analyzer_business_profiler import run_profiler, identify_dynamic_categories
+        from app.services.analysis.analyzer_business_scorer import run_scorer
+        from app.services.analysis.analyzer_business_discovery import discover_business
+        from app.services.agents.engine_specialist import (
             generate_business_brief, generate_pillar_plan,
             get_all_pillars_state, SPECIALISTS,
         )
@@ -547,7 +548,7 @@ def main():
 
         # Step 2: Market search
         # Safety: remap + fill categories before market search (belt-and-suspenders)
-        from business_profiler import identify_dynamic_categories
+        from app.services.analysis.analyzer_business_profiler import identify_dynamic_categories
         try:
             identify_dynamic_categories(profile)
             print("  🔄 Safety remap aplicado às categorias", file=sys.stderr)
@@ -556,7 +557,7 @@ def main():
             # Ensure categories exist even if remap fails
             if not profile.get("categorias_relevantes"):
                 print("  🔧 Gerando categorias padrão como fallback...", file=sys.stderr)
-                from business_profiler import identify_dynamic_categories as _idc_fallback
+                from app.services.analysis.analyzer_business_profiler import identify_dynamic_categories as _idc_fallback
                 profile["categorias_relevantes"] = []  # Will be filled with defaults
                 try:
                     _idc_fallback(profile)
@@ -699,7 +700,7 @@ def main():
 
     # ━━━ Assist Action ━━━
     elif args.action == "assist":
-        from task_assistant import run_assistant
+        from app.services.planning.task_assistant import run_assistant
         task = input_data.get("task", {})
         profile = input_data.get("profile", {})
         result = run_assistant(task, profile)
@@ -709,7 +710,7 @@ def main():
 
     # ━━━ Chat Action (conversational consultant) ━━━
     elif args.action == "chat":
-        from chat_consultant import run_chat
+        from app.services.agents.agent_conversation import run_chat
         result = run_chat(input_data)
 
         print("--- CHAT_RESULT ---")
@@ -724,7 +725,7 @@ def main():
 
     # ━━━ Pillar Plan Action (specialist creates professional plan) ━━━
     elif args.action == "pillar-plan":
-        from specialist_engine import generate_business_brief, generate_pillar_plan
+        from app.services.agents.engine_specialist import generate_business_brief, generate_pillar_plan
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         business_id = input_data.get("business_id")
@@ -773,7 +774,7 @@ def main():
 
     # ━━━ Track Result Action (record completed action + outcome) ━━━
     elif args.action == "track-result":
-        from specialist_engine import record_action_result
+        from app.services.agents.engine_specialist import record_action_result
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -794,7 +795,7 @@ def main():
 
     # ━━━ Pillar State Action (get full pillar state: diag + plan + results + KPIs) ━━━
     elif args.action == "pillar-state":
-        from specialist_engine import get_pillar_full_state
+        from app.services.agents.engine_specialist import get_pillar_full_state
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
 
@@ -809,7 +810,7 @@ def main():
 
     # ━━━ Specialist Tasks Action (generate tasks with AI/user classification) ━━━
     elif args.action == "specialist-tasks":
-        from specialist_engine import generate_business_brief, generate_specialist_tasks
+        from app.services.agents.engine_specialist import generate_business_brief, generate_specialist_tasks
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         business_id = input_data.get("business_id")
@@ -855,7 +856,7 @@ def main():
 
     # ━━━ Specialist Execute Action (AI agent executes a task) ━━━
     elif args.action == "specialist-execute":
-        from specialist_engine import generate_business_brief, agent_execute_task
+        from app.services.agents.engine_specialist import generate_business_brief, agent_execute_task
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -897,7 +898,7 @@ def main():
 
     # ━━━ All Pillars State Action (unified dashboard data) ━━━
     elif args.action == "all-pillars-state":
-        from specialist_engine import get_all_pillars_state
+        from app.services.agents.engine_specialist import get_all_pillars_state
         analysis_id = input_data.get("analysis_id")
 
         if not analysis_id:
@@ -910,7 +911,7 @@ def main():
 
     # ━━━ Expand Subtasks Action (break task into micro-steps) ━━━
     elif args.action == "expand-subtasks":
-        from specialist_engine import generate_business_brief, expand_task_subtasks
+        from app.services.agents.engine_specialist import generate_business_brief, expand_task_subtasks
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_data = input_data.get("task_data", {})
@@ -950,7 +951,7 @@ def main():
 
     # ━━━ AI Try User Task Action (AI attempts a user-classified task) ━━━
     elif args.action == "ai-try-user-task":
-        from specialist_engine import generate_business_brief, ai_try_user_task
+        from app.services.agents.engine_specialist import generate_business_brief, ai_try_user_task
         analysis_id = input_data.get("analysis_id")
         pillar_key = input_data.get("pillar_key")
         task_id = input_data.get("task_id")
@@ -1138,7 +1139,7 @@ def main():
             print(json.dumps({"success": False, "error": "pillar_key and business_id are required"}, ensure_ascii=False))
         else:
             try:
-                from pillar_agent import run_pillar_agent
+                from app.services.agents.agent_pillar import run_pillar_agent
                 result = run_pillar_agent(pillar_key, business_id, profile, user_command)
                 print("--- RUN_PILLAR_RESULT ---")
                 print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -1155,7 +1156,7 @@ def main():
             print(json.dumps({"success": False, "error": "business_id is required"}, ensure_ascii=False))
         else:
             try:
-                from pillar_agent import get_pillar_status
+                from app.services.agents.agent_pillar import get_pillar_status
                 status = get_pillar_status(business_id)
                 print("--- PILLAR_STATUS_RESULT ---")
                 print(json.dumps({"success": True, "pillars": status}, ensure_ascii=False, indent=2))

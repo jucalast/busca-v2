@@ -20,14 +20,15 @@ export const useTaskHandlers = (
     setCompletedTasks: React.Dispatch<React.SetStateAction<Record<string, Set<string>>>>,
     setSubtasksUpdateKey: React.Dispatch<React.SetStateAction<number>>,
     setError: React.Dispatch<React.SetStateAction<string>>,
+    setExpandingTask: React.Dispatch<React.SetStateAction<string | null>>,
     abortControllersRef: React.RefObject<Record<string, AbortController>>
 ) => {
 
     // ─── Expand Subtasks Handler ───
     const handleExpandSubtasks = useCallback(async (pillarKey: string, task: TaskItem) => {
         const tid = `${pillarKey}_${task.id}`;
-        // Don't set autoExecuting for expansion, only for execution
-        // setAutoExecuting(tid);
+        // Set expanding state to show loading dots
+        setExpandingTask(tid);
         setAutoExecStep(0);
         setAutoExecTotal(0);
         setAutoExecLog([]);
@@ -51,10 +52,10 @@ export const useTaskHandlers = (
             else setError(err.message || 'Erro');
         } finally {
             if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
-            // Don't reset autoExecuting here since we didn't set it
-            // setAutoExecuting(null);
+            // Clear expanding state
+            setExpandingTask(null);
         }
-    }, [analysisId, profile, apiCall, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setError, abortControllersRef]);
+    }, [analysisId, profile, apiCall, setTaskSubtasks, setSubtasksUpdateKey, setExpandingTask, setError, abortControllersRef]);
 
     // ─── Auto Execute Handler ───
     const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem) => {

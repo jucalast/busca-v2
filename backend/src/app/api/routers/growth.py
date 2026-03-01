@@ -8,13 +8,14 @@ from app.schemas.requests import (
     ActionExecuteAllSubtasksRequest, ActionPollBackgroundStatusRequest,
     ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest
 )
-from app.services.core.growth_service import (
+from app.services.core.service_growth import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
     do_list_businesses, do_get_business, do_specialist_plan,
     do_specialist_execute, do_expand_subtasks, do_ai_try_user_task,
     do_execute_all_subtasks, do_get_background_status,
     do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task,
-    do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_delete_business
+    do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_delete_business,
+    do_run_production_pillar_agent
 )
 
 router = APIRouter()
@@ -113,6 +114,11 @@ def specialist_tasks(req: dict):
 def delete_business(req: dict):
     """Delete a business (soft delete)."""
     return do_delete_business(req)
+
+@router.post("/run-production-agent")
+def run_production_agent(req: dict):
+    """Execute production-ready pillar agent with SRE safeguards."""
+    return do_run_production_pillar_agent(req)
 
 # More actions following the orchestrator patterns can be registered here:
 # /create-business, /save-analysis, /register, /login, /logout, etc.

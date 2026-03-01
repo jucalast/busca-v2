@@ -1,22 +1,29 @@
-import os
-import sys
-import time
-from datetime import datetime
+# ═══════════════════════════════════════════════════════════════════
+# IMPORTS CENTRALIZADOS (ANTES: 4 imports duplicados)
+# ═══════════════════════════════════════════════════════════════════
+
+from app.services.common import (
+    os, sys, time,      # Python basics
+    datetime,           # Datetime
+    db,                 # Database
+    log_info, log_error, log_warning, log_success, log_debug,  # Logging
+    safe_json_dumps, safe_json_loads,  # Serialization
+    CommonConfig,       # Config
+    get_timestamp, format_duration, safe_get  # Utils
+)
 
 # To handle local imports in NextJS backend pointing to the old directory
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'search_summarizer'))
 
-from app.core import database as db
-
 # Directly expose functions from the existing backend scripts 
 from app.services.planning.task_assistant import run_assistant
-from app.services.agents.chat_consultant import run_chat
+from app.services.agents.agent_conversation import run_chat
 from app.services.planning.macro_planner import generate_macro_plan
-from app.services.agents.explore_agent import run_dimension_chat, run_market_search
-from app.services.analysis.business_scorer import run_scorer
-from app.services.analysis.business_discovery import discover_business
-from app.services.analysis.business_profiler import run_profiler
-from app.services.agents.specialist_engine import (
+from app.services.agents.agent_explorer import run_dimension_chat, run_market_search
+from app.services.analysis.analyzer_business_scorer import run_scorer
+from app.services.analysis.analyzer_business_discovery import discover_business
+from app.services.analysis.analyzer_business_profiler import run_profiler
+from app.services.agents.engine_specialist import (
     generate_business_brief, 
     generate_pillar_plan,
     get_all_pillars_state,
@@ -27,7 +34,8 @@ from app.services.agents.specialist_engine import (
     ai_try_user_task,
     generate_specialist_tasks
 )
-from app.services.agents.pillar_agent import run_pillar_agent, get_pillar_status
+from app.services.agents.agent_pillar import run_pillar_agent, get_pillar_status
+from app.services.agents.agent_pillar_unified import UnifiedPillarAgent
 from typing import Dict, Any, List
 
 ACTIVE_BACKGROUND_TASKS = set()
@@ -443,53 +451,209 @@ def do_analyze(data: dict):
     
     def stream_generator():
         try:
+            # Extract data no início
+            user_id = data.get("user_id", "default_user")
+            business_id = data.get("business_id")
+            analysis_id = data.get("analysis_id")
+            profile = data.get("profile", {})
+            model_provider = data.get("aiModel", "groq")
+            region = data.get("region", "br-pt")
+            
             # Send initial thought
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando análise completa do negócio...'})}\n\n"
             
+            # Log de teste para console
+            print("🚀 ANÁLISE INICIADA - BUSINESS ID:", business_id, file=sys.stdout)
+            
             # Send progress updates
-            yield f"data: {json.dumps({'type': 'thought', 'text': '🔍 Pesquisando presença digital do negócio...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought', 'text': '📊 Analisando mercado e concorrência...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought', 'text': '📈 Calculando score dos 7 pilares de vendas...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Pesquisando presença digital do negócio...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Analisando mercado e concorrência...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Calculando score dos 7 pilares de vendas...'})}\n\n"
             
-            # Import and run Growth Orchestrator synchronously
-            from app.services.core.growth_orchestrator import main
+            # Import Growth Orchestrator functions directly
+            from app.services.analysis.analyzer_business_profiler import run_profiler, identify_dynamic_categories
+            from app.services.analysis.analyzer_business_scorer import run_scorer
+            from app.services.analysis.analyzer_business_discovery import discover_business
+            from app.services.agents.engine_specialist import (
+                generate_business_brief, generate_pillar_plan,
+                get_all_pillars_state, SPECIALISTS,
+            )
+            from app.services.core.orchestrator_growth import run_market_search
             
-            # Prepare arguments for Growth Orchestrator
-            old_argv = sys.argv
-            sys.argv = [
-                'growth_orchestrator.py',
-                '--action', 'analyze',
-                '--input', json.dumps(data)
-            ]
+            # Extract data
+            user_id = data.get("user_id", "default_user")
+            business_id = data.get("business_id")
+            analysis_id = data.get("analysis_id")
+            profile = data.get("profile", {})
+            model_provider = data.get("aiModel", "groq")
+            region = data.get("region", "br-pt")
             
+            # Handle nested profile structure
+            if isinstance(profile, dict) and "profile" in profile:
+                # Extract from nested structure
+                nested_profile = profile["profile"]
+                if "perfil" in nested_profile:
+                    # Merge perfil data to top level for discovery
+                    perfil_data = nested_profile["perfil"]
+                    profile.update(perfil_data)
+                    # Also keep other nested data
+                    for key, value in nested_profile.items():
+                        if key not in profile:
+                            profile[key] = value
+            
+            # Debug: Print profile structure
+            print(f"  DEBUG: Profile keys: {list(profile.keys())[:10]}...", file=sys.stderr)
+            print(f"  DEBUG: Nome: {profile.get('nome_negocio', profile.get('nome', 'N/A'))}", file=sys.stderr)
+            print(f"  DEBUG: Instagram: {profile.get('instagram_handle', 'N/A')}", file=sys.stderr)
+            print(f"  DEBUG: Site: {profile.get('site_url', 'N/A')}", file=sys.stderr)
+            
+            # Load enriched profile if reanalyzing
+            if analysis_id:
+                try:
+                    previous_analysis = db.get_analysis(analysis_id)
+                    if previous_analysis and previous_analysis.get("profile_data"):
+                        profile = previous_analysis["profile_data"]
+                        print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
+                except Exception as e:
+                    print(f"  ⚠️ Erro ao carregar perfil anterior: {e}", file=sys.stderr)
+
+            # Clear existing task data for this analysis (reanalysis support)
+            if analysis_id:
+                print("Limpando dados de tarefas anteriores (reanálise)...", file=sys.stderr)
+                try:
+                    # Delete specialist plans, executions, results, subtasks and KPIs for this analysis
+                    db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
+                    db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
+                    db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
+                    db.conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
+                    db.conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
+                    db.conn.commit()
+                    print("  Dados de tarefas anteriores removidos", file=sys.stderr)
+                except Exception as e:
+                    print(f"  Erro ao limpar dados anteriores: {e}", file=sys.stderr)
+
+            # Step 1: Business Discovery (search for the ACTUAL business online)
+            print("Executando discovery do negócio...", file=sys.stderr)
+            discovery_data = discover_business(profile, region, model_provider=model_provider)
+            discovery_found = discovery_data.get("found", False)
+            print(f"  Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+
+            # Step 2: Market search
+            # Safety: remap + fill categories before market search (belt-and-suspenders)
             try:
-                # Run Growth Orchestrator
-                main()
-                
-                # Restore original argv
-                sys.argv = old_argv
-                
-                # For now, return a simple success result
-                # TODO: Extract actual result from Growth Orchestrator output
-                result = {
-                    "success": True,
-                    "message": "Analysis completed via Growth Orchestrator"
-                }
-                
-                # Send completion
-                yield f"data: {json.dumps({'type': 'thought', 'text': '✅ Análise concluída com sucesso!'})}\n\n"
-                yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
-                
+                identify_dynamic_categories(profile)
+                print("  Safety remap aplicado às categorias", file=sys.stderr)
             except Exception as e:
-                # Restore original argv
-                sys.argv = old_argv
-                raise e
+                print(f"  Safety remap falhou: {e}", file=sys.stderr)
+                # Ensure categories exist even if remap fails
+                if not profile.get("categorias_relevantes"):
+                    print("  Gerando categorias padrão como fallback...", file=sys.stderr)
+                    try:
+                        identify_dynamic_categories(profile)
+                    except Exception:
+                        pass  # identify_dynamic_categories now handles empty lists gracefully
+
+            print("Executando pesquisa de mercado...", file=sys.stderr)
+            cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
+            queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
+            print(f"  Categorias p/ busca: {[c.get('id','?') if isinstance(c,dict) else c for c in (cats_for_search or [])[:8]]}", file=sys.stderr)
+            print(f"  Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
+            market_data = run_market_search(profile, region, model_provider)
+            mkt_cats = market_data.get('categories', [])
+            print(f"  Pesquisa completa: {len(mkt_cats)} categorias", file=sys.stderr)
+            for mc in mkt_cats:
+                mc_resumo = mc.get("resumo", {})
+                has_data = bool(mc_resumo.get("visao_geral") or mc_resumo.get("pontos_chave"))
+                print(f"    id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'SIM' if has_data else 'NAO'}", file=sys.stderr)
+
+            # Step 3: Per-dimension scoring with discovery context (OTIMIZADO: sem geração de tarefas)
+            print("Calculando score por dimensão...", file=sys.stderr)
+            score_result = run_scorer(profile, market_data, discovery_data=discovery_data, model_provider=model_provider, generate_tasks=False)
+            score_data = score_result.get("score", {}) if score_result.get("success") else {}
+            task_plan = score_result.get("taskPlan", {})  # Será None com generate_tasks=False
+
+            # Detailed scoring log
+            dims = score_data.get("dimensoes", {})
+            total_actions = sum(len(d.get("acoes_imediatas", [])) for d in dims.values())
+            print(f"  Score geral: {score_data.get('score_geral','?')}/100 | {total_actions} ações totais", file=sys.stderr)
+            for dk, dv in dims.items():
+                n_acoes = len(dv.get("acoes_imediatas", []))
+                print(f"    {dk}: {dv.get('score','?')}/100 ({dv.get('status','?')}) | {n_acoes} ações | meta: {str(dv.get('meta_pilar',''))[:50]}", file=sys.stderr)
+
+            # Merge research tasks from chat (if any)
+            research_tasks = profile.get("_research_tasks", [])
+            if research_tasks:
+                print(f"  Integrando {len(research_tasks)} tarefas de pesquisa do chat", file=sys.stderr)
+                for task in research_tasks:
+                    pillar_id = task.get("pillar", "geral")
+                    if pillar_id not in task_plan:
+                        task_plan[pillar_id] = {"acoes_imediatas": []}
+                    task_plan[pillar_id]["acoes_imediatas"].append({
+                        "titulo": task.get("titulo", "Tarefa de pesquisa"),
+                        "descricao": task.get("descricao", ""),
+                        "origem": "chat_research"
+                    })
+
+            # Step 4: Generate business brief
+            print("Gerando briefing de negócio...", file=sys.stderr)
+            business_brief = generate_business_brief(profile, discovery_data, market_data)
+
+            # Save to database
+            if not business_id:
+                business_id = f"biz_{user_id}_{int(time.time())}"
+            
+            if not analysis_id:
+                analysis_id = f"analysis_{business_id}_{int(time.time())}"
+            
+            # Save analysis data with separate arguments
+            db.create_analysis(
+                business_id=business_id,
+                score_data=score_data,
+                task_data=task_plan,
+                market_data=market_data,
+                profile_data=profile
+            )
+            
+            # Save pillar diagnostics for frontend access
+            if score_data and score_data.get("dimensoes"):
+                for pillar_key, pillar_data in score_data["dimensoes"].items():
+                    diagnostic_data = {
+                        "score": pillar_data.get("score", 0),
+                        "status": pillar_data.get("status", "unknown"),
+                        "justificativa": pillar_data.get("justificativa", ""),
+                        "meta_pilar": pillar_data.get("meta_pilar", ""),
+                        "acoes_imediatas": pillar_data.get("acoes_imediatas", []),
+                        "fontes_utilizadas": pillar_data.get("fontes_utilizadas", []),
+                        "dado_chave": pillar_data.get("dado_chave", "")
+                    }
+                    db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic_data)
+                print(f"  Diagnósticos dos pilares salvos: {len(score_data['dimensoes'])} pilares", file=sys.stderr)
+            
+            print(f"  Análise salva: {analysis_id}", file=sys.stderr)
+
+            # Return final result
+            result = {
+                "success": True,
+                "analysis_id": analysis_id,
+                "business_id": business_id,
+                "profile": profile,
+                "discovery_data": discovery_data,
+                "marketData": market_data,
+                "score": score_data,
+                "specialists": business_brief.get("specialists", {}),
+                "taskPlan": task_plan,
+                "business_brief": business_brief
+            }
+            
+            # Send completion
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Analise concluída com sucesso!'})}\n\n"
+            yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
                 
         except Exception as e:
             import traceback
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
             print(f"❌ Error running Growth Orchestrator: {error_msg}", file=sys.stderr)
-            yield f"data: {json.dumps({'type': 'thought', 'text': f'❌ Erro crítico: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': f'Erro crítico: {str(e)}'})}\n\n"
             yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
     
     return stream_generator()
@@ -499,6 +663,48 @@ def do_pillar_state(data: dict) -> dict:
     analysis_id = data.get("analysis_id")
     pillar_key = data.get("pillar_key")
     return get_pillar_full_state(analysis_id, pillar_key)
+
+def do_run_production_pillar_agent(data: dict) -> dict:
+    """Execute production-ready pillar agent with SRE safeguards."""
+    pillar_key = data.get("pillar_key")
+    business_id = data.get("business_id")
+    profile = data.get("profile", {})
+    user_command = data.get("user_command", f"Analyze {pillar_key} pillar")
+    
+    if not pillar_key or not business_id:
+        return {"success": False, "error": "pillar_key and business_id are required"}
+    
+    try:
+        # Initialize production-ready agent
+        agent = ProductionReadyPillarAgent(pillar_key)
+        
+        # Prepare initial state
+        initial_state = {
+            "pillar_key": pillar_key,
+            "business_id": business_id,
+            "profile": profile,
+            "user_command": user_command,
+            "upstream_context": {},
+            "status": "initialized",
+            "error": None,
+            "sources": []
+        }
+        
+        # Execute the production workflow
+        result = agent.compiled_graph.invoke(initial_state)
+        
+        return {
+            "success": True,
+            "result": result,
+            "pillar_key": pillar_key,
+            "sre_metrics": result.get("sre_metrics", {}),
+            "structured_output": result.get("structured_output", {})
+        }
+        
+    except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        return {"success": False, "error": error_msg}
 
 def do_get_analysis_tasks(data: dict) -> dict:
     """Get tasks for a specific analysis and pillar."""
@@ -532,5 +738,8 @@ def do_specialist_tasks(data: dict) -> dict:
     profile = data.get("profile", {})
     
     return generate_specialist_tasks(
-        analysis_id, pillar_key, profile, model_provider=data.get("aiModel", "groq")
+        analysis_id=analysis_id,
+        pillar_key=pillar_key,
+        brief=profile,
+        model_provider=data.get("aiModel", "groq")
     )

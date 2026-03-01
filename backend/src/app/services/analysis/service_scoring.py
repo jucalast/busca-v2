@@ -5,7 +5,7 @@ Uses the full business_scorer.py with chain context and 7 sequential pillars
 
 import logging
 from typing import Dict, Any, Optional
-from app.services.analysis.business_scorer import run_scorer
+from app.services.analysis.analyzer_business_scorer import run_scorer
 
 logger = logging.getLogger(__name__)
 

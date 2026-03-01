@@ -262,15 +262,27 @@ function generateFullAnalysisContent(data: any): string {
     // Informações do Perfil
     if (profile) {
         content += '## DADOS DO NEGOCIO\n\n';
-        content += `**Nome:** ${profile.nome_negocio || profile.nome || 'N/A'}\n`;
-        content += `**Segmento:** ${profile.segmento || 'N/A'}\n`;
-        content += `**Modelo de Negocio:** ${profile.modelo || 'N/A'}\n`;
-        content += `**Localizacao:** ${profile.localizacao || 'N/A'}\n`;
-        content += `**Faturamento Mensal:** ${profile.faturamento_mensal || 'N/A'}\n`;
-        content += `**Equipe:** ${profile.num_funcionarios || profile.equipe || 'N/A'} colaboradores\n`;
-        content += `**Diferenciais:** ${profile.diferencial || profile.diferenciais || 'N/A'}\n`;
-        content += `**Principais Desafios:** ${profile.dificuldades || profile.principais_desafios || 'N/A'}\n`;
-        content += `**Objetivos:** ${profile.objetivos || 'N/A'}\n\n`;
+        
+        // Try multiple field names for robustness
+        const nome = profile.nome_negocio || profile.nome || profile.perfil?.nome || 'N/A';
+        const segmento = profile.segmento || profile.perfil?.segmento || 'N/A';
+        const modelo = profile.modelo || profile.modelo_negocio || profile.perfil?.modelo || profile.perfil?.modelo_negocio || 'N/A';
+        const localizacao = profile.localizacao || profile.perfil?.localizacao || 'N/A';
+        const faturamento = profile.faturamento_mensal || profile.faturamento_faixa || profile.perfil?.faturamento_mensal || profile.perfil?.faturamento_faixa || 'N/A';
+        const equipe = profile.num_funcionarios || profile.equipe || profile.perfil?.num_funcionarios || profile.perfil?.equipe || 'N/A';
+        const diferencial = profile.diferencial || profile.diferenciais || profile.perfil?.diferencial || profile.perfil?.diferenciais || 'N/A';
+        const dificuldades = profile.dificuldades || profile.dificuldade || profile.perfil?.dificuldades || profile.perfil?.dificuldade || 'N/A';
+        const objetivos = profile.objetivos || profile.perfil?.objetivos || 'N/A';
+        
+        content += `**Nome:** ${nome}\n`;
+        content += `**Segmento:** ${segmento}\n`;
+        content += `**Modelo de Negocio:** ${modelo}\n`;
+        content += `**Localizacao:** ${localizacao}\n`;
+        content += `**Faturamento Mensal:** ${faturamento}\n`;
+        content += `**Equipe:** ${equipe} colaboradores\n`;
+        content += `**Diferenciais:** ${diferencial}\n`;
+        content += `**Principais Desafios:** ${dificuldades}\n`;
+        content += `**Objetivos:** ${objetivos}\n\n`;
     }
     
     // Score Geral
@@ -375,8 +387,17 @@ function generateFullAnalysisContent(data: any): string {
             
             if (pillar.acoes_imediatas && pillar.acoes_imediatas.length > 0) {
                 content += '**Ações Imediatas:**\n';
-                pillar.acoes_imediatas.forEach((acao: string, index: number) => {
-                    content += `${index + 1}. ${acao}\n`;
+                pillar.acoes_imediatas.forEach((acao: any, index: number) => {
+                    // Handle different action formats
+                    let acaoText = '';
+                    if (typeof acao === 'string') {
+                        acaoText = acao;
+                    } else if (typeof acao === 'object' && acao !== null) {
+                        acaoText = acao.titulo || acao.descricao || acao.texto || JSON.stringify(acao);
+                    } else {
+                        acaoText = String(acao);
+                    }
+                    content += `${index + 1}. ${acaoText}\n`;
                 });
                 content += '\n';
             }

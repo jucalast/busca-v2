@@ -256,6 +256,34 @@ def init_db():
     except Exception:
         pass
     
+    # Research cache table for unified research system
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS research_cache (
+            cache_key TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            cached_at TEXT NOT NULL,
+            research_type TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Research results table for analytics
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS research_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_type TEXT NOT NULL,
+            cache_key TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(research_type, cache_key)
+        )
+    ''')
+    
+    # Indexes for research tables
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_research_cache_type ON research_cache(research_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_research_results_type ON research_results(research_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_research_cache_created ON research_cache(cached_at)')
+    
     conn.commit()
     conn.close()
 
@@ -1895,6 +1923,135 @@ def get_background_task_progress(analysis_id: str, task_id: str) -> Optional[Dic
         "error_message": row["error_message"],
         "updated_at": row["updated_at"]
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# RESEARCH CACHE FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════
+
+def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
+    """Salva entrada de cache no banco."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Serializar dados
+        data_json = json.dumps(cache_entry, default=str)
+        cached_at_iso = cache_entry["cached_at"].isoformat()
+        research_type = cache_entry.get("research_type", "unknown")
+        
+        # Insert ou replace
+        cursor.execute("""
+            INSERT OR REPLACE INTO research_cache 
+            (cache_key, data, cached_at, research_type) 
+            VALUES (?, ?, ?, ?)
+        """, (cache_key, data_json, cached_at_iso, research_type))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error saving research cache: {e}")
+        return False
+
+
+def get_research_cache(cache_key: str) -> Optional[dict]:
+    """Obtém entrada de cache do banco."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT data, cached_at, research_type 
+            FROM research_cache 
+            WHERE cache_key = ?
+        """, (cache_key,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return None
+        
+        data_json, cached_at_str, research_type = row
+        
+        # Deserializar dados
+        data = json.loads(data_json)
+        
+        # Converter string para datetime
+        from datetime import datetime
+        cached_at = datetime.fromisoformat(cached_at_str)
+        
+        return {
+            "data": data,
+            "cached_at": cached_at,
+            "research_type": research_type
+        }
+        
+    except Exception as e:
+        print(f"Error getting research cache: {e}")
+        return None
+
+
+def save_research_result(research_type: str, cache_key: str, data: dict) -> bool:
+    """Salva resultado de pesquisa no banco."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Serializar dados
+        data_json = json.dumps(data, default=str)
+        created_at = datetime.now().isoformat()
+        
+        # Insert ou replace
+        cursor.execute("""
+            INSERT OR REPLACE INTO research_results 
+            (research_type, cache_key, data, created_at) 
+            VALUES (?, ?, ?, ?)
+        """, (research_type, cache_key, data_json, created_at))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error saving research result: {e}")
+        return False
+
+
+def get_research_stats() -> dict:
+    """Retorna estatísticas de pesquisas."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Total de pesquisas por tipo
+        cursor.execute("""
+            SELECT research_type, COUNT(*) as count 
+            FROM research_results 
+            GROUP BY research_type
+        """)
+        
+        by_type = dict(cursor.fetchall())
+        
+        # Total de cache entries
+        cursor.execute("SELECT COUNT(*) FROM research_cache")
+        total_cache = cursor.fetchone()[0]
+        
+        # Total de pesquisas
+        cursor.execute("SELECT COUNT(*) FROM research_results")
+        total_researches = cursor.fetchone()[0]
+        
+        return {
+            "by_type": by_type,
+            "total_cache": total_cache,
+            "total_researches": total_researches
+        }
+        
+    except Exception as e:
+        print(f"Error getting research stats: {e}")
+        return {
+            "by_type": {},
+            "total_cache": 0,
+            "total_researches": 0
+        }
 
 
 

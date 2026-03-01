@@ -1,7 +1,16 @@
+import logging
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import growth, search
+
+# Configurar logging básico (sem conflitar com uvicorn)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
 
 app = FastAPI(title="Busca V2 Backend API", version="1.0.0")
 

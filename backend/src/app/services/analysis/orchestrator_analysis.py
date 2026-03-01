@@ -5,12 +5,12 @@ Coordinates all analysis services: Discovery → Market Search → Scoring → T
 
 import logging
 from typing import Dict, Any, Optional
-from app.services.analysis.business_discovery import discover_business
-from app.services.analysis.scoring_service import ScoringService
-from app.services.analysis.business_profiler import identify_dynamic_categories
+from app.services.analysis.analyzer_business_discovery import discover_business
+from app.services.analysis.service_scoring import ScoringService
+from app.services.analysis.analyzer_business_profiler import identify_dynamic_categories
 from app.core import database as db
-from app.services.agents.specialist_engine import generate_business_brief
-from app.services.core.growth_orchestrator import run_market_search
+from app.services.agents.engine_specialist import generate_business_brief
+from app.services.core.orchestrator_growth import run_market_search
 
 logger = logging.getLogger(__name__)
 

@@ -68,7 +68,7 @@ export default function TaskActionButtons({
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] transition-all disabled:opacity-50"
                 >
                     {isExpanding
-                        ? <><div className="w-3 h-3 animate-spin border border-zinc-600 border-t-transparent rounded-full" />Criando subtarefas...</>
+                        ? <><div className="w-3 h-3 animate-spin border border-zinc-600 border-t-transparent rounded-full" />...</>
                         : <><ListTree className="w-3 h-3" />Ver subtarefas</>}
                 </button>
             ) : (
@@ -78,7 +78,7 @@ export default function TaskActionButtons({
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] transition-all disabled:opacity-50"
                 >
                     {isExpanding
-                        ? <><div className="w-3 h-3 animate-spin border border-zinc-600 border-t-transparent rounded-full" />Refazendo...</>
+                        ? <><div className="w-3 h-3 animate-spin border border-zinc-600 border-t-transparent rounded-full" />...</>
                         : <><RefreshCw className="w-3 h-3" />Refazer subtarefas</>}
                 </button>
             )}
