@@ -8,7 +8,7 @@ import json
 import os
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
@@ -366,7 +366,7 @@ def cleanup_expired_sessions():
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     cursor.execute('DELETE FROM sessions WHERE expires_at < ?', (now,))
     
     conn.commit()
@@ -395,7 +395,7 @@ def register_user(email: str, password: str, name: Optional[str] = None) -> Dict
     
     user_id = str(uuid.uuid4())
     password_hash = hash_password(password)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         INSERT INTO users (id, email, password_hash, name, created_at, metadata)
@@ -460,7 +460,7 @@ def create_user(user_id: str, email: Optional[str] = None, name: Optional[str] =
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     # For legacy users without password, generate a random one
     password_hash = hash_password(secrets.token_urlsafe(16))
     
@@ -544,7 +544,7 @@ def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
     cursor = conn.cursor()
     
     business_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     # Extract key fields from profile
     perfil = profile_data.get("perfil", {})
@@ -633,7 +633,7 @@ def update_business(business_id: str, profile_data: Dict) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     # Extract updated key fields
     perfil = profile_data.get("perfil", {})
@@ -660,7 +660,7 @@ def delete_business(business_id: str) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE businesses 
@@ -733,7 +733,7 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
     cursor = conn.cursor()
     
     analysis_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     score_geral = score_data.get("score_geral", 0)
     classificacao = score_data.get("classificacao", "")
@@ -863,7 +863,7 @@ def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) 
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     # Check if chat exists
     cursor.execute('''
@@ -937,7 +937,7 @@ def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict,
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     output_json = json.dumps(structured_output, ensure_ascii=False)
     sources_json = json.dumps(sources or [], ensure_ascii=False)
     
@@ -1018,7 +1018,7 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
     
     cursor.execute('''
@@ -1080,7 +1080,7 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
     
     cursor.execute('''
@@ -1148,7 +1148,7 @@ def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "")
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE specialist_plans
@@ -1173,7 +1173,7 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
     
     cursor.execute('''
@@ -1240,7 +1240,7 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
     
     cursor.execute('''
@@ -1323,7 +1323,7 @@ def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "")
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE specialist_plans
@@ -1369,7 +1369,7 @@ def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: 
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     plan_json = json.dumps(plan_data, ensure_ascii=False) if not isinstance(plan_data, str) else plan_data
     
     cursor.execute('''
@@ -1427,7 +1427,7 @@ def save_execution_result(
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     result_id = str(uuid.uuid4())
     
     cursor.execute('''
@@ -1500,7 +1500,7 @@ def save_pillar_kpi(
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         INSERT INTO pillar_kpis (id, analysis_id, pillar_key, kpi_name, kpi_value, kpi_target, created_at)
@@ -1550,7 +1550,7 @@ def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data
     conn = get_connection()
     cursor = conn.cursor()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     data_json = json.dumps(subtasks_data, ensure_ascii=False) if not isinstance(subtasks_data, str) else subtasks_data
     
     cursor.execute('''
@@ -1842,7 +1842,7 @@ def save_background_task_progress(
     """Save or update the status of a background task."""
     conn = get_connection()
     cursor = conn.cursor()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     res_json = json.dumps(result_data, ensure_ascii=False) if result_data else None
     

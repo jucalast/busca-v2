@@ -20,7 +20,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('profile', {
                 aiModel,
                 action: 'profile',
-                onboarding: onboardingData,
+                onboardingData,
             }, 60000);
 
             return NextResponse.json(result);

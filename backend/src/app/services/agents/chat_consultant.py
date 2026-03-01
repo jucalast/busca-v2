@@ -892,6 +892,11 @@ Retorne JSON:
     # DEBUG: Log raw LLM response (first 500 chars)
     print(f"  🤖 LLM raw response: {raw if raw else 'None'}", file=sys.stderr)
     
+    # Handle case where LLM already returns a dict (some providers do this)
+    if isinstance(raw, dict):
+        print(f"  ✅ LLM returned dict directly", file=sys.stderr)
+        return raw
+    
     try:
         parsed = json.loads(raw)
         print(f"  ✅ JSON parsed successfully", file=sys.stderr)

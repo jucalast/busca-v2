@@ -260,30 +260,34 @@ function generateFullAnalysisContent(data: any): string {
     content += '# ANALISE COMPLETA DE NEGOCIO\n\n';
     
     // Informações do Perfil
-    if (profile?.perfil) {
+    if (profile) {
         content += '## DADOS DO NEGOCIO\n\n';
-        const p = profile.perfil;
-        content += `**Nome:** ${p.nome || 'N/A'}\n`;
-        content += `**Segmento:** ${p.segmento || 'N/A'}\n`;
-        content += `**Modelo de Negocio:** ${p.modelo_negocio || 'N/A'}\n`;
-        content += `**Localizacao:** ${p.localizacao || 'N/A'}\n`;
-        content += `**Estagio:** ${p.estagio || 'N/A'}\n`;
-        content += `**Faturamento:** ${p.faturamento || 'N/A'}\n`;
-        content += `**Equipe:** ${p.equipe || 'N/A'}\n`;
-        content += `**Diferenciais:** ${p.diferenciais || 'N/A'}\n\n`;
+        content += `**Nome:** ${profile.nome_negocio || profile.nome || 'N/A'}\n`;
+        content += `**Segmento:** ${profile.segmento || 'N/A'}\n`;
+        content += `**Modelo de Negocio:** ${profile.modelo || 'N/A'}\n`;
+        content += `**Localizacao:** ${profile.localizacao || 'N/A'}\n`;
+        content += `**Faturamento Mensal:** ${profile.faturamento_mensal || 'N/A'}\n`;
+        content += `**Equipe:** ${profile.num_funcionarios || profile.equipe || 'N/A'} colaboradores\n`;
+        content += `**Diferenciais:** ${profile.diferencial || profile.diferenciais || 'N/A'}\n`;
+        content += `**Principais Desafios:** ${profile.dificuldades || profile.principais_desafios || 'N/A'}\n`;
+        content += `**Objetivos:** ${profile.objetivos || 'N/A'}\n\n`;
     }
     
     // Score Geral
     if (score) {
         content += '## PONTUACAO GERAL\n\n';
-        content += `**Score Total:** ${score.score_geral || 'N/A'}\n`;
+        content += `**Score Total:** ${score.score_final || score.score_geral || 'N/A'}\n`;
         content += `**Classificacao:** ${score.classificacao || 'N/A'}\n`;
-        content += `**Resumo:** ${score.resumo_executivo || 'N/A'}\n\n`;
+        content += `**Resumo:** ${score.resumo_executivo || score.resumo || 'N/A'}\n\n`;
         
-        if (score.dimensoes) {
+        if (score.dimensoes || score.dims) {
             content += '### Pontuacao por Pilar\n\n';
-            Object.entries(score.dimensoes).forEach(([key, pillar]: [string, any]) => {
-                content += `- **${pillar.label || key}:** ${pillar.score} (${pillar.status})\n`;
+            const dimensoes = score.dimensoes || score.dims || {};
+            Object.entries(dimensoes).forEach(([key, pillar]: [string, any]) => {
+                const pillarName = pillar.label || pillar.nome || key;
+                const pillarScore = pillar.score || 0;
+                const pillarStatus = pillar.status || 'Sem dados';
+                content += `- **${pillarName}:** ${pillarScore} (${pillarStatus})\n`;
             });
             content += '\n';
         }
@@ -293,32 +297,30 @@ function generateFullAnalysisContent(data: any): string {
     if (marketData) {
         content += '## ANALISE DE MERCADO\n\n';
         
-        if (marketData.visao_geral) {
-            content += '### Visao Geral\n\n';
-            content += `${marketData.visao_geral}\n\n`;
-        }
-        
-        if (marketData.categorias) {
+        if (marketData.categories) {
             content += '### Analise por Categoria\n\n';
-            Object.entries(marketData.categorias).forEach(([catKey, catData]: [string, any]) => {
-                content += `#### ${catData.nome || catKey}\n\n`;
-                if (catData.visao_geral) {
-                    content += `${catData.visao_geral}\n\n`;
+            marketData.categories.forEach((catData: any) => {
+                content += `#### ${catData.nome || catData.id || 'Categoria'}\n\n`;
+                if (catData.resumo) {
+                    if (catData.resumo.visao_geral) {
+                        content += `**Visão Geral:**\n${catData.resumo.visao_geral}\n\n`;
+                    }
+                    if (catData.resumo.pontos_chave && catData.resumo.pontos_chave.length > 0) {
+                        content += '**Pontos Chave:**\n';
+                        catData.resumo.pontos_chave.forEach((ponto: string) => {
+                            content += `- ${ponto}\n`;
+                        });
+                        content += '\n';
+                    }
+                    if (catData.fontes && catData.fontes.length > 0) {
+                        content += '**Fontes:**\n';
+                        catData.fontes.forEach((fonte: string) => {
+                            content += `- ${fonte}\n`;
+                        });
+                        content += '\n';
+                    }
                 }
-                if (catData.pontos_chave) {
-                    content += '**Pontos Chave:**\n';
-                    catData.pontos_chave.forEach((ponto: string) => {
-                        content += `- ${ponto}\n`;
-                    });
-                    content += '\n';
-                }
-                if (catData.fontes) {
-                    content += '**Fontes:**\n';
-                    catData.fontes.forEach((fonte: string) => {
-                        content += `- ${fonte}\n`;
-                    });
-                    content += '\n';
-                }
+                content += '---\n\n';
             });
         }
     }
@@ -328,95 +330,70 @@ function generateFullAnalysisContent(data: any): string {
         content += '## PLANOS DOS ESPECIALISTAS\n\n';
         
         Object.entries(specialists).forEach(([key, specialist]: [string, any]) => {
-            if (specialist.plan) {
-                const plan = specialist.plan;
-                content += `### ${plan.titulo_plano || specialist.cargo}\n\n`;
-                
-                if (plan.objetivo) {
-                    content += '**Objetivo:**\n';
-                    content += `${plan.objetivo}\n\n`;
-                }
-                
-                if (plan.justificativa) {
-                    content += '**Justificativa:**\n';
-                    content += `${plan.justificativa}\n\n`;
-                }
-                
-                if (plan.tarefas) {
-                    content += '**Tarefas:**\n';
-                    plan.tarefas.forEach((tarefa: any, index: number) => {
-                        content += `${index + 1}. **${tarefa.titulo}**\n`;
-                        content += `   ${tarefa.descricao}\n`;
-                        if (tarefa.executavel_por_ia) {
-                            content += `   *IA pode executar*\n`;
-                        } else {
-                            content += `   *Acao manual necessaria*\n`;
-                        }
-                        content += '\n';
-                    });
-                }
-                
-                if (plan.kpis) {
-                    content += '**KPIs:**\n';
-                    plan.kpis.forEach((kpi: string) => {
-                        content += `- ${kpi}\n`;
-                    });
-                    content += '\n';
-                }
-                
-                if (plan.resultado_final) {
-                    content += '**Resultado Final:**\n';
-                    content += `${plan.resultado_final}\n\n`;
-                }
-                
-                if (plan.fontes_consultadas) {
-                    content += '**Fontes Consultadas:**\n';
-                    plan.fontes_consultadas.forEach((fonte: string) => {
-                        content += `- ${fonte}\n`;
-                    });
-                    content += '\n';
-                }
-                
-                content += '---\n\n';
+            content += `### ${specialist.cargo || specialist.nome || key}\n\n`;
+            
+            if (specialist.especialidade) {
+                content += `**Especialidade:** ${specialist.especialidade}\n\n`;
             }
+            
+            if (specialist.bio) {
+                content += `**Bio:** ${specialist.bio}\n\n`;
+            }
+            
+            if (specialist.foco) {
+                content += `**Foco Principal:** ${specialist.foco}\n\n`;
+            }
+            
+            if (specialist.kpis && specialist.kpis.length > 0) {
+                content += '**KPIs Relevantes:**\n';
+                specialist.kpis.forEach((kpi: string) => {
+                    content += `- ${kpi}\n`;
+                });
+                content += '\n';
+            }
+            
+            content += '---\n\n';
         });
     }
     
-    // Resultados e Entregáveis
-    if (taskPlan) {
-        content += '## RESULTADOS E ENTREGAVEIS\n\n';
+    // Resultados e Entregáveis (Plano de Ação)
+    if (score && score.dimensoes) {
+        content += '## PLANO DE AÇÃO - POR PILAR\n\n';
         
-        Object.entries(taskPlan).forEach(([key, pillarData]: [string, any]) => {
-            if (pillarData.executions) {
-                content += `### ${pillarData.plan?.titulo_plano || key}\n\n`;
-                
-                pillarData.executions.forEach((execution: any) => {
-                    if (execution.deliverable) {
-                        content += `#### ${execution.deliverable.titulo || 'Entregavel'}\n\n`;
-                        content += `${execution.deliverable.conteudo || execution.deliverable.resumo || 'Sem conteudo'}\n\n`;
-                        
-                        if (execution.deliverable.impacto) {
-                            content += `**Impacto:** ${execution.deliverable.impacto}\n\n`;
-                        }
-                        
-                        if (execution.deliverable.como_aplicar) {
-                            content += '**Como Aplicar:**\n';
-                            execution.deliverable.como_aplicar.forEach((passo: string) => {
-                                content += `- ${passo}\n`;
-                            });
-                            content += '\n';
-                        }
-                        
-                        if (execution.deliverable.fontes) {
-                            content += '**Fontes:**\n';
-                            execution.deliverable.fontes.forEach((fonte: string) => {
-                                content += `- ${fonte}\n`;
-                            });
-                            content += '\n';
-                        }
-                    }
-                });
+        const dimensoes = score.dimensoes || score.dims || {};
+        Object.entries(dimensoes).forEach(([key, pillar]: [string, any]) => {
+            const pillarName = pillar.label || pillar.nome || key;
+            content += `### ${pillarName}\n\n`;
+            
+            if (pillar.meta_pilar) {
+                content += `**Meta do Pilar:** ${pillar.meta_pilar}\n\n`;
             }
+            
+            if (pillar.justificativa) {
+                content += `**Diagnóstico:** ${pillar.justificativa}\n\n`;
+            }
+            
+            if (pillar.acoes_imediatas && pillar.acoes_imediatas.length > 0) {
+                content += '**Ações Imediatas:**\n';
+                pillar.acoes_imediatas.forEach((acao: string, index: number) => {
+                    content += `${index + 1}. ${acao}\n`;
+                });
+                content += '\n';
+            }
+            
+            if (pillar.dado_chave) {
+                content += `**Dado Chave:** ${pillar.dado_chave}\n\n`;
+            }
+            
+            if (pillar.fontes_utilizadas && pillar.fontes_utilizadas.length > 0) {
+                content += '**Fontes Utilizadas:**\n';
+                pillar.fontes_utilizadas.forEach((fonte: string) => {
+                    content += `- ${fonte}\n`;
+                });
+                content += '\n';
+            }
+            
+            content += '---\n\n';
         });
     }
     

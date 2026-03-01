@@ -392,6 +392,39 @@ export default function PillarWorkspace({
             return next;
         });
 
+        // Clear auto-execution states for this pillar
+        setAutoExecSubtasks(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(pillarKey + '_')) delete next[k]; });
+            return next;
+        });
+        setAutoExecResults(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(pillarKey + '_')) delete next[k]; });
+            return next;
+        });
+        setAutoExecStatuses(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(pillarKey + '_')) delete next[k]; });
+            return next;
+        });
+
+        // Clear expanded tasks and focus for this pillar
+        setExpandedTaskIds(prev => {
+            const next = new Set(prev);
+            prev.forEach(k => { if (k.startsWith(pillarKey + '_')) next.delete(k); });
+            return next;
+        });
+        if (focusedTaskId?.startsWith(pillarKey + '_')) {
+            setFocusedTaskId(null);
+        }
+        if (autoExecuting?.startsWith(pillarKey + '_')) {
+            setAutoExecuting(null);
+        }
+        if (executingTask?.startsWith(pillarKey + '_')) {
+            setExecutingTask(null);
+        }
+
         setError('');
         setLoadingPillar(pillarKey); // Show loading spinner
 
@@ -431,7 +464,7 @@ export default function PillarWorkspace({
         } finally {
             setLoadingPillar(null);
         }
-    }, [analysisId, businessId, profile, apiCall]);
+    }, [analysisId, businessId, profile, apiCall, focusedTaskId, autoExecuting, executingTask]);
 
     // ─── Hydrate subtasks and executions from DB ───
     const hydratePillarData = useCallback(async (key: string) => {

@@ -12,6 +12,8 @@ Flow per pillar:
 3. Plan: Agent creates micro-tasks it will execute itself
 4. Execute: Agent runs searches, processes data, generates insights
 5. Save: Agent saves structured output in pillar-specific schema
+
+REFACTORED: Now uses clean architecture with separated concerns
 """
 
 import json
@@ -20,264 +22,40 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from app.core.web_utils import search_duckduckgo, scrape_page
+from app.services.search.search_service import search_duckduckgo
+from app.services.search.context_service import extract_structured_context
 import traceback
 from app.core import database as db
 
+# Import new architecture components
+from app.config.pillars_config import PillarConfig
+from app.exceptions.pillar_exceptions import (
+    PillarExecutionError, 
+    ContextExtractionError, 
+    ScopeViolationError
+)
 
 # ═══════════════════════════════════════════════════════════════════
-# Pillar Definitions — schemas, dependencies, and search strategies
+# BACKWARD COMPATIBILITY: Keep original PILLARS reference
 # ═══════════════════════════════════════════════════════════════════
 
-PILLARS = {
-    "publico_alvo": {
-        "label": "Público-Alvo e Personas",
-        "ordem": 1,
-        "upstream": [],
-        "output_schema": {
-            "personas": [
-                {
-                    "nome": "Nome da persona",
-                    "idade_faixa": "25-35",
-                    "genero": "F/M/Todos",
-                    "profissao_papel": "Cargo ou papel",
-                    "renda_faixa": "R$ X - R$ Y",
-                    "dores_principais": ["dor 1", "dor 2"],
-                    "desejos": ["desejo 1", "desejo 2"],
-                    "objecoes_compra": ["objeção 1"],
-                    "onde_encontrar": ["Instagram", "Google"],
-                    "gatilhos_compra": ["gatilho 1"],
-                    "como_decide": "Descrição do processo decisório",
-                }
-            ],
-            "perfil_cliente_ideal": {
-                "descricao": "Resumo do cliente ideal",
-                "segmento_principal": "B2B/B2C/etc",
-                "ticket_medio_ideal": "R$ X",
-                "frequencia_compra": "mensal/trimestral/etc",
-                "ltv_estimado": "R$ X",
-            },
-            "dados_demograficos": {
-                "regioes_principais": ["região 1"],
-                "faixa_etaria_dominante": "25-45",
-                "poder_aquisitivo": "medio/alto",
-            },
-            "insights_mercado": ["insight 1", "insight 2"],
-        },
-        "search_queries_template": [
-            "{segmento} perfil cliente ideal quem compra",
-            "{segmento} {localizacao} público-alvo personas",
-            "{segmento} comportamento consumidor tendências 2025",
-        ],
-    },
-    "branding": {
-        "label": "Branding e Posicionamento",
-        "ordem": 2,
-        "upstream": ["publico_alvo"],
-        "output_schema": {
-            "posicionamento": {
-                "declaracao": "Frase de posicionamento",
-                "proposta_valor": "Proposta de valor única",
-                "diferencial_competitivo": "O que diferencia",
-                "promessa_marca": "Promessa central",
-            },
-            "tom_de_voz": {
-                "personalidade": ["adjetivo 1", "adjetivo 2"],
-                "palavras_chave": ["palavra 1"],
-                "evitar": ["palavra a evitar"],
-                "exemplo_comunicacao": "Exemplo de texto na voz da marca",
-            },
-            "analise_concorrentes": [
-                {
-                    "nome": "Concorrente",
-                    "pontos_fortes": ["ponto"],
-                    "pontos_fracos": ["ponto"],
-                    "como_superar": "Estratégia",
-                }
-            ],
-            "territorio_marca": {
-                "categoria": "Território principal",
-                "associacoes_desejadas": ["associação"],
-                "associacoes_evitar": ["associação"],
-            },
-        },
-        "search_queries_template": [
-            "{segmento} {localizacao} concorrentes principais",
-            "{segmento} posicionamento marca diferencial",
-            "{segmento} proposta de valor cases sucesso",
-        ],
-    },
-    "identidade_visual": {
-        "label": "Identidade Visual",
-        "ordem": 3,
-        "upstream": ["publico_alvo", "branding"],
-        "output_schema": {
-            "diretrizes_visuais": {
-                "estilo_geral": "Minimalista/Bold/Elegante/etc",
-                "paleta_cores_sugerida": ["#hex1", "#hex2"],
-                "tipografia_sugerida": {"titulo": "Font", "corpo": "Font"},
-                "referencias_visuais": ["referência 1"],
-            },
-            "diagnostico_atual": {
-                "nota_coerencia": "1-10",
-                "problemas_detectados": ["problema"],
-                "oportunidades": ["oportunidade"],
-            },
-            "plano_melhoria": [
-                {"item": "O que melhorar", "prioridade": "alta/media/baixa", "como": "Como fazer"}
-            ],
-        },
-        "search_queries_template": [
-            "{segmento} identidade visual tendências 2025",
-            "{segmento} design marca exemplos",
-        ],
-    },
-    "canais_venda": {
-        "label": "Canais de Venda",
-        "ordem": 4,
-        "upstream": ["publico_alvo", "branding"],
-        "output_schema": {
-            "canais_atuais": [
-                {"canal": "Nome", "status": "ativo/inativo", "performance": "descrição"}
-            ],
-            "canais_recomendados": [
-                {
-                    "canal": "Nome",
-                    "motivo": "Por que esse canal",
-                    "investimento_inicial": "R$ X",
-                    "tempo_implementacao": "X semanas",
-                    "roi_esperado": "descrição",
-                }
-            ],
-            "estrategia_integracao": "Como integrar todos os canais",
-            "prioridade_implementacao": ["canal 1", "canal 2"],
-        },
-        "search_queries_template": [
-            "{segmento} canais de venda mais eficientes",
-            "{segmento} {localizacao} como vender mais onde encontrar clientes",
-            "{segmento} marketplace ecommerce canais digitais",
-        ],
-    },
-    "trafego_organico": {
-        "label": "Tráfego Orgânico",
-        "ordem": 5,
-        "upstream": ["publico_alvo", "branding", "identidade_visual"],
-        "output_schema": {
-            "estrategia_seo": {
-                "palavras_chave_principais": ["keyword 1"],
-                "google_meu_negocio": {"status": "ativo/inativo", "acoes": ["ação"]},
-                "oportunidades_locais": ["oportunidade"],
-            },
-            "plano_conteudo": {
-                "pilares_conteudo": ["pilar 1"],
-                "formatos_prioritarios": ["Reels", "Blog", "Stories"],
-                "frequencia_sugerida": "X posts/semana",
-                "ideias_conteudo": [
-                    {"titulo": "Ideia", "formato": "Reel/Post/Blog", "objetivo": "engajamento/conversao"}
-                ],
-            },
-            "redes_sociais": {
-                "canais_prioritarios": ["Instagram", "YouTube"],
-                "estrategia_por_canal": {"Instagram": "estratégia específica"},
-            },
-            "metricas_acompanhar": ["métrica 1"],
-        },
-        "search_queries_template": [
-            "{segmento} SEO local como aparecer Google",
-            "{segmento} marketing conteúdo orgânico redes sociais estratégia",
-            "{segmento} Google Meu Negócio otimização",
-        ],
-    },
-    "trafego_pago": {
-        "label": "Tráfego Pago",
-        "ordem": 6,
-        "upstream": ["publico_alvo", "branding", "identidade_visual", "canais_venda"],
-        "output_schema": {
-            "estrategia_ads": {
-                "plataformas_recomendadas": ["Meta Ads", "Google Ads"],
-                "orcamento_sugerido_mensal": "R$ X",
-                "divisao_orcamento": {"Meta Ads": "60%", "Google Ads": "40%"},
-            },
-            "campanhas_sugeridas": [
-                {
-                    "nome": "Campanha",
-                    "plataforma": "Meta Ads",
-                    "objetivo": "conversão/alcance/tráfego",
-                    "publico_alvo": "Segmentação",
-                    "orcamento_diario": "R$ X",
-                    "copy_sugerida": "Texto do anúncio",
-                    "cta": "Call to action",
-                }
-            ],
-            "metricas_meta": {"cpa_alvo": "R$ X", "roas_alvo": "X:1"},
-        },
-        "search_queries_template": [
-            "{segmento} Meta Ads Google Ads estratégia anúncios",
-            "{segmento} custo aquisição cliente anúncios pagos ROI",
-        ],
-    },
-    "processo_vendas": {
-        "label": "Processo de Vendas",
-        "ordem": 7,
-        "upstream": ["publico_alvo", "canais_venda", "trafego_organico", "trafego_pago"],
-        "output_schema": {
-            "funil_vendas": {
-                "etapas": [
-                    {"nome": "Etapa", "descricao": "O que acontece", "taxa_conversao_estimada": "X%"}
-                ],
-                "gargalos_identificados": ["gargalo"],
-            },
-            "scripts_venda": [
-                {"situacao": "Primeiro contato", "script": "Texto do script", "objecao_coberta": "Objeção"}
-            ],
-            "precificacao": {
-                "estrategia": "Valor percebido/Competitiva/Premium",
-                "ticket_medio_sugerido": "R$ X",
-                "margem_ideal": "X%",
-                "modelo_recorrencia": "assinatura/pacote/avulso",
-            },
-            "pos_venda": {
-                "estrategia_fidelizacao": "Descrição",
-                "upsell_crosssell": ["oportunidade 1"],
-            },
-        },
-        "search_queries_template": [
-            "{segmento} processo vendas funil conversão",
-            "{segmento} precificação margem lucro ticket médio",
-            "{segmento} scripts vendas contorno objeções",
-        ],
-    },
-}
-
-PILLAR_ORDER = sorted(PILLARS.keys(), key=lambda k: PILLARS[k]["ordem"])
-
+PILLARS = PillarConfig.PILLARS
+PILLAR_ORDER = PillarConfig.get_pillar_order()
 
 # ═══════════════════════════════════════════════════════════════════
-# Agent Core — autonomous planning, research, execution
+# Context Extraction Functions (Updated to use new service)
 # ═══════════════════════════════════════════════════════════════════
 
-def _extract_json(text: str) -> dict:
-    """Extract JSON object from raw LLM text, handling markdown code blocks."""
-    if not text:
-        raise ValueError("Resposta vazia do modelo")
+def _extract_structured_context(up_output: dict, pillar_key: str) -> dict:
+    """
+    BACKWARD COMPATIBILITY: Wrapper for new context extraction service.
+    Maintains the same interface as the original function.
+    """
+    return extract_structured_context(up_output, pillar_key)
 
-    # Strip markdown code fences
-    import re
-    text = text.strip()
-    # Remove ```json ... ``` or ``` ... ```
-    fence = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
-    if fence:
-        text = fence.group(1).strip()
-
-    # Find first { and last }
-    start = text.find('{')
-    end = text.rfind('}')
-    if start == -1 or end == -1:
-        raise ValueError(f"Nenhum JSON encontrado na resposta: {text[:200]}")
-
-    json_str = text[start:end + 1]
-    return json.loads(json_str)
-
+# ═══════════════════════════════════════════════════════════════════
+# Schema Description Function
+# ═══════════════════════════════════════════════════════════════════
 
 def _build_schema_description(schema: dict, depth: int = 0) -> str:
     """
@@ -300,6 +78,34 @@ def _build_schema_description(schema: dict, depth: int = 0) -> str:
     simplified = _simplify(schema)
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
+# ═══════════════════════════════════════════════════════════════════
+# LLM Service Functions
+# ═══════════════════════════════════════════════════════════════════
+
+def call_llm(api_key: str, prompt: str, temperature: float = 0.2, model: str = "llama-3.3-70b-versatile", force_json: bool = False) -> str:
+    """Call LLM service with error handling."""
+    try:
+        # This would be the actual LLM call implementation
+        # For now, keeping the original interface
+        from app.core.llm_service import call_llm as _call_llm
+        return _call_llm(api_key, prompt, temperature, model, force_json)
+    except Exception as e:
+        raise PillarExecutionError(f"LLM service failed: {str(e)}")
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response."""
+    # Find first { and last }
+    start = text.find('{')
+    end = text.rfind('}')
+    if start == -1 or end == -1:
+        raise ValueError(f"Nenhum JSON encontrado na resposta: {text[:200]}")
+
+    json_str = text[start:end + 1]
+    return json.loads(json_str)
+
+# ═══════════════════════════════════════════════════════════════════
+# Main Pillar Agent Function (Updated with new architecture)
+# ═══════════════════════════════════════════════════════════════════
 
 def run_pillar_agent(
     pillar_key: str,
@@ -324,100 +130,110 @@ def run_pillar_agent(
         user_command: Optional user directive (e.g. "Focus on B2B personas")
         emit_thought: Optional callback for streaming progress
     """
-    if pillar_key not in PILLARS:
-        return {"success": False, "error": f"Pilar '{pillar_key}' não existe."}
+    try:
+        # Get pillar configuration
+        pillar = PillarConfig.get_pillar_config(pillar_key)
+        
+        # Extract business information
+        nome = profile.get("nome_empresa", "")
+        segmento = profile.get("segmento", "")
+        localizacao = profile.get("localizacao", "")
+        modelo = profile.get("modelo_negocio", "")
+        restricoes = profile.get("restricoes", {})
+        perfil = profile.get("perfil", {})
 
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY não configurada."}
+        def thought(msg):
+            print(f"  💭 [{pillar_key}] {msg}", file=sys.stderr)
+            if emit_thought:
+                emit_thought(msg)
 
-    pillar = PILLARS[pillar_key]
-    perfil = profile.get("perfil", profile)
-    restricoes = profile.get("restricoes_criticas", {})
+        thought(f"Iniciando agente: {pillar['label']}")
 
-    nome = perfil.get("nome", perfil.get("nome_negocio", "Negócio"))
-    segmento = perfil.get("segmento", "")
-    localizacao = perfil.get("localizacao", "")
-    modelo = perfil.get("modelo_negocio", "")
+        # ── Step 1: Load upstream pillar data (Structured Context) ──
+        thought("Carregando dados estruturados dos pilares anteriores...")
+        upstream_context = {}
+        for up_key in pillar["upstream"]:
+            up_data = db.get_pillar_data(business_id, up_key)
+            if up_data:
+                up_output = up_data.get("structured_output", {})
+                # Extract only primary keys - NO TEXT SUMMARIES
+                structured_context = _extract_structured_context(up_output, up_key)
+                upstream_context[up_key] = structured_context
+                thought(f"  ✅ Contexto estruturado de '{up_key}' carregado: {list(structured_context.keys())}")
+            else:
+                thought(f"  ⚠️ Pilar '{up_key}' ainda não foi executado")
 
-    def thought(msg):
-        print(f"  💭 [{pillar_key}] {msg}", file=sys.stderr)
-        if emit_thought:
-            emit_thought(msg)
+        # Build structured context injection (JSON only, no text)
+        upstream_context_json = json.dumps(upstream_context, ensure_ascii=False) if upstream_context else "{}"
 
-    thought(f"Iniciando agente: {pillar['label']}")
+        # ── Step 2: Research — search web for pillar-specific data ──
+        thought("Pesquisando dados reais na internet...")
+        research_text = ""
+        research_sources = []
 
-    # ── Step 1: Load upstream pillar data ──
-    thought("Carregando dados dos pilares anteriores...")
-    upstream_data = {}
-    for up_key in pillar["upstream"]:
-        up_data = db.get_pillar_data(business_id, up_key)
-        if up_data:
-            upstream_data[up_key] = up_data.get("structured_output", {})
-            thought(f"  ✅ Dados de '{up_key}' carregados")
-        else:
-            thought(f"  ⚠️ Pilar '{up_key}' ainda não foi executado")
+        queries = pillar["search_queries_template"]
+        for qi, query_tpl in enumerate(queries):
+            query = query_tpl.format(
+                segmento=segmento,
+                localizacao=localizacao,
+                nome=nome,
+            )
+            thought(f"  🔍 Buscando: {query[:80]}...")
 
-    # Build compact upstream summary for the prompt
-    upstream_summary = ""
-    for up_key, up_output in upstream_data.items():
-        up_label = PILLARS[up_key]["label"]
-        compact = json.dumps(up_output, ensure_ascii=False)
-        if len(compact) > 800:
-            compact = compact[:800] + "..."
-        upstream_summary += f"\n### {up_label}:\n{compact}\n"
+            results = search_duckduckgo(query, max_results=4, region='br-pt')
+            for i, r in enumerate(results or []):
+                url = r.get("href", "")
+                research_sources.append(url)
+                snippet = r.get("body", "")
+                title = r.get("title", "")
+                research_text += f"[Fonte {len(research_sources)}] {title}: {snippet}\n"
 
-    # ── Step 2: Research — search web for pillar-specific data ──
-    thought("Pesquisando dados reais na internet...")
-    research_text = ""
-    research_sources = []
+                if i < 1:  # Scrape top result per query
+                    content = scrape_page(url, timeout=4)
+                    if content:
+                        research_text += f"Conteúdo: {content[:2500]}\n\n"
 
-    queries = pillar["search_queries_template"]
-    for qi, query_tpl in enumerate(queries):
-        query = query_tpl.format(
-            segmento=segmento,
-            localizacao=localizacao,
-            nome=nome,
-        )
-        thought(f"  🔍 Buscando: {query[:80]}...")
+            time.sleep(1)  # Rate limit courtesy
 
-        results = search_duckduckgo(query, max_results=4, region='br-pt')
-        for i, r in enumerate(results or []):
-            url = r.get("href", "")
-            research_sources.append(url)
-            snippet = r.get("body", "")
-            title = r.get("title", "")
-            research_text += f"[Fonte {len(research_sources)}] {title}: {snippet}\n"
+        thought(f"Pesquisa concluída: {len(research_sources)} fontes encontradas")
 
-            if i < 1:  # Scrape top result per query
-                content = scrape_page(url, timeout=4)
-                if content:
-                    research_text += f"Conteúdo: {content[:2500]}\n\n"
+        # ── Step 3: Plan + Execute — LLM generates structured output ──
+        thought("IA analisando dados e gerando resultados...")
 
-        time.sleep(1)  # Rate limit courtesy
+        # Build restriction context
+        restriction_lines = []
+        capital = restricoes.get("capital_disponivel", "")
+        equipe_solo = restricoes.get("equipe_solo", False)
+        if capital in ["zero", "baixo"]:
+            restriction_lines.append("Capital ZERO ou baixo: apenas soluções gratuitas ou muito baratas")
+        if equipe_solo:
+            restriction_lines.append("Equipe de 1 pessoa: tudo deve ser executável solo")
+        restriction_text = "\n".join(restriction_lines) if restriction_lines else "Sem restrições especiais"
 
-    thought(f"Pesquisa concluída: {len(research_sources)} fontes encontradas")
+        # Add structured context processing instructions
+        context_instructions = _build_context_instructions(pillar_key, upstream_context)
 
-    # ── Step 3: Plan + Execute — LLM generates structured output ──
-    thought("IA analisando dados e gerando resultados...")
+        # Validate scope compliance
+        if not PillarConfig.validate_scope_compliance(pillar_key, upstream_context):
+            raise ScopeViolationError(f"Pillar '{pillar_key}' output violates its defined scope")
 
-    # Build restriction context
-    restriction_lines = []
-    capital = restricoes.get("capital_disponivel", "")
-    equipe_solo = restricoes.get("equipe_solo", False)
-    if capital in ["zero", "baixo"]:
-        restriction_lines.append("Capital ZERO ou baixo: apenas soluções gratuitas ou muito baratas")
-    if equipe_solo:
-        restriction_lines.append("Equipe de 1 pessoa: tudo deve ser executável solo")
-    restriction_text = "\n".join(restriction_lines) if restriction_lines else "Sem restrições especiais"
+        schema_description = _build_schema_description(pillar["output_schema"])
 
-    schema_description = _build_schema_description(pillar["output_schema"])
-
-    prompt = f"""Você é especialista em {pillar['label']} para PMEs brasileiras.
+        prompt = f"""Você é especialista em {pillar['label']} para PMEs brasileiras.
 Empresa: "{nome}" | {segmento} | {modelo} | {localizacao}
 {f'Diretiva: {user_command}' if user_command else ''}
 Funcionários: {perfil.get('num_funcionarios','?')} | Ticket: {perfil.get('ticket_medio', perfil.get('ticket_medio_estimado','?'))} | Restrições: {restriction_text}
-{f'CONTEXTO UPSTREAM:{upstream_summary}' if upstream_summary else ''}
+
+[CONTEXTO UPSTREAM ESTRUTURADO]
+{upstream_context_json}
+{context_instructions}
+
+[REGRA DE ESCOPO ESTRITO - APENAS PARA Pilar 1]
+Se você está processando o Pilar 1 (Público-Alvo): LIMITE-SE APENAS a mapear o mercado. NÃO gere scripts de vendas, quebra de objeções ou diferenciais competitivos. Foque exclusivamente em: "Quem é o alvo e o que ele sofre?". Extraia dados comportamentais e demográficos puros.
+
+[REGRA DE OURO - ALTO PESO]
+Você é um estrategista de vendas autônomo operando EXCLUSIVAMENTE em prol da empresa analisada ("{nome}"). Regra de Ouro: Qualquer outra empresa encontrada nos dados de pesquisa que atue no mesmo segmento ("{segmento}") ou venda o mesmo tipo de produto/serviço é ESTRITAMENTE uma CONCORRENTE (Benchmarking) e NUNCA uma parceira estratégica. Na etapa de Jornada do Cliente, o prospect DEVE SEMPRE cotar e fechar negócio com a empresa "{nome}". Use os concorrentes apenas para identificar fraquezas que a "{nome}" pode explorar com seus próprios diferenciais competitivos.
+
 PESQUISA INTERNET:
 {research_text[:5000] if research_text else 'Use seu conhecimento especializado.'}
 
@@ -426,80 +242,122 @@ Retorne SOMENTE um objeto JSON com exatamente estes campos (sem texto extra, sem
 
 Todos os valores devem ser específicos para "{nome}". Não use valores de exemplo."""
 
-    try:
-        raw = call_llm(
-            api_key, prompt,
-            temperature=0.2,
-            model="llama-3.3-70b-versatile",
-            force_json=False,
-        )
-        result = _extract_json(raw)
-    except Exception as e:
-        thought(f"Modelo principal falhou, tentando alternativo...")
         try:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise PillarExecutionError("GROQ_API_KEY environment variable not set")
+                
             raw = call_llm(
                 api_key, prompt,
                 temperature=0.2,
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 force_json=False,
             )
             result = _extract_json(raw)
-        except Exception as e2:
-            return {
-                "success": False,
-                "error": f"Erro ao executar agente: {str(e2)[:200]}",
-                "sources": research_sources,
-            }
+        except Exception as e:
+            thought(f"Modelo principal falhou, tentando alternativo...")
+            try:
+                raw = call_llm(
+                    api_key, prompt,
+                    temperature=0.2,
+                    model="llama-3.1-8b-instant",
+                    force_json=False,
+                )
+                result = _extract_json(raw)
+            except Exception as e2:
+                raise PillarExecutionError(f"Both LLM models failed: {str(e)}, {str(e2)}")
 
-    thought("Resultado gerado com sucesso!")
-
-    # ── Step 4: Save structured output ──
-    thought("Salvando dados estruturados...")
-    try:
-        db.save_pillar_data(
+        # ── Step 4: Save results ──
+        thought("Salvando resultados no banco de dados...")
+        
+        # Validate scope compliance before saving
+        if not PillarConfig.validate_scope_compliance(pillar_key, result):
+            raise ScopeViolationError(f"Generated output violates pillar '{pillar_key}' scope")
+        
+        # Save to database
+        save_result = db.save_pillar_data(
             business_id=business_id,
             pillar_key=pillar_key,
             structured_output=result,
             sources=research_sources,
-            user_command=user_command,
-        )
-        thought(f"✅ Dados de {pillar['label']} salvos com sucesso")
-    except Exception as e:
-        thought(f"⚠️ Erro ao salvar: {e}")
-
-    return {
-        "success": True,
-        "pillar_key": pillar_key,
-        "label": pillar["label"],
-        "data": result,
-        "sources": research_sources,
-        "upstream_used": list(upstream_data.keys()),
-    }
-
-
-def get_pillar_status(business_id: str) -> dict:
-    """
-    Get the execution status of all pillars for a business.
-    Returns which pillars have been executed and which are ready.
-    """
-    status = {}
-    for key in PILLAR_ORDER:
-        pillar = PILLARS[key]
-        data = db.get_pillar_data(business_id, key)
-        
-        # Check if upstream pillars are completed
-        upstream_ready = all(
-            db.get_pillar_data(business_id, up) is not None
-            for up in pillar["upstream"]
+            user_command=user_command
         )
         
-        status[key] = {
-            "label": pillar["label"],
-            "ordem": pillar["ordem"],
-            "completed": data is not None,
-            "ready": upstream_ready or len(pillar["upstream"]) == 0,
-            "upstream": pillar["upstream"],
-            "updated_at": data.get("updated_at") if data else None,
+        if not save_result.get("success"):
+            raise PillarExecutionError(f"Failed to save pillar data: {save_result.get('error', 'Unknown error')}")
+
+        thought(f"✅ Pilar '{pillar_key}' executado com sucesso!")
+        
+        return {
+            "success": True,
+            "pillar_key": pillar_key,
+            "data": result,
+            "sources": research_sources,
+            "context_used": upstream_context
         }
+
+    except Exception as e:
+        error_msg = f"Error in pillar '{pillar_key}': {str(e)}"
+        thought(f"❌ {error_msg}")
+        raise PillarExecutionError(error_msg)
+
+
+def _build_context_instructions(pillar_key: str, upstream_context: dict) -> str:
+    """Build context-specific instructions for the LLM."""
+    if not upstream_context:
+        return ""
     
-    return status
+    if pillar_key == "branding" and "publico_alvo" in upstream_context:
+        industrias = upstream_context["publico_alvo"].get("industrias_alvo", [])
+        dores_por_industria = upstream_context["publico_alvo"].get("dores_por_industria", {})
+        return f"\n[CONTEXTO ESTRUTURADO - REQUER PROCESSAMENTO ITERATIVO]\nGere um posicionamento DISTINTO para CADA indústria: {industrias}. Use as dores mapeadas como base: {dores_por_industria}. NÃO funda as indústrias. Crie elementos separados para cada segmento.\n"
+    elif pillar_key == "identidade_visual" and "branding" in upstream_context:
+        proposta_valor = upstream_context["branding"].get("proposta_valor_tecnica", "")
+        industrias_pos = upstream_context["branding"].get("industrias_posicionamentos", [])
+        return f"\n[CONTEXTO ESTRUTURADO - REQUER PROCESSAMENTO ITERATIVO]\nBaseie a identidade visual na proposta de valor: '{proposta_valor}'. Crie diretrizes visuais DISTINTAS para CADA indústria: {industrias_pos}. Mantenha coerência mas permita variação por setor.\n"
+    elif pillar_key == "canais_venda" and "publico_alvo" in upstream_context:
+        industrias = upstream_context["publico_alvo"].get("industrias_alvo", [])
+        return f"\n[CONTEXTO ESTRUTURADO - REQUER PROCESSAMENTO ITERATIVO]\nSugira canais DISTINTOS para CADA indústria: {industrias}. Cada setor pode ter canais diferentes. NÃO generalize.\n"
+    elif pillar_key == "trafego_organico" and "canais_venda" in upstream_context:
+        canais = upstream_context["canais_venda"].get("canais_efetivos", [])
+        return f"\n[CONTEXTO ESTRUTURADO]\nAlinhe a estratégia orgânica com os canais: {canais}. Crie conteúdo específico para cada canal.\n"
+    elif pillar_key == "trafego_pago" and "canais_venda" in upstream_context:
+        canais = upstream_context["canais_venda"].get("canais_efetivos", [])
+        return f"\n[CONTEXTO ESTRUTURADO]\nDirecione os anúncios para os canais: {canais}. Otimize para cada plataforma.\n"
+    elif pillar_key == "processo_venda" and "trafego_pago" in upstream_context:
+        plataformas = upstream_context["trafego_pago"].get("plataformas_principais", [])
+        return f"\n[CONTEXTO ESTRUTURADO]\nAdapte o processo de vendas para as plataformas: {plataformas}. Cada origem de tráfego pode ter abordagem diferente.\n"
+    
+    return ""
+
+
+def get_pillar_status(pillar_key: str, business_id: str) -> dict:
+    """Get execution status for a specific pillar."""
+    try:
+        pillar_data = db.get_pillar_data(business_id, pillar_key)
+        if pillar_data:
+            return {
+                "executed": True,
+                "data": pillar_data.get("structured_output", {}),
+                "sources": pillar_data.get("sources", []),
+                "updated_at": pillar_data.get("updated_at"),
+                "user_command": pillar_data.get("user_command", "")
+            }
+        else:
+            return {
+                "executed": False,
+                "data": None,
+                "sources": [],
+                "updated_at": None,
+                "user_command": ""
+            }
+    except Exception as e:
+        raise PillarExecutionError(f"Failed to get pillar status: {str(e)}")
+
+
+def get_pillar_data(business_id: str, pillar_key: str = None):
+    """Legacy function - use db.get_pillar_data instead."""
+    if pillar_key:
+        return db.get_pillar_data(business_id, pillar_key)
+    else:
+        return db.get_all_pillar_data(business_id)

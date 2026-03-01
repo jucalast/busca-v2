@@ -385,49 +385,97 @@ DADOS:
 CONTEXTO: Modelo={hints.get('modelo', '?')} | Canais={', '.join(canais_conhecidos) or '?'} | Concorrentes={', '.join(hints.get('competitor_names', [])) or 'nenhum'} | Dificuldade={hints.get('dificuldades', '?')}
 
 REGRAS: Apenas dados REAIS dos textos. Cite fontes (URL). Não invente.
+RETORNE APENAS JSON VÁLIDO, sem texto adicional.
 
 JSON:
 {{
   "presenca_digital": {{
-    "instagram": {{"encontrado": bool, "handle": str, "bio": str, "seguidores": str|null, "frequencia_posts": str|null, "tipo_conteudo": str|null, "engajamento_estimado": str|null, "observacoes": str, "fonte": str}},
-    "site": {{"encontrado": bool, "url": str, "produtos_listados": [str], "tem_preco_visivel": bool, "tem_cta": bool, "qualidade_seo": str|null, "observacoes": str, "fonte": str}},
-    "linkedin": {{"encontrado": bool, "url": str, "seguidores": str|null, "descricao": str, "posts_recentes": bool, "observacoes": str, "fonte": str}},
-    "whatsapp": {{"encontrado": bool, "numero": str, "tem_catalogo": bool, "usa_whatsapp_business": bool, "observacoes": str}},
-    "google_maps": {{"encontrado": bool, "nota": str, "num_avaliacoes": str|null, "principais_comentarios": [str], "fonte": str}},
-    "email": {{"encontrado": bool, "endereco": str, "fonte": str}},
-    "outras_plataformas": [str]
+    "instagram": {{ "encontrado": false, "handle": null, "bio": null, "seguidores": null, "frequencia_posts": null, "tipo_conteudo": null, "engajamento_estimado": null, "observacoes": null, "fonte": null }},
+    "site": {{ "encontrado": false, "url": null, "produtos_listados": [], "tem_preco_visivel": false, "tem_cta": false, "qualidade_seo": null, "observacoes": null, "fonte": null }},
+    "linkedin": {{ "encontrado": false, "url": null, "seguidores": null, "descricao": null, "posts_recentes": false, "observacoes": null, "fonte": null }},
+    "whatsapp": {{ "encontrado": false, "numero": null, "tem_catalogo": false, "usa_whatsapp_business": false, "observacoes": null }},
+    "google_maps": {{ "encontrado": false, "nota": null, "num_avaliacoes": null, "principais_comentarios": [], "fonte": null }},
+    "email": {{ "encontrado": false, "endereco": null, "fonte": null }},
+    "outras_plataformas": []
   }},
-  "concorrentes_encontrados": [{{"nome": str, "instagram": str, "site": str|null, "preco_referencia": str, "diferencial": str, "ponto_fraco": str, "canais_digitais": [str], "fonte": str}}],
-  "dados_mercado_local": {{"preco_medio_regiao": str, "tendencias": [str], "oportunidades": [str]}},
-  "problemas_detectados": [str],
-  "resumo_executivo": "2-3 frases sobre a situação digital real desse negócio"
+  "concorrentes_encontrados": [],
+  "dados_mercado_local": {{ "preco_medio_regiao": null, "tendencias": [], "oportunidades": [] }},
+  "problemas_detectados": [],
+  "resumo_executivo": "Dados insuficientes para análise completa"
 }}"""
 
-    try:
-        result = call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
-        result["found"] = True
-        
-        # Collect all sources
-        all_sources = []
-        for r in raw_results:
-            all_sources.extend(r.get("sources", []))
-        result["fontes_discovery"] = list(dict.fromkeys(all_sources))
-        
-        # Log what was found
-        pd = result.get("presenca_digital", {})
-        found_items = []
-        for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
-            if pd.get(canal, {}).get("encontrado"):
-                found_items.append(canal)
-        n_comp = len(result.get("concorrentes_encontrados", []))
-        n_probs = len(result.get("problemas_detectados", []))
-        has_market = bool(result.get("dados_mercado_local", {}).get("preco_medio_regiao"))
-        print(f"  📊 Discovery sintetizado: canais={found_items} | concorrentes={n_comp} | problemas={n_probs} | mercado={'✅' if has_market else '❌'}", file=sys.stderr)
-        
-        return result
-    except Exception as e:
-        print(f"  ❌ Erro ao sintetizar discovery: {e}", file=sys.stderr)
-        return {"found": False, "error": str(e)[:200]}
+    # Try multiple providers with fallback
+    providers_to_try = ["groq", "gemini", "openrouter"]
+    if model_provider != "groq":
+        providers_to_try.insert(0, model_provider)
+    
+    for provider in providers_to_try:
+        try:
+            print(f"  🧠 Tentando sintetizar com {provider}...", file=sys.stderr)
+            result = call_llm(provider=provider, prompt=prompt, temperature=0.2, json_mode=True)
+            
+            # Validate result structure
+            if not isinstance(result, dict):
+                print(f"  ⚠️ {provider} retornou tipo inválido: {type(result)}", file=sys.stderr)
+                continue
+            
+            # Ensure all required fields exist
+            if "presenca_digital" not in result:
+                result["presenca_digital"] = {}
+            if "concorrentes_encontrados" not in result:
+                result["concorrentes_encontrados"] = []
+            if "dados_mercado_local" not in result:
+                result["dados_mercado_local"] = {}
+            if "problemas_detectados" not in result:
+                result["problemas_detectados"] = []
+            if "resumo_executivo" not in result:
+                result["resumo_executivo"] = "Análise parcial dos dados"
+            
+            result["found"] = True
+            
+            # Collect all sources
+            all_sources = []
+            for r in raw_results:
+                if isinstance(r, dict) and "sources" in r:
+                    all_sources.extend(r["sources"])
+            result["fontes_discovery"] = list(dict.fromkeys(all_sources))
+            
+            # Log what was found
+            pd = result.get("presenca_digital", {})
+            found_items = []
+            for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
+                if pd.get(canal, {}).get("encontrado"):
+                    found_items.append(canal)
+            n_comp = len(result.get("concorrentes_encontrados", []))
+            n_probs = len(result.get("problemas_detectados", []))
+            has_market = bool(result.get("dados_mercado_local", {}).get("preco_medio_regiao"))
+            print(f"  📊 Discovery sintetizado com {provider}: canais={found_items} | concorrentes={n_comp} | problemas={n_probs} | mercado={'✅' if has_market else '❌'}", file=sys.stderr)
+            
+            return result
+            
+        except Exception as e:
+            print(f"  ❌ Erro ao sintetizar discovery com {provider}: {e}", file=sys.stderr)
+            continue
+    
+    # If all providers failed, return basic structure
+    print("  ⚠️ Todos os provedores falharam, retornando estrutura básica", file=sys.stderr)
+    return {
+        "found": False, 
+        "error": "All providers failed",
+        "presenca_digital": {
+            "instagram": {"encontrado": False},
+            "site": {"encontrado": False}, 
+            "linkedin": {"encontrado": False},
+            "whatsapp": {"encontrado": False},
+            "google_maps": {"encontrado": False},
+            "email": {"encontrado": False},
+            "outras_plataformas": []
+        },
+        "concorrentes_encontrados": [],
+        "dados_mercado_local": {"preco_medio_regiao": None, "tendencias": [], "oportunidades": []},
+        "problemas_detectados": [],
+        "resumo_executivo": "Falha na análise dos dados descobertos"
+    }
 
 
 def discover_business(profile: dict, region: str = "br-pt", model_provider: str = "groq") -> dict:

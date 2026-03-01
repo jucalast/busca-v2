@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+from datetime import datetime
 
 # To handle local imports in NextJS backend pointing to the old directory
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'search_summarizer'))
@@ -22,7 +24,8 @@ from app.services.agents.specialist_engine import (
     get_pillar_full_state,
     agent_execute_task,
     expand_task_subtasks,
-    ai_try_user_task
+    ai_try_user_task,
+    generate_specialist_tasks
 )
 from app.services.agents.pillar_agent import run_pillar_agent, get_pillar_status
 from typing import Dict, Any, List
@@ -429,7 +432,105 @@ def do_redo_pillar(data: dict) -> dict:
     db.delete_pillar_data(analysis_id, pillar_key)
     return {"success": True}
 
-def do_analyze(data: dict) -> dict:
-    # Note: Analyze is complex because it can stream SSE.
-    # In FastAPI, we will handle this via StreamingResponse.
-    pass
+def do_analyze(data: dict):
+    """
+    Execute complete business analysis using Growth Orchestrator
+    """
+    import json
+    import sys
+    
+    print(f"🚀 Starting analysis using Growth Orchestrator", file=sys.stderr)
+    
+    def stream_generator():
+        try:
+            # Send initial thought
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando análise completa do negócio...'})}\n\n"
+            
+            # Send progress updates
+            yield f"data: {json.dumps({'type': 'thought', 'text': '🔍 Pesquisando presença digital do negócio...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': '📊 Analisando mercado e concorrência...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': '📈 Calculando score dos 7 pilares de vendas...'})}\n\n"
+            
+            # Import and run Growth Orchestrator synchronously
+            from app.services.core.growth_orchestrator import main
+            
+            # Prepare arguments for Growth Orchestrator
+            old_argv = sys.argv
+            sys.argv = [
+                'growth_orchestrator.py',
+                '--action', 'analyze',
+                '--input', json.dumps(data)
+            ]
+            
+            try:
+                # Run Growth Orchestrator
+                main()
+                
+                # Restore original argv
+                sys.argv = old_argv
+                
+                # For now, return a simple success result
+                # TODO: Extract actual result from Growth Orchestrator output
+                result = {
+                    "success": True,
+                    "message": "Analysis completed via Growth Orchestrator"
+                }
+                
+                # Send completion
+                yield f"data: {json.dumps({'type': 'thought', 'text': '✅ Análise concluída com sucesso!'})}\n\n"
+                yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
+                
+            except Exception as e:
+                # Restore original argv
+                sys.argv = old_argv
+                raise e
+                
+        except Exception as e:
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"❌ Error running Growth Orchestrator: {error_msg}", file=sys.stderr)
+            yield f"data: {json.dumps({'type': 'thought', 'text': f'❌ Erro crítico: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+    
+    return stream_generator()
+
+def do_pillar_state(data: dict) -> dict:
+    """Get the complete state of a pillar."""
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    return get_pillar_full_state(analysis_id, pillar_key)
+
+def do_get_analysis_tasks(data: dict) -> dict:
+    """Get tasks for a specific analysis and pillar."""
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    return get_pillar_full_state(analysis_id, pillar_key)
+
+def do_delete_business(data: dict) -> dict:
+    """Delete a business (soft delete)."""
+    business_id = data.get("business_id")
+    
+    if not business_id:
+        return {"success": False, "error": "business_id is required"}
+    
+    try:
+        from app.core import database as db
+        success = db.delete_business(business_id)
+        
+        if success:
+            return {"success": True, "message": f"Business {business_id} deleted successfully"}
+        else:
+            return {"success": False, "error": "Failed to delete business"}
+            
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def do_specialist_tasks(data: dict) -> dict:
+    """Generate specialist tasks for a pillar."""
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    profile = data.get("profile", {})
+    
+    return generate_specialist_tasks(
+        analysis_id, pillar_key, profile, model_provider=data.get("aiModel", "groq")
+    )

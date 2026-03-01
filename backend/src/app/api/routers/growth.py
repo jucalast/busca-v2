@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from app.schemas.requests import (
     ActionProfileRequest, ActionAnalyzeRequest, ActionAssistRequest, 
     ActionChatRequest, ActionDimensionChatRequest, BaseGrowthRequest,
@@ -7,52 +8,62 @@ from app.schemas.requests import (
     ActionExecuteAllSubtasksRequest, ActionPollBackgroundStatusRequest,
     ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest
 )
-from app.services.growth_service import (
+from app.services.core.growth_service import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
     do_list_businesses, do_get_business, do_specialist_plan,
     do_specialist_execute, do_expand_subtasks, do_ai_try_user_task,
     do_execute_all_subtasks, do_get_background_status,
-    do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task
+    do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task,
+    do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_delete_business
 )
 
 router = APIRouter()
 
 @router.post("/redo-subtasks")
 def redo_subtasks(req: ActionRedoSubtasksRequest):
-    return do_redo_subtasks(req.dict())
+    return do_redo_subtasks(req.model_dump())
 
 @router.post("/redo-task")
 def redo_task(req: ActionRedoTaskRequest):
-    return do_redo_task(req.dict())
+    return do_redo_task(req.model_dump())
 
 @router.post("/cancel-task")
 def cancel_task(req: ActionRedoTaskRequest):
-    return do_cancel_task(req.dict())
+    return do_cancel_task(req.model_dump())
 
 @router.post("/redo-pillar")
 def redo_pillar(req: ActionRedoPillarRequest):
-    return do_redo_pillar(req.dict())
+    return do_redo_pillar(req.model_dump())
 
 @router.post("/profile")
 def profile(req: ActionProfileRequest):
-    return do_profile(req.dict())
+    return do_profile(req.model_dump())
 
-# Placeholder for Analyze (needs streaming response)
 @router.post("/analyze")
 def analyze(req: ActionAnalyzeRequest):
-    return {"message": "analyze endpoint placeholder"}
+    """Execute complete business analysis pipeline with streaming"""
+    return StreamingResponse(
+        do_analyze(req.model_dump()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 @router.post("/assist")
 def assist(req: ActionAssistRequest):
-    return do_assist(req.dict())
+    return do_assist(req.model_dump())
 
 @router.post("/chat")
 def chat(req: ActionChatRequest):
-    return do_chat(req.dict())
+    return do_chat(req.model_dump())
 
 @router.post("/dimension-chat")
 def dimension_chat(req: ActionDimensionChatRequest):
-    return do_dimension_chat(req.dict())
+    return do_dimension_chat(req.model_dump())
 
 @router.post("/list-businesses")
 def list_businesses(req: BaseGrowthRequest):
@@ -64,27 +75,44 @@ def get_business(req: BaseGrowthRequest):
 
 @router.post("/specialist-plan")
 def specialist_plan(req: ActionSpecialistPlanRequest):
-    return do_specialist_plan(req.dict())
+    return do_specialist_plan(req.model_dump())
 
 @router.post("/specialist-execute")
 def specialist_execute(req: ActionSpecialistExecuteRequest):
-    return do_specialist_execute(req.dict())
+    return do_specialist_execute(req.model_dump())
 
 @router.post("/expand-subtasks")
 def expand_subtasks(req: ActionExpandSubtasksRequest):
-    return do_expand_subtasks(req.dict())
+    return do_expand_subtasks(req.model_dump())
 
 @router.post("/ai-try-user-task")
 def ai_try_user_task(req: ActionAITryUserTaskRequest):
-    return do_ai_try_user_task(req.dict())
+    return do_ai_try_user_task(req.model_dump())
 
 @router.post("/execute-all-subtasks")
 def execute_all_subtasks(req: ActionExecuteAllSubtasksRequest, background_tasks: BackgroundTasks):
-    return do_execute_all_subtasks(req.dict(), background_tasks)
+    return do_execute_all_subtasks(req.model_dump(), background_tasks)
 
 @router.post("/poll-background-status")
 def poll_background_status(req: ActionPollBackgroundStatusRequest):
     return do_get_background_status(req.analysis_id, req.task_id)
+
+@router.post("/pillar-state")
+def pillar_state(req: dict):
+    return do_pillar_state(req)
+
+@router.post("/get-analysis-tasks")
+def get_analysis_tasks(req: dict):
+    return do_get_analysis_tasks(req)
+
+@router.post("/specialist-tasks")
+def specialist_tasks(req: dict):
+    return do_specialist_tasks(req)
+
+@router.post("/delete-business")
+def delete_business(req: dict):
+    """Delete a business (soft delete)."""
+    return do_delete_business(req)
 
 # More actions following the orchestrator patterns can be registered here:
 # /create-business, /save-analysis, /register, /login, /logout, etc.

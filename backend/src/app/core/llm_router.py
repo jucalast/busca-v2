@@ -15,7 +15,8 @@ except ImportError:
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from project root (2 levels up from backend/src/app/core/)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,
@@ -107,23 +108,64 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                                 max_tokens=8192,
                             )
                             raw = completion.choices[0].message.content
+                            # Try multiple JSON extraction methods
                             import re as _re
+                            
+                            # Method 1: Look for JSON object with braces
                             json_match = _re.search(r'\{[\s\S]*\}', raw)
                             if json_match:
-                                return json_match.group(0)
+                                try:
+                                    json_str = json_match.group(0)
+                                    # Try to parse it
+                                    json.loads(json_str)
+                                    return json_str
+                                except json.JSONDecodeError:
+                                    pass
+                            
+                            # Method 2: Look for JSON array
+                            json_match = _re.search(r'\[[\s\S]*\]', raw)
+                            if json_match:
+                                try:
+                                    json_str = json_match.group(0)
+                                    json.loads(json_str)
+                                    return json_str
+                                except json.JSONDecodeError:
+                                    pass
+                            
+                            # Method 3: Try to fix common JSON issues
+                            try:
+                                # Remove common prefixes/suffixes
+                                cleaned = raw.strip()
+                                if cleaned.startswith('```json'):
+                                    cleaned = cleaned[7:]
+                                if cleaned.endswith('```'):
+                                    cleaned = cleaned[:-3]
+                                cleaned = cleaned.strip()
+                                
+                                # Try parsing the cleaned version
+                                json.loads(cleaned)
+                                return cleaned
+                            except json.JSONDecodeError:
+                                pass
+                            
+                            # If all methods fail, return raw text
                             return raw
                         except Exception:
                             pass
                     raise
 
-                # TPD (daily limit) — wait aggressively up to 90s before switching
+                # TPD (daily limit) — switch model immediately after 1 retry
                 if is_rate_limit and is_tpd:
-                    retry_secs = _parse_retry_wait(error_msg)
-                    if attempt < max_retries - 1 and retry_secs <= 90:
-                        wait = retry_secs if retry_secs > 0 else 30
-                        print(f"  ⏳ TPD em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
-                        time.sleep(wait)
-                        continue
+                    if attempt == 0 and mi < len(models) - 1:
+                        print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                        break
+                    elif attempt < max_retries - 1:
+                        retry_secs = _parse_retry_wait(error_msg)
+                        if retry_secs <= 30:
+                            wait = retry_secs if retry_secs > 0 else 15
+                            print(f"  ⏳ TPD em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
+                            time.sleep(wait)
+                            continue
                     elif mi < len(models) - 1:
                         print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
                         break
@@ -303,7 +345,11 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
             try:
                 res = call_gemini(api_key, prompt, temperature, json_mode, messages)
                 if json_mode and isinstance(res, str):
-                    return json.loads(res)
+                    try:
+                        return json.loads(res)
+                    except json.JSONDecodeError:
+                        print("⚠️ Gemini retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                        return {"raw_response": res, "error": "Invalid JSON"}
                 return res
             except Exception as e:
                 print(f"⚠️ Erro ao chamar Gemini: {e}. Fazendo fallback de emergência para Groq.", file=sys.stderr)
@@ -318,7 +364,11 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
             try:
                 res = call_openrouter(api_key, prompt, temperature, json_mode, messages)
                 if json_mode and isinstance(res, str):
-                    return json.loads(res)
+                    try:
+                        return json.loads(res)
+                    except json.JSONDecodeError:
+                        print("⚠️ OpenRouter retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                        return {"raw_response": res, "error": "Invalid JSON"}
                 return res
             except Exception as e:
                 print(f"⚠️ Erro ao chamar OpenRouter: {e}. Fazendo fallback para Groq.", file=sys.stderr)
@@ -331,7 +381,11 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
         try:
             res = _call_groq_engine(api_key, prompt, temperature, max_retries, json_mode, messages, prefer_small)
             if json_mode and isinstance(res, str):
-                return json.loads(res)
+                try:
+                    return json.loads(res)
+                except json.JSONDecodeError:
+                    print("⚠️ Groq retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                    return {"raw_response": res, "error": "Invalid JSON"}
             return res
         except Exception as groq_err:
             # If all Groq models failed, try Gemini then OpenRouter as emergency fallback
@@ -341,7 +395,11 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
                 try:
                     res = call_gemini(gemini_key, prompt, temperature, json_mode, messages)
                     if json_mode and isinstance(res, str):
-                        return json.loads(res)
+                        try:
+                            return json.loads(res)
+                        except json.JSONDecodeError:
+                            print("⚠️ Gemini fallback retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                            return {"raw_response": res, "error": "Invalid JSON"}
                     return res
                 except Exception as gemini_err:
                     print(f"⚠️ Gemini fallback também falhou: {str(gemini_err)[:80]}", file=sys.stderr)
@@ -353,7 +411,11 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
                 try:
                     res = call_openrouter(openrouter_key, prompt, temperature, json_mode, messages)
                     if json_mode and isinstance(res, str):
-                        return json.loads(res)
+                        try:
+                            return json.loads(res)
+                        except json.JSONDecodeError:
+                            print("⚠️ OpenRouter retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                            return {"raw_response": res, "error": "Invalid JSON"}
                     return res
                 except Exception as or_err:
                     print(f"⚠️ OpenRouter fallback também falhou: {str(or_err)[:80]}", file=sys.stderr)

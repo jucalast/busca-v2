@@ -1,7 +1,10 @@
 requests
 beautifulsoup4
-duckduckgo-search
+ddgs
 python-dotenv
 groq
 openai
 google-generativeai
+langgraph
+chromadb
+pydantic

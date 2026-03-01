@@ -1,12 +1,23 @@
 import sys
 import requests
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import threading
 import time
 
 def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', cancellation_check=None) -> list:
     """Perform a web search using DuckDuckGo with cancellation support."""
+    # Validate query
+    if not query or not query.strip() or len(query.strip()) < 3:
+        print(f"Erro na busca DuckDuckGo: query is mandatory or too short", file=sys.stderr)
+        return []
+    
+    # Clean query
+    query = query.strip()
+    if query == "+" or query == " " * len(query):
+        print(f"Erro na busca DuckDuckGo: invalid query", file=sys.stderr)
+        return []
+    
     try:
         with DDGS() as ddgs:
             results = []

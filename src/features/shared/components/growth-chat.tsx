@@ -251,8 +251,8 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                     extractedProfile.num_funcionarios === 'solo' ||
                     extractedProfile.num_funcionarios === 'só eu' ||
                     extractedProfile.num_funcionarios === 'sozinho' ||
-                    (extractedProfile.num_funcionarios || '').toLowerCase().includes('sozinho') ||
-                    (extractedProfile.num_funcionarios || '').toLowerCase().includes('só eu'),
+                    String(extractedProfile.num_funcionarios || '').toLowerCase().includes('sozinho') ||
+                    String(extractedProfile.num_funcionarios || '').toLowerCase().includes('só eu'),
                 canais_existentes: extractedProfile.canais_venda || [],
                 principal_gargalo: extractedProfile.principal_gargalo || null,
                 maior_objecao: extractedProfile.maior_objecao || null,
