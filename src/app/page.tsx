@@ -30,6 +30,9 @@ export default function Home() {
     setGrowthProgress('Gerando perfil completo e pesquisando mercado...');
     setError('');
 
+    // Debug: log do perfil recebido do chat
+    console.log('🔍 Chat profile received:', JSON.stringify(chatProfile, null, 2));
+
     try {
       // First generate formal profile from chat data
       const profileRes = await fetch('/api/growth', {
@@ -39,6 +42,9 @@ export default function Home() {
       });
 
       const profileResult = await profileRes.json();
+
+      // Debug: log do perfil gerado
+      console.log('🔍 Generated profile:', JSON.stringify(profileResult, null, 2));
 
       if (!profileRes.ok || !profileResult.success) {
         throw new Error(profileResult.error || profileResult.erro || 'Falha ao gerar perfil');

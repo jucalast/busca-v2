@@ -206,7 +206,28 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     const handleRejectResearch = () => sendMessage('não concordo, quero definir eu mesmo');
 
     const handleGenerateAnalysis = () => {
-        const profileForAnalysis = {
+        // Criar perfil no formato esperado pelo backend
+        const backendProfile = {
+            nome_negocio: extractedProfile.nome_negocio || '',
+            segmento: extractedProfile.segmento || '',
+            localizacao: extractedProfile.localizacao || '',
+            modelo: extractedProfile.modelo || '',
+            faturamento: extractedProfile.faturamento || '',
+            equipe: extractedProfile.equipe || '',
+            ticket_medio: extractedProfile.ticket_medio || '',
+            problemas: extractedProfile.problemas || '',
+            objetivos: extractedProfile.objetivos || '',
+            investimento: extractedProfile.investimento || '',
+            canais: extractedProfile.canais || '',
+            clientes: extractedProfile.clientes || '',
+            concorrentes: extractedProfile.concorrentes || '',
+            diferencial: extractedProfile.diferencial || '',
+            margem: extractedProfile.margem || '',
+            gargalos: extractedProfile.gargalos || '',
+            site: extractedProfile.site || '',
+            instagram: extractedProfile.instagram || '',
+            whatsapp: extractedProfile.whatsapp || '',
+            // Manter campos adicionais para compatibilidade
             perfil: {
                 nome: extractedProfile.nome_negocio || '',
                 nome_negocio: extractedProfile.nome_negocio || '',
@@ -220,50 +241,50 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 tempo_operacao: extractedProfile.tempo_operacao || '',
                 ticket_medio: extractedProfile.ticket_medio || '',
                 ticket_medio_estimado: extractedProfile.ticket_medio || '',
-                faturamento_mensal: extractedProfile.faturamento_mensal || '',
-                faturamento_faixa: extractedProfile.faturamento_mensal || '',
-                num_funcionarios: extractedProfile.num_funcionarios || '',
-                investimento_marketing: extractedProfile.investimento_marketing || '',
+                faturamento_mensal: extractedProfile.faturamento || '',
+                faturamento_faixa: extractedProfile.faturamento || '',
+                num_funcionarios: extractedProfile.equipe || '',
+                investimento_marketing: extractedProfile.investimento || '',
                 capital_disponivel: extractedProfile.capital_disponivel || '',
-                dificuldades: extractedProfile.dificuldades || '',
+                dificuldades: extractedProfile.problemas || '',
                 objetivos: extractedProfile.objetivos || '',
-                modelo_operacional: extractedProfile.modelo_operacional || '',
-                canais_venda: extractedProfile.canais_venda || '',
+                modelo_operacional: extractedProfile.operacao || '',
+                canais_venda: extractedProfile.canais || '',
                 concorrentes: extractedProfile.concorrentes || '',
                 diferencial: extractedProfile.diferencial || '',
-                cliente_ideal: extractedProfile.cliente_ideal || '',
-                margem_lucro: extractedProfile.margem_lucro || '',
+                cliente_ideal: extractedProfile.clientes || '',
+                margem_lucro: extractedProfile.margem || '',
                 origem_clientes: extractedProfile.origem_clientes || '',
                 maior_objecao: extractedProfile.maior_objecao || '',
                 tempo_entrega: extractedProfile.tempo_entrega || '',
-                principal_gargalo: extractedProfile.principal_gargalo || '',
-                instagram_handle: extractedProfile.instagram_handle || '',
-                linkedin_url: extractedProfile.linkedin_url || '',
-                site_url: extractedProfile.site_url || '',
-                email_contato: extractedProfile.email_contato || '',
-                whatsapp_numero: extractedProfile.whatsapp_numero || '',
-                google_maps_url: extractedProfile.google_maps_url || '',
+                principal_gargalo: extractedProfile.gargalos || '',
+                instagram_handle: extractedProfile.instagram || '',
+                linkedin_url: extractedProfile.linkedin || '',
+                site_url: extractedProfile.site || '',
+                email_contato: extractedProfile.email || '',
+                whatsapp_numero: extractedProfile.whatsapp || '',
+                google_maps_url: extractedProfile.google_maps || '',
             },
             restricoes_criticas: {
-                modelo_operacional: extractedProfile.modelo_operacional || null,
-                capital_disponivel: extractedProfile.capital_disponivel || null,
-                equipe_solo: extractedProfile.num_funcionarios === '1' ||
-                    extractedProfile.num_funcionarios === 'solo' ||
-                    extractedProfile.num_funcionarios === 'só eu' ||
-                    extractedProfile.num_funcionarios === 'sozinho' ||
-                    String(extractedProfile.num_funcionarios || '').toLowerCase().includes('sozinho') ||
-                    String(extractedProfile.num_funcionarios || '').toLowerCase().includes('só eu'),
-                canais_existentes: extractedProfile.canais_venda || [],
-                principal_gargalo: extractedProfile.principal_gargalo || null,
+                modelo_operacional: extractedProfile.operacao || null,
+                capital_disponivel: extractedProfile.investimento || null,
+                equipe_solo: extractedProfile.equipe === '1' ||
+                    extractedProfile.equipe === 'solo' ||
+                    extractedProfile.equipe === 'só eu' ||
+                    extractedProfile.equipe === 'sozinho' ||
+                    String(extractedProfile.equipe || '').toLowerCase().includes('sozinho') ||
+                    String(extractedProfile.equipe || '').toLowerCase().includes('só eu'),
+                canais_existentes: extractedProfile.canais || [],
+                principal_gargalo: extractedProfile.gargalos || null,
                 maior_objecao: extractedProfile.maior_objecao || null,
             },
             diagnostico_inicial: {
                 problemas_identificados: [{
                     area: 'geral',
-                    problema: extractedProfile.dificuldades || '',
+                    problema: extractedProfile.problemas || '',
                     severidade: 3,
                     evidencia: 'Relatado pelo usuário na conversa',
-                    restricao_afetada: extractedProfile.modelo_operacional || null
+                    restricao_afetada: extractedProfile.operacao || null
                 }],
                 pontos_fortes: [extractedProfile.diferencial || 'A definir'],
             },
@@ -276,24 +297,25 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
             }],
             _chat_context: {
                 concorrentes: extractedProfile.concorrentes || null,
-                cliente_ideal: extractedProfile.cliente_ideal || null,
-                canais_venda: extractedProfile.canais_venda || [],
-                investimento_marketing: extractedProfile.investimento_marketing || null,
-                margem_lucro: extractedProfile.margem_lucro || null,
+                cliente_ideal: extractedProfile.clientes || null,
+                canais_venda: extractedProfile.canais || [],
+                investimento_marketing: extractedProfile.investimento || null,
+                margem_lucro: extractedProfile.margem || null,
                 tempo_entrega: extractedProfile.tempo_entrega || null,
                 origem_clientes: extractedProfile.origem_clientes || null,
                 maior_objecao: extractedProfile.maior_objecao || null,
-                instagram_handle: extractedProfile.instagram_handle || null,
-                linkedin_url: extractedProfile.linkedin_url || null,
-                site_url: extractedProfile.site_url || null,
-                email_contato: extractedProfile.email_contato || null,
-                whatsapp_numero: extractedProfile.whatsapp_numero || null,
-                google_maps_url: extractedProfile.google_maps_url || null,
+                instagram_handle: extractedProfile.instagram || null,
+                linkedin_url: extractedProfile.linkedin || null,
+                site_url: extractedProfile.site || null,
+                email_contato: extractedProfile.email || null,
+                whatsapp_numero: extractedProfile.whatsapp || null,
+                google_maps_url: extractedProfile.google_maps || null,
             },
             _research_tasks: extractedProfile._research_tasks || [],
         };
 
-        onProfileReady(profileForAnalysis);
+        console.log('🔍 Enviando perfil para análise:', backendProfile);
+        onProfileReady(backendProfile);
     };
 
     // Derived state

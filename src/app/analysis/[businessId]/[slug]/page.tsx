@@ -49,7 +49,7 @@ export default async function AnalysisSlugPage({ params }: { params: Promise<{ b
     };
 
     const userProf = {
-        name: businessData.profile_data?.perfil?.nome || 'Seu Negócio',
+        name: businessData.name || businessData.profile_data?.perfil?.nome_negocio || businessData.profile_data?.perfil?.nome || 'Seu Negócio',
         segment: businessData.profile_data?.perfil?.segmento || '',
     };
 

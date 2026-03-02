@@ -415,7 +415,8 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
                      previous_actions: list = None,
                      discovery_text: str = "",
                      chain_context: str = "",
-                     model_provider: str = "groq") -> dict:
+                     model_provider: str = "groq",
+                     contexto_dinamico: str = "") -> dict:
     """Score a single sales pillar with focused, specific analysis.
     Now receives chain_context from upstream pillars for interconnected analysis."""
     perfil = profile.get("perfil", profile)
@@ -522,6 +523,8 @@ Objeção: {_obj} | Cliente ideal: {_cli}{digital_presence_block}
 {discovery_text[:1500] if discovery_text.strip() else ""}
 MERCADO: {market_text[:1000] if market_text.strip() else "Sem dados."}
 {dedup_block}
+
+{contexto_dinamico}
 
 REGRAS:
 1. Score 0-100. Justificativa com DADOS CONCRETOS sobre {dim_cfg['label']}.
@@ -677,6 +680,12 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
         model_provider: LLM provider to use
         generate_tasks: Whether to generate tasks (default: True for backward compatibility)
     """
+    # Importar contexto dinâmico
+    from app.services.agents.engine_specialist import get_dynamic_persona_context
+    
+    # Gerar contexto dinâmico baseado no perfil
+    contexto_dinamico = get_dynamic_persona_context(profile)
+    
     # Check for appropriate API key based on provider
     if model_provider == "gemini":
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -719,7 +728,8 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
             previous_actions=previous_action_titles,
             discovery_text=disc_text,
             chain_context=chain_ctx,
-            model_provider=model_provider
+            model_provider=model_provider,
+            contexto_dinamico=contexto_dinamico
         )
         dimensoes[dim_key] = result
 

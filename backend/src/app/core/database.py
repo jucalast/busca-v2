@@ -614,14 +614,17 @@ def get_business(business_id: str) -> Optional[Dict]:
     if not row:
         return None
     
+    profile_data = json.loads(row["profile_data"])
+    perfil = profile_data.get("perfil", {})
+    
     return {
         "id": row["id"],
         "user_id": row["user_id"],
         "name": row["name"],
-        "segment": row["segment"],
-        "model": row["model"],
-        "location": row["location"],
-        "profile_data": json.loads(row["profile_data"]),
+        "segment": row["segment"] or perfil.get("segmento", ""),
+        "model": row["model"] or perfil.get("modelo_negocio", perfil.get("modelo", "")),
+        "location": row["location"] or perfil.get("localizacao", ""),
+        "profile_data": profile_data,
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"]
@@ -642,18 +645,25 @@ def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
     rows = cursor.fetchall()
     conn.close()
     
-    return [{
-        "id": row["id"],
-        "user_id": row["user_id"],
-        "name": row["name"],
-        "segment": row["segment"],
-        "model": row["model"],
-        "location": row["location"],
-        "profile_data": json.loads(row["profile_data"]),
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"]
-    } for row in rows]
+    businesses = []
+    for row in rows:
+        profile_data = json.loads(row["profile_data"])
+        perfil = profile_data.get("perfil", {})
+        
+        businesses.append({
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "name": row["name"],
+            "segment": row["segment"] or perfil.get("segmento", ""),
+            "model": row["model"] or perfil.get("modelo_negocio", perfil.get("modelo", "")),
+            "location": row["location"] or perfil.get("localizacao", ""),
+            "profile_data": profile_data,
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"]
+        })
+    
+    return businesses
 
 
 def update_business(business_id: str, profile_data: Dict) -> bool:
@@ -709,28 +719,120 @@ def hard_delete_business(business_id: str) -> bool:
     cursor = conn.cursor()
     
     try:
-        # Delete dimension chats first (foreign key constraint)
+        print(f"🗑️ Starting hard delete for business: {business_id}", file=sys.stderr)
+        
+        # Delete all related data in correct order (respecting foreign keys)
+        
+        # 1. Delete dimension chats
         cursor.execute('''
             DELETE FROM dimension_chats 
             WHERE analysis_id IN (
                 SELECT id FROM analyses WHERE business_id = ?
             )
         ''', (business_id,))
+        deleted_chats = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_chats} dimension chats", file=sys.stderr)
         
-        # Delete analyses
+        # 2. Delete pillar data
+        cursor.execute('DELETE FROM pillar_data WHERE business_id = ?', (business_id,))
+        deleted_pillar_data = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_pillar_data} pillar data records", file=sys.stderr)
+        
+        # 3. Delete business briefs
+        cursor.execute('DELETE FROM business_briefs WHERE business_id = ?', (business_id,))
+        deleted_briefs = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_briefs} business briefs", file=sys.stderr)
+        
+        # 4. Delete pillar diagnostics
+        cursor.execute('''
+            DELETE FROM pillar_diagnostics 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_diagnostics = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_diagnostics} pillar diagnostics", file=sys.stderr)
+        
+        # 5. Delete specialist plans
+        cursor.execute('''
+            DELETE FROM specialist_plans 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_plans = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_plans} specialist plans", file=sys.stderr)
+        
+        # 6. Delete specialist executions
+        cursor.execute('''
+            DELETE FROM specialist_executions 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_executions = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_executions} specialist executions", file=sys.stderr)
+        
+        # 7. Delete specialist results
+        cursor.execute('''
+            DELETE FROM specialist_results 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_results = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_results} specialist results", file=sys.stderr)
+        
+        # 8. Delete pillar KPIs
+        cursor.execute('''
+            DELETE FROM pillar_kpis 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_kpis = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_kpis} pillar KPIs", file=sys.stderr)
+        
+        # 9. Delete specialist subtasks
+        cursor.execute('''
+            DELETE FROM specialist_subtasks 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_subtasks = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_subtasks} specialist subtasks", file=sys.stderr)
+        
+        # 10. Delete background tasks
+        cursor.execute('''
+            DELETE FROM background_tasks 
+            WHERE analysis_id IN (
+                SELECT id FROM analyses WHERE business_id = ?
+            )
+        ''', (business_id,))
+        deleted_background = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_background} background tasks", file=sys.stderr)
+        
+        # 11. Delete analyses
         cursor.execute('DELETE FROM analyses WHERE business_id = ?', (business_id,))
+        deleted_analyses = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_analyses} analyses", file=sys.stderr)
         
-        # Delete business
+        # 12. Delete business
         cursor.execute('DELETE FROM businesses WHERE id = ?', (business_id,))
+        deleted_business = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_business} business record", file=sys.stderr)
         
         conn.commit()
-        success = cursor.rowcount > 0
+        success = deleted_business > 0
         conn.close()
         
+        print(f"🗑️ Hard delete completed. Success: {success}", file=sys.stderr)
         return success
     except Exception as e:
         conn.rollback()
         conn.close()
+        print(f"🗑️ Hard delete failed: {str(e)}", file=sys.stderr)
         raise
 
 

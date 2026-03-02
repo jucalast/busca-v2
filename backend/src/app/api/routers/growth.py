@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
+import json
 from app.schemas.requests import (
     ActionProfileRequest, ActionAnalyzeRequest, ActionAssistRequest, 
     ActionChatRequest, ActionDimensionChatRequest, BaseGrowthRequest,
@@ -38,7 +39,15 @@ def redo_pillar(req: ActionRedoPillarRequest):
 
 @router.post("/profile")
 def profile(req: ActionProfileRequest):
-    return do_profile(req.model_dump())
+    # Debug: log da requisição recebida
+    print(f"🔍 Router Profile - Request received:", json.dumps(req.model_dump(), ensure_ascii=False, indent=2))
+    
+    result = do_profile(req.model_dump())
+    
+    # Debug: log do resultado
+    print(f"🔍 Router Profile - Result:", json.dumps(result, ensure_ascii=False, indent=2))
+    
+    return result
 
 @router.post("/analyze")
 def analyze(req: ActionAnalyzeRequest):

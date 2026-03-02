@@ -15,6 +15,58 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Union
 
+# Cores para logs bonitos
+class Colors:
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    
+    # Cores vibrantes
+    BLUE = '\033[94m'      # Azul claro
+    GREEN = '\033[92m'     # Verde claro
+    YELLOW = '\033[93m'    # Amarelo claro
+    RED = '\033[91m'       # Vermelho claro
+    PURPLE = '\033[95m'    # Roxo
+    CYAN = '\033[96m'      # Ciano
+    WHITE = '\033[97m'     # Branco
+    
+    # Cores fundo
+    BG_BLUE = '\03z[44m'
+    BG_GREEN = '\03z[42m'
+    BG_RED = '\03z[41m'
+
+# Funções de log coloridas
+def log_info(message: str, prefix: str = "ℹ️"):
+    """Log de informação com cor azul."""
+    print(f"{Colors.BLUE}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_error(message: str, prefix: str = "❌"):
+    """Log de erro com cor vermelha."""
+    print(f"{Colors.RED}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_warning(message: str, prefix: str = "⚠️"):
+    """Log de aviso com cor amarela."""
+    print(f"{Colors.YELLOW}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_success(message: str, prefix: str = "✅"):
+    """Log de sucesso com cor verde."""
+    print(f"{Colors.GREEN}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_debug(message: str, prefix: str = "🐛"):
+    """Log de debug com cor roxa."""
+    print(f"{Colors.PURPLE}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_research(message: str, prefix: str = "🔍"):
+    """Log de pesquisa com cor ciano."""
+    print(f"{Colors.CYAN}{prefix} {message}{Colors.RESET}", file=sys.stdout)
+
+def log_cache(message: str, prefix: str = "📦"):
+    """Log de cache com cor azul."""
+    print(f"{Colors.BLUE}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
+def log_llm(message: str, prefix: str = "🤖"):
+    """Log de LLM com cor roxa."""
+    print(f"{Colors.PURPLE}{prefix} {message}{Colors.RESET}", file=sys.stderr)
+
 # Database
 from app.core import database as db
 from app.core.database import get_connection
@@ -26,40 +78,8 @@ from app.core.llm_router import call_llm
 from app.core.web_utils import search_duckduckgo, scrape_page
 
 # ═══════════════════════════════════════════════════════════════════
-# LOGGING CENTRALIZADO
+# LOGGING CENTRALIZADO (JÁ DEFINIDO ACIMA COM CORES)
 # ═══════════════════════════════════════════════════════════════════
-
-def log_info(message: str, prefix: str = "ℹ️"):
-    """Log informativo padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_error(message: str, prefix: str = "❌"):
-    """Log de erro padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_warning(message: str, prefix: str = "⚠️"):
-    """Log de aviso padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_success(message: str, prefix: str = "✅"):
-    """Log de sucesso padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_debug(message: str, prefix: str = "🐛"):
-    """Log de debug padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_research(message: str, prefix: str = "🔍"):
-    """Log de pesquisa padronizado."""
-    print(f"{prefix} {message}", file=sys.stdout)  # Mudado para stdout
-
-def log_cache(message: str, prefix: str = "📦"):
-    """Log de cache padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
-
-def log_llm(message: str, prefix: str = "🤖"):
-    """Log de LLM padronizado."""
-    print(f"{prefix} {message}", file=sys.stderr)
 
 # ═══════════════════════════════════════════════════════════════════
 # SERIALIZATION CENTRALIZADA

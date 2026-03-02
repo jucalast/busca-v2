@@ -10,6 +10,8 @@ import hashlib
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 
+from app.services.common import log_cache, log_research
+
 from app.core.web_utils import search_duckduckgo, scrape_page
 from app.core import database as db
 
@@ -53,11 +55,11 @@ class UnifiedResearchEngine:
         if not force_refresh:
             cached = self._get_cache(cache_key, "market")
             if cached:
-                print(f"  📦 Market research from cache: {len(cached.get('categories', []))} categories", file=sys.stderr)
+                log_cache(f"📦 Market cache: {len(cached.get('categories', []))} cats")
                 return cached
         
         # Executar pesquisa
-        print(f"  🔍 Market research: segmento={segmento}, categorias={len(categorias)}", file=sys.stderr)
+        log_research(f"🔍 Market: {segmento[:30]}... | {len(categorias)} cats")
         
         results = {
             "segmento": segmento,
@@ -149,11 +151,11 @@ class UnifiedResearchEngine:
             
             research_data["sources"].append(url)
             
-            # Scraping do top 2 resultados
-            if i < 2:
-                content = scrape_page(url, timeout=4)
+            # Scraping apenas do TOP 1 resultado com timeout reduzido
+            if i == 0:  # Apenas o primeiro resultado
+                content = scrape_page(url, timeout=2)  # Reduzido de 4 para 2 segundos
                 if content:
-                    research_data["content"] += f"Fonte {i+1}: {title}\n{snippet}\n{content[:2000]}\n\n"
+                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"  # Reduzido de 2000 para 1500
         
         # Salvar cache
         self._set_cache(cache_key, "task", research_data)
@@ -264,7 +266,7 @@ class UnifiedResearchEngine:
         if not force_refresh:
             cached = self._get_cache(cache_key, "discovery")
             if cached:
-                print(f"  📦 Discovery research from cache: {business_name}", file=sys.stderr)
+                log_cache(f"📦 Cache: {business_name[:30]}...")
                 return cached
         
         # Queries específicas para discovery

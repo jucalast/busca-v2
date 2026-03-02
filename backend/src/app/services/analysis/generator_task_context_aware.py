@@ -39,6 +39,12 @@ def generate_context_aware_tasks(
     """
     
     try:
+        # OTIMIZAÇÃO: Verificar cache primeiro antes de qualquer processamento
+        existing_plan = db.get_pillar_plan(analysis_id, pillar_key)
+        if existing_plan and existing_plan.get("tasks"):
+            print(f"  ✅ Tasks already cached for {pillar_key}: {len(existing_plan.get('tasks', []))} tasks", file=sys.stderr)
+            return {"success": True, "plan": existing_plan}
+        
         # 1. Extrair contexto específico do pilar
         pillar_diagnostic = score_data.get("dimensoes", {}).get(pillar_key, {})
         
@@ -158,29 +164,65 @@ def _generate_pillar_tasks_with_llm(
         raise ValueError(f"Specialist not found for pillar: {pillar_key}")
     
     # Usar research_engine para pesquisa específica do pilar
+    # OTIMIZAÇÃO: Para melhor performance, usar apenas contexto existente
+    print(f"  ⚡ Using fast context-only generation for {pillar_key}", file=sys.stderr)
+    research_content = ""
+    research_sources = []
+    
+    # Desabilitar pesquisa por enquanto para melhor performance
+    # TODO: Reativar quando o sistema estiver mais estável
+    """
     try:
-        research_data = research_engine.search_tasks(
-            pillar_key=pillar_key,
-            score=context["score"],
-            diagnostic={
-                "justificativa": context["diagnostico"],
-                "status": context["status"],
-                "meta_pilar": context["meta_pilar"]
-            },
-            segmento=context["negocio"]["segmento"],
-            force_refresh=False  # Usar cache quando possível
-        )
+        import threading
+        import time
         
-        # Extrair conteúdo da pesquisa
-        research_content = research_data.get("content", "")
-        research_sources = research_data.get("sources", [])
+        research_data = None
+        research_error = None
         
-        print(f"  📦 Used unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
+        def research_worker():
+            nonlocal research_data, research_error
+            try:
+                research_data = research_engine.search_tasks(
+                    pillar_key=pillar_key,
+                    score=context["score"],
+                    diagnostic={
+                        "justificativa": context["diagnostico"],
+                        "status": context["status"],
+                        "meta_pilar": context["meta_pilar"]
+                    },
+                    segmento=context["negocio"]["segmento"],
+                    force_refresh=False  # Usar cache quando possível
+                )
+            except Exception as e:
+                research_error = e
+        
+        # Executar pesquisa em thread com timeout
+        thread = threading.Thread(target=research_worker)
+        thread.start()
+        thread.join(timeout=3)  # 3 segundos de timeout
+        
+        if thread.is_alive():
+            print(f"  ⚠️ Research timeout for {pillar_key}, using fallback", file=sys.stderr)
+            research_content = ""
+            research_sources = []
+        elif research_error:
+            print(f"  ⚠️ Unified research failed for {pillar_key}: {research_error}, using fallback", file=sys.stderr)
+            research_content = ""
+            research_sources = []
+        elif research_data:
+            # Extrair conteúdo da pesquisa
+            research_content = research_data.get("content", "")
+            research_sources = research_data.get("sources", [])
+            print(f"  📦 Used unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
+        else:
+            research_content = ""
+            research_sources = []
         
     except Exception as e:
-        print(f"  ⚠️ Unified research failed for {pillar_key}: {e}, using fallback", file=sys.stderr)
+        print(f"  ⚠️ Research system error for {pillar_key}: {e}, using fallback", file=sys.stderr)
         research_content = ""
         research_sources = []
+    """
     
     # Construir prompt inteligente
     prompt = _build_context_aware_prompt(pillar_key, context, specialist, research_content)

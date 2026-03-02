@@ -2,11 +2,12 @@
 # IMPORTS CENTRALIZADOS (ANTES: 4 imports duplicados)
 # ═══════════════════════════════════════════════════════════════════
 
+import time
 from app.services.common import (
-    os, sys, time,      # Python basics
+    os, sys,            # Python basics
     datetime,           # Datetime
     db,                 # Database
-    log_info, log_error, log_warning, log_success, log_debug,  # Logging
+    log_info, log_error, log_warning, log_success, log_debug, log_research,  # Logging colorido
     safe_json_dumps, safe_json_loads,  # Serialization
     CommonConfig,       # Config
     get_timestamp, format_duration, safe_get  # Utils
@@ -40,9 +41,20 @@ from typing import Dict, Any, List
 
 ACTIVE_BACKGROUND_TASKS = set()
 
+import json
+
 def do_profile(data: dict) -> dict:
     onboarding = data.get("onboardingData", {})
-    return run_profiler(onboarding, model_provider=data.get("aiModel", "groq"))
+    
+    # Debug: log do perfil recebido
+    print(f"🔍 Service Growth - onboarding received:", json.dumps(onboarding, ensure_ascii=False, indent=2))
+    
+    result = run_profiler(onboarding, model_provider=data.get("aiModel", "groq"))
+    
+    # Debug: log do resultado
+    print(f"🔍 Service Growth - profiler result:", json.dumps(result, ensure_ascii=False, indent=2))
+    
+    return result
 
 def do_chat(data: dict) -> dict:
     return run_chat(data)
@@ -496,16 +508,31 @@ def do_analyze(data: dict):
                     # Merge perfil data to top level for discovery
                     perfil_data = nested_profile["perfil"]
                     profile.update(perfil_data)
-                    # Also keep other nested data
-                    for key, value in nested_profile.items():
-                        if key not in profile:
-                            profile[key] = value
+                
+                # Also merge _chat_context data
+                if "_chat_context" in nested_profile:
+                    chat_context = nested_profile["_chat_context"]
+                    profile.update(chat_context)
+                
+                # Also keep other nested data
+                for key, value in nested_profile.items():
+                    if key not in profile:
+                        profile[key] = value
             
-            # Debug: Print profile structure
-            print(f"  DEBUG: Profile keys: {list(profile.keys())[:10]}...", file=sys.stderr)
-            print(f"  DEBUG: Nome: {profile.get('nome_negocio', profile.get('nome', 'N/A'))}", file=sys.stderr)
-            print(f"  DEBUG: Instagram: {profile.get('instagram_handle', 'N/A')}", file=sys.stderr)
-            print(f"  DEBUG: Site: {profile.get('site_url', 'N/A')}", file=sys.stderr)
+            # Profile summary (otimizado)
+            nome = profile.get('nome_negocio', profile.get('nome', 'N/A'))
+            site = profile.get('site', profile.get('site_url', 'N/A'))
+            log_info(f"📋 Perfil: {nome} | Site: {site}")
+            
+            # Garantir que temos um nome válido para salvar
+            if not nome or nome == 'N/A':
+                # Tentar extrair de outros campos
+                nome = profile.get('perfil', {}).get('nome_negocio', 'Negócio Sem Nome')
+                if not nome or nome == 'N/A':
+                    nome = profile.get('perfil', {}).get('nome', 'Negócio Sem Nome')
+            
+            # Salvar nome no profile para uso posterior
+            profile['_business_name'] = nome
             
             # Load enriched profile if reanalyzing
             if analysis_id:
@@ -517,73 +544,61 @@ def do_analyze(data: dict):
                 except Exception as e:
                     print(f"  ⚠️ Erro ao carregar perfil anterior: {e}", file=sys.stderr)
 
-            # Clear existing task data for this analysis (reanalysis support)
+            # Clear existing task data for reanalysis
             if analysis_id:
-                print("Limpando dados de tarefas anteriores (reanálise)...", file=sys.stderr)
                 try:
-                    # Delete specialist plans, executions, results, subtasks and KPIs for this analysis
                     db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
                     db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
                     db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
                     db.conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
                     db.conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
                     db.conn.commit()
-                    print("  Dados de tarefas anteriores removidos", file=sys.stderr)
-                except Exception as e:
-                    print(f"  Erro ao limpar dados anteriores: {e}", file=sys.stderr)
+                except Exception:
+                    pass  # Erros de limpeza não devem bloquear
 
-            # Step 1: Business Discovery (search for the ACTUAL business online)
-            print("Executando discovery do negócio...", file=sys.stderr)
+            # Step 1: Business Discovery
+            log_research("🔍 Executando discovery...")
             discovery_data = discover_business(profile, region, model_provider=model_provider)
             discovery_found = discovery_data.get("found", False)
-            print(f"  Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+            log_info(f"🌐 Discovery: {'dados encontrados' if discovery_found else 'sem dados específidos'}")
 
             # Step 2: Market search
-            # Safety: remap + fill categories before market search (belt-and-suspenders)
             try:
                 identify_dynamic_categories(profile)
-                print("  Safety remap aplicado às categorias", file=sys.stderr)
-            except Exception as e:
-                print(f"  Safety remap falhou: {e}", file=sys.stderr)
-                # Ensure categories exist even if remap fails
-                if not profile.get("categorias_relevantes"):
-                    print("  Gerando categorias padrão como fallback...", file=sys.stderr)
-                    try:
-                        identify_dynamic_categories(profile)
-                    except Exception:
-                        pass  # identify_dynamic_categories now handles empty lists gracefully
+            except Exception:
+                pass  # Categorias devem existir mesmo se remap falhar
 
-            print("Executando pesquisa de mercado...", file=sys.stderr)
+            log_research("🔍 Pesquisando mercado...")
             cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
-            queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
-            print(f"  Categorias p/ busca: {[c.get('id','?') if isinstance(c,dict) else c for c in (cats_for_search or [])[:8]]}", file=sys.stderr)
-            print(f"  Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
-            market_data = run_market_search(profile, region, model_provider)
+            
+            # Para market search, usar modelo pequeno (Fiat) - só resumir páginas
+            market_data = run_market_search(profile, region, model_provider="groq")  # Vai usar prefer_small=True internamente
             mkt_cats = market_data.get('categories', [])
-            print(f"  Pesquisa completa: {len(mkt_cats)} categorias", file=sys.stderr)
-            for mc in mkt_cats:
-                mc_resumo = mc.get("resumo", {})
-                has_data = bool(mc_resumo.get("visao_geral") or mc_resumo.get("pontos_chave"))
-                print(f"    id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'SIM' if has_data else 'NAO'}", file=sys.stderr)
+            log_info(f"📊 Mercado: {len(mkt_cats)} categorias pesquisadas")
 
-            # Step 3: Per-dimension scoring with discovery context (OTIMIZADO: sem geração de tarefas)
-            print("Calculando score por dimensão...", file=sys.stderr)
-            score_result = run_scorer(profile, market_data, discovery_data=discovery_data, model_provider=model_provider, generate_tasks=False)
+            # Step 3: Scoring otimizado - Usa modelo pesado só para estratégia
+            log_info("📈 Calculando scores...")
+            
+            # Para scoring, usar modelo inteligente (Ferrari)
+            score_result = run_scorer(
+                profile, 
+                market_data, 
+                discovery_data=discovery_data, 
+                model_provider="groq",  # Usa 70B para estratégia
+                generate_tasks=False
+            )
             score_data = score_result.get("score", {}) if score_result.get("success") else {}
-            task_plan = score_result.get("taskPlan", {})  # Será None com generate_tasks=False
+            task_plan = score_result.get("taskPlan", {})
 
-            # Detailed scoring log
+            # Score summary
             dims = score_data.get("dimensoes", {})
             total_actions = sum(len(d.get("acoes_imediatas", [])) for d in dims.values())
-            print(f"  Score geral: {score_data.get('score_geral','?')}/100 | {total_actions} ações totais", file=sys.stderr)
-            for dk, dv in dims.items():
-                n_acoes = len(dv.get("acoes_imediatas", []))
-                print(f"    {dk}: {dv.get('score','?')}/100 ({dv.get('status','?')}) | {n_acoes} ações | meta: {str(dv.get('meta_pilar',''))[:50]}", file=sys.stderr)
+            score_geral = score_data.get('score_geral', 0)
+            log_success(f"🎯 Score: {score_geral}/100 | {total_actions} ações geradas")
 
             # Merge research tasks from chat (if any)
             research_tasks = profile.get("_research_tasks", [])
             if research_tasks:
-                print(f"  Integrando {len(research_tasks)} tarefas de pesquisa do chat", file=sys.stderr)
                 for task in research_tasks:
                     pillar_id = task.get("pillar", "geral")
                     if pillar_id not in task_plan:
@@ -594,8 +609,8 @@ def do_analyze(data: dict):
                         "origem": "chat_research"
                     })
 
-            # Step 4: Generate business brief
-            print("Gerando briefing de negócio...", file=sys.stderr)
+            # Step 4: Business brief
+            log_info("📝 Gerando briefing...")
             business_brief = generate_business_brief(profile, discovery_data, market_data)
 
             # Save to database
@@ -605,7 +620,24 @@ def do_analyze(data: dict):
             if not analysis_id:
                 analysis_id = f"analysis_{business_id}_{int(time.time())}"
             
-            # Save analysis data with separate arguments
+            # Save the business first
+            business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
+            try:
+                business_result = db.create_business(
+                    user_id=user_id,
+                    name=business_name,
+                    profile_data={
+                        "profile": profile,
+                        "discovery_data": discovery_data,
+                        "created_at": time.time()
+                    }
+                )
+                business_id = business_result.get('id', business_id)
+                log_success(f"💾 Negócio salvo: {business_name}")
+            except Exception as e:
+                log_warning(f"⚠️ Erro ao salvar negócio: {e}")
+            
+            # Save analysis data
             db.create_analysis(
                 business_id=business_id,
                 score_data=score_data,
@@ -614,7 +646,7 @@ def do_analyze(data: dict):
                 profile_data=profile
             )
             
-            # Save pillar diagnostics for frontend access
+            # Save pillar diagnostics
             if score_data and score_data.get("dimensoes"):
                 for pillar_key, pillar_data in score_data["dimensoes"].items():
                     diagnostic_data = {
@@ -627,9 +659,8 @@ def do_analyze(data: dict):
                         "dado_chave": pillar_data.get("dado_chave", "")
                     }
                     db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic_data)
-                print(f"  Diagnósticos dos pilares salvos: {len(score_data['dimensoes'])} pilares", file=sys.stderr)
             
-            print(f"  Análise salva: {analysis_id}", file=sys.stderr)
+            log_success(f"✅ Análise concluída: {analysis_id}")
 
             # Return final result
             result = {

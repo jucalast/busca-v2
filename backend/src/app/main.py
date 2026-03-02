@@ -5,12 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import growth, search
 
-# Configurar logging básico (sem conflitar com uvicorn)
+# Configurar logging para reduzir ruído
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Reduzir de INFO para WARNING
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stderr)]
 )
+
+# Silenciar loggers específicos que geram muito ruído
+logging.getLogger('httpx').setLevel(logging.ERROR)
+logging.getLogger('primp').setLevel(logging.ERROR)
+logging.getLogger('ddgs').setLevel(logging.ERROR)
+logging.getLogger('groq._base_client').setLevel(logging.ERROR)
 
 app = FastAPI(title="Busca V2 Backend API", version="1.0.0")
 

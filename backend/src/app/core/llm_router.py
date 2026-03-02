@@ -54,14 +54,18 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "llama-3.1-8b-instant",
             "llama-3.3-70b-versatile",
             "meta-llama/llama-4-scout-17b-16e-instruct",
+            "qwen/qwen-2.5-32b-instruct",
             "qwen/qwen3-32b",
+            "mixtral-8x7b-32768",
         ]
     else:
         models = [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "meta-llama/llama-4-scout-17b-16e-instruct",
+            "qwen/qwen-2.5-32b-instruct",
             "qwen/qwen3-32b",
+            "mixtral-8x7b-32768",
         ]
 
     kwargs = {}

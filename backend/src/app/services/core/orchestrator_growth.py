@@ -494,7 +494,15 @@ def main():
     if args.action == "profile":
         from app.services.analysis.analyzer_business_profiler import run_profiler
         onboarding = input_data.get("onboardingData", {})
+        
+        # Debug: log do perfil recebido do frontend
+        print(f"🔍 Backend received onboarding data:", json.dumps(onboarding, ensure_ascii=False, indent=2))
+        
         result = run_profiler(onboarding, model_provider=model_provider)
+        
+        # Debug: log do perfil gerado pelo profiler
+        print(f"🔍 Profiler result:", json.dumps(result, ensure_ascii=False, indent=2))
+        
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # ━━━ Analyze Action (full pipeline) ━━━
@@ -1110,12 +1118,16 @@ def main():
     elif args.action == "delete-business":
         business_id = input_data.get("business_id")
         
+        print(f"🗑️ Delete business request for ID: {business_id}", file=sys.stderr)
+        
         if not business_id:
             print("--- DELETE_BUSINESS_RESULT ---")
             print(json.dumps({"success": False, "error": "Business ID não fornecido"}, ensure_ascii=False, indent=2))
         else:
             try:
+                print(f"🗑️ Attempting to delete business: {business_id}", file=sys.stderr)
                 success = db.hard_delete_business(business_id)
+                print(f"🗑️ Delete result: {success}", file=sys.stderr)
                 
                 if success:
                     print("--- DELETE_BUSINESS_RESULT ---")
@@ -1124,6 +1136,7 @@ def main():
                     print("--- DELETE_BUSINESS_RESULT ---")
                     print(json.dumps({"success": False, "error": "Negócio não encontrado"}, ensure_ascii=False, indent=2))
             except Exception as e:
+                print(f"🗑️ Delete error: {str(e)}", file=sys.stderr)
                 print("--- DELETE_BUSINESS_RESULT ---")
                 print(json.dumps({"success": False, "error": f"Erro ao excluir: {str(e)}"}, ensure_ascii=False, indent=2))
 

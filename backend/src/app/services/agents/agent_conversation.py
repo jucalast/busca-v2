@@ -79,7 +79,33 @@ def _similar(s1: str, s2: str, threshold: float = 0.8) -> bool:
 def _extract_business_info(message: str, current_profile: dict) -> dict:
     """Extract business information from user message using LLM."""
     
-    log_debug(f"Extracting business info from: {message[:100]}...")
+    log_debug(f"Extracting info: {message[:60]}...")
+    
+    # Schema JSON para forçar estrutura correta
+    json_schema = {
+        "type": "object",
+        "properties": {
+            "nome_negocio": {"type": "string"},
+            "segmento": {"type": "string"},
+            "localizacao": {"type": "string"},
+            "faturamento": {"type": "string"},
+            "equipe": {"type": "string"},
+            "ticket_medio": {"type": "string"},
+            "problemas": {"type": "string"},
+            "objetivos": {"type": "string"},
+            "investimento": {"type": "string"},
+            "canais": {"type": "string"},
+            "clientes": {"type": "string"},
+            "concorrentes": {"type": "string"},
+            "diferencial": {"type": "string"},
+            "margem": {"type": "string"},
+            "gargalos": {"type": "string"},
+            "site": {"type": "string"},
+            "instagram": {"type": "string"},
+            "whatsapp": {"type": "string"}
+        },
+        "required": []
+    }
     
     prompt = f"""
 Você é um extrator de informações de negócios. Extraia SOMENTE as informações que o usuário mencionou explicitamente na mensagem abaixo.
@@ -95,40 +121,48 @@ Regras:
 3. Se não mencionou algo, mantenha o valor atual ou null
 4. Retorne um JSON válido com os campos extraídos
 
-Campos para extrair no formato JSON:
+Campos para extrair:
 - nome_negocio: Nome do negócio
-- segmento: Segmento de negócio (restaurante, loja, serviço, etc.)
-- localizacao: Cidade/estado
-- problemas: Problemas mencionados
-- objetivos: Objetivos mencionados
-- concorrentes: Concorrentes mencionados
-- clientes: Clientes mencionados
-- canais: Canais mencionados
-- marketing: Marketing mencionado
-- vendas: Vendas mencionadas
-- site: Site/mídias sociais mencionadas
+- segmento: Área de atuação
+- localizacao: Cidade/Estado
+- faturamento: Faturamento mensal
+- equipe: Número de pessoas
+- ticket_medio: Ticket médio
+- problemas: Problemas e desafios
+- objetivos: Objetivos e metas
+- investimento: Investimento em marketing
+- canais: Canais de venda/comunicação
+- clientes: Tipo de clientes
+- concorrentes: Concorrentes conhecidos
+- diferencial: Diferencial competitivo
+- margem: Margem de lucro
+- gargalos: Gargalos operacionais
+- site: Website
+- instagram: Instagram handle
+- whatsapp: WhatsApp
 
-Responda com um objeto JSON contendo apenas os campos encontrados.
+Responda apenas com o JSON, sem texto adicional.
 """
-
-    result = call_llm(
-        provider="groq",
-        prompt=prompt,
-        temperature=0.1,
-        json_mode=False
-    )
-    
-    # When json_mode=False, call_llm returns a string directly
-    if isinstance(result, str):
-        content = result
-    elif not result.get("success"):
-        log_error(f"LLM extraction failed: {result.get('error', 'Unknown error')}")
-        return current_profile
-    else:
-        content = result.get("content", "")
     
     try:
-        extracted = safe_json_loads(content)
+        # Usar JSON mode nativo + modelo pequeno para extração
+        from app.core.llm_router import call_llm
+        
+        result = call_llm(
+            provider="groq",
+            prompt=prompt,
+            temperature=0.1,  # Baixa temperatura para extração
+            json_mode=True,   # JSON mode nativo!
+            prefer_small=True  # Usar modelo menor e mais rápido
+        )
+        
+        if isinstance(result, dict) and "error" in result:
+            raise Exception(f"JSON mode failed: {result['error']}")
+        
+        if isinstance(result, str):
+            extracted = safe_json_loads(result)
+        else:
+            extracted = result
         
         # Merge with current profile (only update non-null values)
         updated_profile = current_profile.copy()
@@ -136,13 +170,143 @@ Responda com um objeto JSON contendo apenas os campos encontrados.
             if value is not None and value != "":
                 updated_profile[key] = value
         
-        log_success(f"Extracted {len([k for k, v in extracted.items() if v is not None and v != ""])} fields")
+        log_success(f"✅ JSON mode extracted: {len([k for k, v in extracted.items() if v is not None and v != ''])} fields")
         return updated_profile
         
     except Exception as e:
-        log_error(f"Failed to parse LLM extraction: {e}")
+        log_error(f"❌ JSON mode failed: {str(e)[:100]}...")
+        
+        # Fallback: tentar extração manual de campos básicos
+        fallback_fields = {}
+        message_lower = message.lower()
+        
+        # Generic fallback patterns (remove hardcoded J.Ferres data)
+        if "b2b" in message_lower:
+            fallback_fields["modelo"] = "B2B"
+        if "b2c" in message_lower:
+            fallback_fields["modelo"] = "B2C"
+        if "serviço" in message_lower or "servico" in message_lower:
+            fallback_fields["tipo_oferta"] = "serviço"
+        if "produto" in message_lower:
+            fallback_fields["tipo_oferta"] = "produto"
+        
+        # Extract numbers with context (generic)
+        import re
+        
+        # Faturamento - look for monetary values
+        faturamento_match = re.search(r'R\$\s*([\d.,]+)', message)
+        if faturamento_match:
+            value = faturamento_match.group(1)
+            if "mil" in message_lower or "k" in message_lower:
+                fallback_fields["faturamento"] = f"R$ {value}/mês"
+        
+        # Equipe - look for people count
+        equipe_match = re.search(r'(\d+)\s*(?:pessoas|funcionários|funcionarios|equipe)', message_lower)
+        if equipe_match:
+            fallback_fields["equipe"] = f"{equipe_match.group(1)} pessoas"
+        
+        # Ticket médio - look for monetary values with ticket context
+        ticket_match = re.search(r'(?:ticket|média|media)\s*R?\$\s*([\d.,]+)', message_lower)
+        if ticket_match:
+            value = ticket_match.group(1)
+            fallback_fields["ticket_medio"] = f"R$ {value}"
+        
+        # Generic competitor extraction
+        if "concorrente" in message_lower or "concorrência" in message_lower or "concorrencia" in message_lower:
+            # Try to extract competitor names from context
+            words = message_lower.split()
+            potential_competitors = []
+            for i, word in enumerate(words):
+                if word in ["concorrente", "concorrente:", "concorrentes", "concorrência", "concorrencia"]:
+                    # Look for capitalized words after competitor keywords
+                    for j in range(i+1, min(i+4, len(words))):
+                        candidate = words[j].strip('.,;:')
+                        if candidate and candidate[0].isupper() and len(candidate) > 2:
+                            potential_competitors.append(candidate)
+            
+            if potential_competitors:
+                fallback_fields["concorrentes"] = ", ".join(potential_competitors[:3])  # Max 3 competitors
+        
+        # Website extraction - look for URLs
+        url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', message_lower)
+        if url_match:
+            fallback_fields["site"] = url_match.group(1)
+        
+        # Location extraction - look for city/state patterns
+        location_match = re.search(r'([A-Z][a-z]+(?:-[A-Z][a-z]+)?)\s*-\s*([A-Z]{2})', message)
+        if location_match:
+            city, state = location_match.groups()
+            fallback_fields["localizacao"] = f"{city}-{state}"
+            
+        if fallback_fields:
+            log_success(f"Fallback extracted {len(fallback_fields)} fields")
+            updated_profile = current_profile.copy()
+            for key, value in fallback_fields.items():
+                updated_profile[key] = value
+            return updated_profile
+        
         return current_profile
 
+
+def _build_search_query(profile: dict) -> str:
+    """Build safe search query from profile data."""
+    
+    # Extrair apenas campos string seguros
+    safe_fields = {}
+    
+    # Lista de campos permitidos para busca
+    allowed_fields = [
+        'nome_negocio', 'segmento', 'localizacao', 'site', 
+        'instagram', 'linkedin_url', 'cidade', 'estado'
+    ]
+    
+    for field in allowed_fields:
+        value = profile.get(field, '')
+        if value and isinstance(value, str):
+            # Limpar valor: remover JSON, caracteres especiais
+            clean_value = value.strip()
+            
+            # Se parecer JSON (tem { ou "), ignorar
+            if '{' in clean_value or '"' in clean_value or clean_value.startswith('{'):
+                continue
+                
+            # Limitar tamanho
+            if len(clean_value) > 100:
+                clean_value = clean_value[:100]
+                
+            # Remover caracteres problemáticos para URL
+            clean_value = clean_value.replace('"', '').replace("'", '').replace('{', '').replace('}', '')
+            
+            if clean_value:
+                safe_fields[field] = clean_value
+    
+    # Montar query em ordem de importância
+    query_parts = []
+    
+    # Nome do negócio (mais importante)
+    if 'nome_negocio' in safe_fields:
+        query_parts.append(safe_fields['nome_negocio'])
+    
+    # Segmento
+    if 'segmento' in safe_fields:
+        query_parts.append(safe_fields['segmento'])
+    
+    # Localização
+    if 'localizacao' in safe_fields:
+        query_parts.append(safe_fields['localizacao'])
+    elif 'cidade' in safe_fields:
+        query_parts.append(safe_fields['cidade'])
+        if 'estado' in safe_fields:
+            query_parts.append(safe_fields['estado'])
+    
+    # Site (sem https://)
+    if 'site' in safe_fields:
+        site = safe_fields['site'].replace('https://', '').replace('http://', '').replace('www.', '')
+        if site and len(site) < 50:
+            query_parts.append(site)
+    
+    # Limitar a 3 termos para não sobrecarregar busca
+    return " ".join(query_parts[:3])
 
 def _should_search(message: str, last_search_time: float) -> bool:
     """Determine if we should search based on message content and time."""
@@ -168,7 +332,7 @@ def _should_search(message: str, last_search_time: float) -> bool:
 def _search_internet(query: str, business_context: dict) -> dict:
     """Search internet for relevant information."""
     
-    log_info(f"Searching internet: {query}")
+    log_info(f"🔍 Searching: {query[:80]}...")  # Truncar query longa
     
     try:
         # Use unified search (se disponível) ou fallback
@@ -248,10 +412,16 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     search_result = None
     
     if should_search:
-        # Build search query based on message and context
-        query = f"{user_message} {updated_profile.get('segmento', '')} {updated_profile.get('localizacao', '')}"
-        search_result = _search_internet(query, updated_profile)
-        last_search_time = time.time()
+        # Build search query using safe builder
+        query = _build_search_query(updated_profile)
+        
+        if query:
+            log_info(f"🔍 Searching: {query}")
+            search_result = _search_internet(query, updated_profile)
+            last_search_time = time.time()
+        else:
+            log_warning("⚠️ No valid search terms found")
+            search_result = None
     
     # 3. Generate response
     context = {

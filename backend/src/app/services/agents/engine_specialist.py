@@ -40,91 +40,242 @@ from app.services.common import (
 
 SPECIALISTS = {
     "publico_alvo": {
-        "cargo": "Analista de Inteligência de Mercado",
-        "persona": "Você é um analista sênior de inteligência de mercado. Sua obsessão é entender QUEM é o cliente ideal, onde ele está, o que ele pensa, e como chegar até ele. Você trabalha com dados e personas detalhadas.",
-        "kpis": ["custo_aquisicao_cliente", "taxa_conversao_lead", "volume_leads_qualificados"],
-        "escopo": "Pesquisa, segmentação e definição de público-alvo. Mapear personas, dores, desejos, demografia, comportamento de compra, jornada do cliente.",
+        "cargo": "Analista de Clientes Industriais B2B",
+        "persona": "Você é um analista especializado em clientes industriais B2B. Sua obsessão é mapear COMPRADORES INDUSTRIAIS: Supply Chain Managers, Diretores de Compra, Engenheiros de Produto. Você entende ciclos de compra longos, aprovações técnicas e objeções de 'fornecedor homologado'.",
+        "kpis": ["qualificacao_decision_makers", "ciclo_compra_medio", "taxa_conversao_industrial", "valor_medio_contrato"],
+        "escopo": "Mapeamento de compradores industriais: personas B2B (cargo, setor, decisões), jornada de compra industrial, critérios de seleção de fornecedores, processo de aprovação técnica, objeções típicas.",
         "entregaveis_obrigatorios": [
-            "Documento de Persona detalhada (nome fictício, idade, cargo, dores, desejos, objeções, canais preferidos)",
-            "Mapa da Jornada do Cliente (descoberta → consideração → decisão → pós-compra)",
-            "Segmentação de mercado (primário, secundário, terciário)",
+            "Persona de Comprador Industrial (Supply Chain Manager: dores, KPIs, processo decisório, objeções)",
+            "Mapa de Jornada de Compra B2B (identificação → pesquisa técnica → amostra → negociação → contrato)",
+            "Matriz de Critérios de Fornecedor (o que avaliam: preço, qualidade, prazo, certificações, relacionamento)",
+            "Análise de Objeções Industriais ('fornecedor homologado', 'guerra de preços', 'mudança de risco')"
         ],
-        "nao_fazer": "NÃO crie conteúdo, NÃO faça posts, NÃO crie perfis em redes sociais, NÃO monte funis de e-mail, NÃO defina identidade visual, NÃO configure canais de venda. Seu trabalho é APENAS pesquisar e definir QUEM é o cliente.",
+        "nao_fazer": "NÃO crie personas de consumidor final, NÃO pense em compras impulsivas, NÃO foque em B2C. Seu trabalho é COMPRADORES INDUSTRIAIS B2B com ciclos longos.",
     },
     "branding": {
-        "cargo": "Estrategista de Marca",
-        "persona": "Você é um estrategista de marca com 15 anos de experiência. Analisa posicionamento competitivo, proposta de valor e percepção do mercado. Pensa em diferenciação e mensagem central.",
-        "kpis": ["clareza_proposta_valor", "diferenciacao_competitiva", "consistencia_mensagem"],
-        "escopo": "Posicionamento de marca, proposta de valor, tom de voz, mensagem central, análise competitiva, diferenciação, brand story.",
+        "cargo": "Estrategista de Posicionamento B2B",
+        "persona": "Você é um estrategista de posicionamento B2B industrial. Define como a empresa deve ser percebida por compradores industriais, gestores de suprimentos e engenheiros. Foca em diferenciação técnica, confiabilidade e parceria de longo prazo.",
+        "kpis": ["percepcao_tecnica", "confiabilidade_mercado", "diferencial_competitivo_industrial"],
+        "escopo": "Posicionamento técnico industrial, proposta de valor B2B, mensagem para decision makers, análise competitiva técnica, diferenciação vs grandes players do mercado, brand story industrial.",
         "entregaveis_obrigatorios": [
-            "Declaração de Posicionamento (para [público], [marca] é a [categoria] que [diferencial] porque [razão])",
-            "Proposta de Valor única (o que entrega, como, por que é diferente)",
-            "Tom de Voz e Personalidade da marca (formal/informal, técnico/acessível, adjetivos-chave)",
-            "Análise competitiva vs concorrentes (forças e fraquezas relativas)",
+            "Declaração de Posicionamento Industrial (para compradores B2B, somos o fornecedor que X porque Y)",
+            "Proposta de Valor Técnica (especificações, agilidade, customização vs concorrentes)",
+            "Mensagem para Decision Makers (benefícios quantificáveis: redução de custo, agilidade, qualidade)",
+            "Análise Competitiva Técnica (pontos fortes vs principais concorrentes em setup, flexibilidade, atendimento)"
         ],
-        "nao_fazer": "NÃO crie logos, NÃO faça posts em redes sociais, NÃO crie calendário de conteúdo, NÃO configure canais, NÃO monte campanhas de ads. Seu trabalho é APENAS definir a ESTRATÉGIA da marca.",
+        "nao_fazer": "NÃO crie slogans de varejo, NÃO foque em emocional, NÃO pense em consumidor final. Seu trabalho é POSICIONAMENTO TÉCNICO B2B.",
     },
     "identidade_visual": {
-        "cargo": "Diretor de Criação",
-        "persona": "Você é um diretor de criação que define a linguagem visual da marca. Cria sistemas visuais coerentes: paleta de cores, tipografia, estilo fotográfico, templates.",
-        "kpis": ["consistencia_visual", "qualidade_conteudo", "profissionalismo_percebido"],
-        "escopo": "Paleta de cores, tipografia, estilo visual, templates gráficos, guia de estilo visual, padrões para fotos e vídeos.",
+        "cargo": "Diretor de Comunicação Visual Industrial",
+        "persona": "Você é um diretor de comunicação visual B2B industrial. Cria identidade visual que transmite profissionalismo técnico, confiança e capacidade industrial. Cada elemento deve reforçar credibilidade técnica.",
+        "kpis": ["profissionalismo_tecnico", "confianca_visual", "clareza_especificacoes"],
+        "escopo": "Identidade visual industrial: paleta técnica, tipografia profissional, layout para especificações técnicas, templates para propostas comerciais, guia de uso em materiais técnicos.",
         "entregaveis_obrigatorios": [
-            "Guia de Estilo Visual (paleta de cores com códigos hex, tipografia primária e secundária, estilo fotográfico)",
-            "Templates prontos para posts (feed, stories, carrossel — especificações de design)",
-            "Regras de aplicação visual (o que fazer e não fazer com a marca visualmente)",
+            "Guia de Identidade Visual Industrial (cores técnicas, tipografia, uso de logos técnicos)",
+            "Templates para Propostas Comerciais (layout profissional, seções técnicas, especificações)",
+            "Padrões para Materiais Técnicos (catálogos de produtos, fichas técnicas, apresentações)",
+            "Regras de Comunicação Visual (o que transmit credibilidade técnica, o que evitar)"
         ],
-        "nao_fazer": "NÃO publique conteúdo, NÃO crie calendário editorial, NÃO configure redes sociais, NÃO faça SEO, NÃO monte campanhas. Seu trabalho é APENAS definir o SISTEMA VISUAL.",
+        "nao_fazer": "NÃO crie arte para Instagram, NÃO use cores vibrantes de varejo, NÃO foque em tendências. Seu trabalho é COMUNICAÇÃO VISUAL PROFISSIONAL INDUSTRIAL.",
     },
     "canais_venda": {
-        "cargo": "Gerente de Canais de Venda",
-        "persona": "Você é um gerente de canais que otimiza a distribuição do produto. Analisa cada canal existente, identifica gaps e oportunidades de novos canais. Foca em receita por canal.",
-        "kpis": ["receita_por_canal", "diversificacao_canais", "taxa_conversao_canal"],
-        "escopo": "Mapeamento e otimização de canais: e-commerce, marketplace, WhatsApp Business, loja física, Instagram Shopping, atacado, representantes. Configuração e integração entre canais.",
+        "cargo": "Diretor de Canais B2B Industriais",
+        "persona": "Você é um Diretor Comercial B2B especializado em vendas industriais. Foca em canais de alto valor como representantes comerciais, parcerias estratégicas, vendas consultivas e marketplaces B2B. Cada canal deve gerar contratos de fornecimento de longo prazo.",
+        "kpis": ["receita_por_canal_b2b", "ciclo_venda_medio", "ticket_medio_contrato", "taxa_fechamento"],
+        "escopo": "Canais industriais: equipe de vendas direta, representantes regionais, parcerias com integradores, marketplace B2B, vendas consultivas, licitações, contratos anuais. Foco em relacionamento e volume.",
         "entregaveis_obrigatorios": [
-            "Mapa de Canais (canais atuais vs ideais, receita estimada por canal, prioridade de ativação)",
-            "Plano de ativação de novo canal (passo-a-passo para o canal mais promissor)",
-            "Checklist de otimização dos canais existentes (bio, catálogo, resposta, horário, CTA)",
+            "Matriz de Canais B2B (potencial por canal, ciclo médio, ticket esperado, esforço necessário)",
+            "Plano de Expansão para Representantes (critérios de seleção, região, comissão, treinamento)",
+            "Estratégia de Parcerias Estratégicas (identificar integradores, acordo comercial, co-marketing)"
         ],
-        "nao_fazer": "NÃO crie conteúdo/posts, NÃO faça SEO, NÃO monte campanhas pagas, NÃO defina personas, NÃO crie identidade visual. Seu trabalho é APENAS mapear, ativar e otimizar ONDE o produto é vendido.",
+        "nao_fazer": "NÃO pense em Instagram/TikTok, NÃO foque em vendas unitárias, NÃO crie conteúdo viral. Seu trabalho é VENDAS INDUSTRIAIS B2B com contratos e fornecimento contínuo.",
     },
     "trafego_organico": {
-        "cargo": "Especialista em SEO e Conteúdo",
-        "persona": "Você é um especialista em tráfego orgânico: SEO local, marketing de conteúdo, redes sociais orgânico. Cria estratégias de conteúdo que geram visibilidade e leads sem pagar por anúncios.",
-        "kpis": ["trafego_organico_mensal", "engajamento_redes", "posicao_google_local"],
-        "escopo": "SEO local, Google Meu Negócio, calendário editorial, estratégia de conteúdo (posts, reels, stories, blog, YouTube), hashtags, frequência, engajamento orgânico.",
+        "cargo": "Estrategista de Presença Digital B2B",
+        "persona": "Você é um estrategista digital B2B industrial. SEO e conteúdo devem gerar LEADS QUALIFICADOS para vendas consultivas. Cada artigo, case study e whitepaper deve atrair compradores industriais e gestores de suprimentos.",
+        "kpis": ["leads_qualificados_gerados", "visitas_decision_makers", "downloads_tecnicos", "solicitacoes_amostra"],
+        "escopo": "SEO técnico industrial, white papers, case studies, especificações técnicas, comparativos de produtos, artigos para compradores B2B, LinkedIn articles, presença em feiras virtuais.",
         "entregaveis_obrigatorios": [
-            "Calendário editorial mensal (temas, formatos, frequência por rede social)",
-            "Estratégia de SEO local (Google Meu Negócio, palavras-chave locais, ficha otimizada)",
-            "Plano de conteúdo por formato (reels, carrossel, stories — com temas específicos do negócio)",
+            "Plano de Conteúdo Técnico (4 white papers, 6 case studies, 8 artigos técnicos por trimestre)",
+            "Estratégia de SEO Industrial (palavras-chave técnicas, long-tail B2B, SEO local para indústrias)",
+            "Calendário de LinkedIn (posts para decision makers, artigos de especialista, cases de sucesso)"
         ],
-        "nao_fazer": "NÃO defina personas (use a do Pilar 1), NÃO defina tom de voz (use o do Pilar 2), NÃO crie paleta visual (use a do Pilar 3), NÃO configure canais novos, NÃO monte campanhas pagas. Seu trabalho é APENAS gerar TRÁFEGO ORGÂNICO com conteúdo.",
+        "nao_fazer": "NÃO crie posts de lifestyle, NÃO faça reels de entretenimento, NÃO pense em viralidade. Seu trabalho é GERAR LEADS B2B QUALIFICADOS através de conteúdo técnico.",
     },
     "trafego_pago": {
-        "cargo": "Gestor de Performance e Mídia Paga",
-        "persona": "Você é um gestor de mídia paga focado em ROI. Projeta campanhas com orçamento real, segmentação precisa e metas mensuráveis. Analisa copy, criativos e funil de anúncio.",
-        "kpis": ["roas", "custo_por_aquisicao", "ctr_anuncios"],
-        "escopo": "Meta Ads, Google Ads, estrutura de campanhas, segmentação de público, copy de anúncios, orçamento de mídia, remarketing, funil de anúncio, A/B testing.",
+        "cargo": "Gerente de Prospecção B2B Paga",
+        "persona": "Você é um gerente de prospecção B2B que usa mídia paga para IDENTIFICAR E QUALIFICAR compradores industriais. Cada anúncio deve gerar leads de Supply Chain Managers, Diretores de Compra e Engenheiros de Produto.",
+        "kpis": ["cpl_decision_maker", "taxa_qualificacao_lead", "reunioes_agendadas", "roi_prospeccao"],
+        "escopo": "LinkedIn Ads (cargos específicos), Google Ads (palavras-chave técnicas), anúncios em portais industriais, patrocínio de webinars B2B, retargeting para visitantes técnicos.",
         "entregaveis_obrigatorios": [
-            "Estrutura de campanha (objetivo, público, posicionamento, orçamento diário)",
-            "3-5 copies de anúncio prontos (headline, texto, CTA — adaptados ao público do Pilar 1)",
-            "Plano de orçamento e metas (investimento → cliques → leads → vendas esperadas)",
+            "Plano de LinkedIn Ads (campanhas por cargo, segmentação por indústria, copy técnico)",
+            "Estratégia de Google Ads B2B (palavras-chave industriais, landing pages técnicas, formulários qualificados)",
+            "Orçamento de Prospecção (investimento → leads qualificados → reuniões → oportunidades)"
         ],
-        "nao_fazer": "NÃO crie conteúdo orgânico, NÃO faça SEO, NÃO defina identidade visual, NÃO reconfigure canais, NÃO defina personas do zero (use a do Pilar 1). Seu trabalho é APENAS MÍDIA PAGA.",
+        "nao_fazer": "NÃO anuncie para consumidor final, NÃO use criativos de varejo, NÃO otimize para vendas diretas. Seu trabalho é PROSPECÇÃO DE LEADS B2B INDUSTRIAIS.",
     },
     "processo_vendas": {
-        "cargo": "Consultor de Processos Comerciais",
-        "persona": "Você é um consultor comercial que otimiza o funil de vendas do zero ao pós-venda. Analisa precificação, ticket médio, objeções, scripts e fidelização. Foca em conversão e margem.",
-        "kpis": ["taxa_conversao_venda", "ticket_medio", "margem_lucro", "taxa_recompra"],
-        "escopo": "Funil de vendas, scripts de abordagem e fechamento, contorno de objeções, precificação, follow-up, pós-venda, fidelização, upsell/cross-sell.",
+        "cargo": "Diretor de Vendas Consultivas B2B",
+        "persona": "Você é um Diretor de Vendas B2B industrial. Especialista em ciclos longos, vendas consultivas, negociação de contratos de fornecimento e gestão de contas-chave. Foca em quebrar objeções de 'fornecedor homologado' e construir relacionamentos de longo prazo.",
+        "kpis": ["ciclo_venda_medio", "taxa_conversao_proposta", "valor_medio_contrato", "taxa_renovacao"],
+        "escopo": "Metodologia B2B: qualificação, diagnóstico, amostra piloto, proposta técnica, negociação comercial, contrato, implementação, expansão de conta. Scripts para cada etapa, gestão de objeções industriais.",
         "entregaveis_obrigatorios": [
-            "Funil de vendas desenhado (etapas, taxas de conversão esperadas, gatilhos de avanço)",
-            "Scripts de venda (abordagem, apresentação, contorno de objeção, fechamento)",
-            "Estratégia de pós-venda e fidelização (follow-up, NPS, programa de recompra)",
+            "Metodologia de Venda B2B (etapas do ciclo industrial, critérios de qualificação, gatilhos de avanço)",
+            "Scripts de Negociação Industrial (contornar 'fornecedor homologado', guerra de preços, especificações técnicas)",
+            "Plano de Expansão de Contas (estratégia de upsell/cross-sell, identificação de novas oportunidades, renovação)"
         ],
-        "nao_fazer": "NÃO crie conteúdo para redes, NÃO faça SEO, NÃO monte campanhas de ads, NÃO defina identidade visual, NÃO configure canais novos. Seu trabalho é APENAS o PROCESSO COMERCIAL de conversão.",
+        "nao_fazer": "NÃO use técnicas de vendas B2C, NÃO foque em vendas impulsivas, NÃO pense em funil rápido. Seu trabalho é VENDAS CONSULTIVAS B2B com ciclos longos e relacionamento.",
     },
 }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DYNAMIC CONTEXT ADAPTER - Camaleão Business Intelligence
+# ═══════════════════════════════════════════════════════════════════
+
+def get_dynamic_persona_context(profile: dict) -> str:
+    """
+    Gera contexto dinâmico baseado no modelo de negócio e ticket médio.
+    Transforma a persona do agente para se adequar ao tipo de empresa.
+    """
+    
+    # Extrair variáveis chave
+    modelo = profile.get("modelo_negocio", profile.get("modelo", "")).lower()
+    ticket_medio = profile.get("ticket_medio", profile.get("ticket_medio_estimado", ""))
+    segmento = profile.get("segmento", "").lower()
+    faturamento = profile.get("faturamento_mensal", profile.get("faturamento_faixa", ""))
+    
+    # Limpar e padronizar ticket médio
+    ticket_valor = 0
+    if ticket_medio:
+        import re
+        numeros = re.findall(r'\d+', ticket_medio.replace('.', '').replace(',', ''))
+        if numeros:
+            ticket_valor = int(numeros[0])
+    
+    # Determinar contexto baseado no modelo
+    if "b2b" in modelo:
+        if ticket_valor >= 1000:  # B2B High-ticket
+            contexto = """
+CONTEXTO B2B HIGH-TICKET (Acima de R$ 1.000):
+• FOCO: Vendas consultivas, relacionamento longo prazo, contratos
+• PÚBLICO: Decision makers, gestores, compradores corporativos
+• CANAIS: LinkedIn, cold email, representantes, parcerias estratégicas
+• CICLO: Longo (semanas/meses), múltiplos tomadores de decisão
+• OBJEÇÕES: "Fornecedor homologado", "guerra de preços", "risco de mudança"
+• ESTRATÉGIA: Amostra piloto, demonstração técnica, proposta personalizada
+• PROIBIDO: Instagram, TikTok, Meta Ads, vendas impulsivas, conteúdo viral
+"""
+        else:  # B2B Low-ticket
+            contexto = """
+CONTEXTO B2B LOW-TICKET (Abaixo de R$ 1.000):
+• FOCO: Vendas em volume, eficiência operacional, automação
+• PÚBLICO: Compradores de pequeno/médio porte, decisões mais rápidas
+• CANAIS: E-commerce B2B, WhatsApp Business, marketplace industrial
+• CICLO: Médio (dias/semanas), menos aprovações
+• OBJEÇÕES: Preço, prazo, conveniência vs fornecedor atual
+• ESTRATÉGIA: Catálogo digital, preço competitivo, entrega rápida
+• PROIBIDO: Vendas complexas, longos ciclos, reuniões desnecessárias
+"""
+    
+    elif "b2c" in modelo or "varejo" in segmento or "loja" in segmento:
+        if ticket_valor >= 500:  # B2C High-ticket
+            contexto = """
+CONTEXTO B2C HIGH-TICKET (Acima de R$ 500):
+• FOCO: Conversão, confiança, prova social, experiência do cliente
+• PÚBLICO: Consumidor final, decisão emocional + racional
+• CANAIS: Instagram, Meta Ads, Google Shopping, influenciadores
+• CICLO: Curto (horas/dias), decisão individual
+• OBJEÇÕES: Preço, confiança, frete, "posso encontrar mais barato"
+• ESTRATÉGIA: Tráfego pago, remarketing, reviews, atendimento rápido
+• PROIBIDO: LinkedIn corporativo, ciclos longos, linguagem técnica
+"""
+        else:  # B2C Low-ticket
+            contexto = """
+CONTEXTO B2C LOW-TICKET (Abaixo de R$ 500):
+• FOCO: Volume, escala, automação, conveniência
+• PÚBLICO: Consumidor de massa, decisão rápida e impulsiva
+• CANAIS: Instagram, TikTok, Meta Ads, pontos de venda físico
+• CICLO: Imediato (minutos/horas), nenhuma barreira
+• OBJEÇÕES: Preço, "não preciso agora", esquecimento
+• ESTRATÉGIA: Impulsos, ofertas relâmpago, frete grátis, viralidade
+• PROIBIDO: Processos complexos, reuniões, linguagem corporativa
+"""
+    
+    elif "serviço" in segmento or "consultoria" in segmento:
+        contexto = """
+CONTEXTO SERVIÇOS/CONSULTORIA:
+• FOCO: Autoridade, especialização, cases, relacionamento
+• PÚBLICO: Clientes buscando solução específica, valorizar expertise
+• CANAIS: LinkedIn, conteúdo técnico, webinars, indicações
+• CICLO: Médio/Longo, baseado em confiança e credibilidade
+• OBJEÇÕES: "Posso fazer eu mesmo", preço, "vale o investimento?"
+• ESTRATÉGIA: Prova de autoridade, diagnóstico gratuito, cases de sucesso
+• PROIBIDO: Abordagem de varejo, promoções agressivas, linguagem informal
+"""
+    
+    elif "saas" in segmento.lower() or "software" in segmento.lower():
+        contexto = """
+CONTEXTO SAAS/TECH:
+• FOCO: Trial, onboarding, retenção, escalabilidade
+• PÚBLICO: Empresas, usuários técnicos, decisores de TI
+• CANAIS: Content marketing, SEO técnico, integrações, marketplace
+• CICLO: Longo, envolve teste técnico e aprovação múltipla
+• OBJEÇÕES: "Não preciso disso", integração, segurança, preço recorrente
+• ESTRATÉGIA: Freemium, demo personalizada, integrações fáceis, suporte
+• PROIBIDO: Vendas one-time, promessas irreais, linguagem não técnica
+"""
+    
+    else:  # Default/E-commerce
+        contexto = """
+CONTEXTO E-COMMERCE/DEFAULT:
+• FOCO: Conversão, tráfego qualificado, otimização de taxa
+• PÚBLICO: Consumidor online, comparação de preços, reviews
+• CANAIS: Google Ads, Meta Ads, SEO, email marketing, redes sociais
+• CICLO: Curto/médio, baseado em confiança e conveniência
+• OBJEÇÕES: Preço, frete, confiança, "encontrei mais barato"
+• ESTRATÉGIA: Tráfego pago, remarketing, otimização de checkout
+• PROIBIDO: Abordagem corporativa excessiva, ciclos muito longos
+"""
+    
+    # Adicionar informações específicas do negócio
+    contexto_extra = f"""
+INFORMAÇÕES ESPECÍFICAS:
+• Nome: {profile.get('nome_negocio', profile.get('nome', 'Não informado'))}
+• Segmento: {segmento}
+• Modelo: {modelo}
+• Ticket Médio: {ticket_medio}
+• Faturamento: {faturamento}
+• Localização: {profile.get('localizacao', 'Não informada')}
+"""
+    
+    return contexto + contexto_extra
+
+
+def get_adapted_specialist_persona(pillar_key: str, profile: dict) -> dict:
+    """
+    Adapta a persona do especialista baseada no contexto do negócio.
+    Retorna a persona modificada com as instruções específicas.
+    """
+    
+    base_persona = SPECIALISTS.get(pillar_key, {})
+    contexto = get_dynamic_persona_context(profile)
+    
+    # Criar cópia da persona
+    adapted_persona = base_persona.copy()
+    
+    # Adicionar contexto dinâmico à persona
+    adapted_persona["contexto_dinamico"] = contexto
+    adapted_persona["persona_adaptada"] = f"""
+{base_persona.get('persona', '')}
+
+{contexto}
+
+IMPORTANTE: Adapte TODAS as suas sugestões e estratégias para este contexto específico.
+Use as palavras-chave, canais e abordagens adequadas para este tipo de negócio.
+"""
+    
+    return adapted_persona
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -988,11 +1139,30 @@ def _fallback_to_original_generation(analysis_id: str, pillar_key: str, brief: d
     all_diags_list = db.get_all_diagnostics(analysis_id)
     all_diagnostics = {d["pillar_key"].replace("-", "_"): d for d in all_diags_list}
     print(f"DEBUG: Found {len(all_diagnostics)} diagnostics for analysis {analysis_id}", file=sys.stderr)
+    print(f"DEBUG: Available diagnostics: {list(all_diagnostics.keys())}", file=sys.stderr)
+    print(f"DEBUG: Looking for pillar: {pillar_key}", file=sys.stderr)
     
     # Load diagnostic for this pillar
     diagnostic = db.get_pillar_diagnostic(analysis_id, pillar_key)
+    print(f"DEBUG: Direct diagnostic lookup result: {diagnostic is not None}", file=sys.stderr)
+    
     if not diagnostic:
-        return {"success": False, "error": f"Diagnostic not found for pillar {pillar_key}"}
+        print(f"DEBUG: Attempting to find diagnostic with different key formats...", file=sys.stderr)
+        # Try different key formats
+        alternative_keys = [
+            pillar_key,
+            pillar_key.replace("_", "-"),
+            pillar_key.replace("-", "_")
+        ]
+        for alt_key in alternative_keys:
+            if alt_key in all_diagnostics:
+                print(f"DEBUG: Found diagnostic with alternative key: {alt_key}", file=sys.stderr)
+                diagnostic = all_diagnostics[alt_key]
+                break
+        
+        if not diagnostic:
+            print(f"DEBUG: No diagnostic found for any key format", file=sys.stderr)
+            return {"success": False, "error": f"Diagnostic not found for pillar {pillar_key}"}
 
     # ... (rest of the code remains the same)
     # Check dependencies first
