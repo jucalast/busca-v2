@@ -53,6 +53,11 @@ REGRAS CRÍTICAS:
    - Se credibilidade é problema → coloque no foco de "branding" e/ou "identidade_visual"
    - Se capital é zero → em "trafego_pago" foque em estratégias orgânicas e gratuitas que compensem
 4. Gere QUERIES de busca usando os MESMOS IDs como chave (EXATAMENTE os mesmos IDs das categorias).
+   REGRAS DAS QUERIES (CRÍTICO — a finalidade do sistema é fazer o negócio VENDER MAIS):
+   - Cada query deve responder UMA das perguntas: "o que impede de vender neste pilar?", "o que melhores players fazem para vender neste pilar?", "como converter mais neste pilar?"
+   - Use as `dificuldades`, `principal_gargalo` e o segmento do negócio para tornar a query específica ao problema REAL
+   - Exemplo ruim: "branding marketing digital PME" → genérico, não resolve nada
+   - Exemplo bom: "como superar concorrentes preço baixo embalagens papelão proposta de valor diferenciação ganhar cliente" → específico ao problema
 5. Seja preciso e direto — não invente dados, apenas interprete os fornecidos.
 
 ESTRUTURA DO JSON:
@@ -281,14 +286,17 @@ def identify_dynamic_categories(profile: dict) -> list:
     localizacao = perfil_data.get("localizacao", perfil_data.get("cidade_estado", ""))
     dificuldade = perfil_data.get("dificuldades", "")[:60]
 
+    # Queries orientadas à pergunta real do dono: "por que não vendo mais e o que fazer?"
+    _dif_snippet = dificuldade[:50] if dificuldade else ""
+    _loc_snippet = localizacao[:30] if localizacao else ""
     _QUERY_TEMPLATES = {
-        "publico_alvo": f"público-alvo ideal {segmento} perfil cliente B2B B2C comportamento compra",
-        "branding": f"posicionamento de marca {segmento} proposta de valor diferencial competitivo",
-        "identidade_visual": f"identidade visual {segmento} paleta cores tipografia guia estilo marca",
-        "canais_venda": f"melhores canais de venda {segmento} e-commerce marketplace whatsapp business",
-        "trafego_organico": f"estratégia tráfego orgânico {segmento} SEO local Google Meu Negócio conteúdo",
-        "trafego_pago": f"anúncios {segmento} Meta Ads Google Ads campanha segmentação ROI",
-        "processo_vendas": f"processo vendas {segmento} funil conversão script objeções precificação",
+        "publico_alvo": f"quem compra {segmento} perfil comprador ideal como conquistar clientes {segmento} {_loc_snippet}".strip(),
+        "branding": f"como se diferenciar concorrência {segmento} proposta de valor única ganhar credibilidade vender mais",
+        "identidade_visual": f"como apresentação visual aumenta vendas {segmento} credibilidade profissional converter clientes",
+        "canais_venda": f"melhores canais para vender {segmento} onde clientes compram {_loc_snippet} como aumentar vendas {_dif_snippet}".strip(),
+        "trafego_organico": f"como atrair clientes sem pagar anúncio {segmento} SEO local conteúdo que gera leads orgânicos",
+        "trafego_pago": f"anúncios que vendem {segmento} Meta Ads Google Ads como reduzir custo por cliente adquirido",
+        "processo_vendas": f"como vender mais {segmento} contornar objeções técnicas fechamento {_dif_snippet} converter leads".strip(),
     }
 
     queries = profile["queries_sugeridas"]

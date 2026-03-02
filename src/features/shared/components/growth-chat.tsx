@@ -206,6 +206,15 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     const handleRejectResearch = () => sendMessage('não concordo, quero definir eu mesmo');
 
     const handleGenerateAnalysis = () => {
+        // Safety net: never send without critical data even if backend said ready
+        const criticalCheck = ['nome_negocio', 'segmento'].every(
+            f => extractedProfile[f] && String(extractedProfile[f]).trim() !== ''
+        );
+        if (!criticalCheck) {
+            sendMessage('Preciso saber pelo menos o nome e o segmento do seu negócio para gerar a análise.');
+            return;
+        }
+
         // Criar perfil no formato esperado pelo backend
         const backendProfile = {
             nome_negocio: extractedProfile.nome_negocio || '',
@@ -246,9 +255,9 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 num_funcionarios: extractedProfile.equipe || '',
                 investimento_marketing: extractedProfile.investimento || '',
                 capital_disponivel: extractedProfile.capital_disponivel || '',
-                dificuldades: extractedProfile.problemas || '',
+                dificuldades: extractedProfile.dificuldades || extractedProfile.problemas || '',
                 objetivos: extractedProfile.objetivos || '',
-                modelo_operacional: extractedProfile.operacao || '',
+                modelo_operacional: extractedProfile.modelo_operacional || extractedProfile.operacao || '',
                 canais_venda: extractedProfile.canais || '',
                 concorrentes: extractedProfile.concorrentes || '',
                 diferencial: extractedProfile.diferencial || '',

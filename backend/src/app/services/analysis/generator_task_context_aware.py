@@ -41,9 +41,10 @@ def generate_context_aware_tasks(
     try:
         # OTIMIZAÇÃO: Verificar cache primeiro antes de qualquer processamento
         existing_plan = db.get_pillar_plan(analysis_id, pillar_key)
-        if existing_plan and existing_plan.get("tasks"):
-            print(f"  ✅ Tasks already cached for {pillar_key}: {len(existing_plan.get('tasks', []))} tasks", file=sys.stderr)
-            return {"success": True, "plan": existing_plan}
+        if existing_plan and existing_plan.get("plan_data", {}).get("tarefas"):
+            cached_tasks = existing_plan["plan_data"]["tarefas"]
+            print(f"  ✅ Tasks already cached for {pillar_key}: {len(cached_tasks)} tasks", file=sys.stderr)
+            return {"success": True, "plan": existing_plan["plan_data"]}
         
         # 1. Extrair contexto específico do pilar
         pillar_diagnostic = score_data.get("dimensoes", {}).get(pillar_key, {})
@@ -112,11 +113,13 @@ def _prepare_rich_context(
     justificativa = diagnostic.get("justificativa", "")
     meta_pilar = diagnostic.get("meta_pilar", "")
     dado_chave = diagnostic.get("dado_chave", "")
+    acoes_imediatas = diagnostic.get("acoes_imediatas", [])
     
-    # Dados do perfil
-    nome_negocio = profile.get("nome_negocio", profile.get("nome", ""))
-    segmento = profile.get("segmento", "")
-    localizacao = profile.get("localizacao", "")
+    # Dados do perfil (suporta perfil flat ou aninhado em 'profile')
+    _profile = profile.get("profile", profile) if isinstance(profile, dict) and "profile" in profile else profile
+    nome_negocio = _profile.get("nome_negocio", _profile.get("nome", profile.get("nome_negocio", profile.get("nome", ""))))
+    segmento = _profile.get("segmento", profile.get("segmento", ""))
+    localizacao = _profile.get("localizacao", profile.get("localizacao", ""))
     
     # Dados de mercado relevantes
     market_context = _extract_relevant_market_data(pillar_key, market_data)
@@ -138,6 +141,7 @@ def _prepare_rich_context(
         "diagnostico": justificativa,
         "meta_pilar": meta_pilar,
         "dado_chave": dado_chave,
+        "acoes_imediatas": acoes_imediatas,
         "negocio": {
             "nome": nome_negocio,
             "segmento": segmento,
@@ -163,18 +167,12 @@ def _generate_pillar_tasks_with_llm(
     if not specialist:
         raise ValueError(f"Specialist not found for pillar: {pillar_key}")
     
-    # Usar research_engine para pesquisa específica do pilar
-    # OTIMIZAÇÃO: Para melhor performance, usar apenas contexto existente
-    print(f"  ⚡ Using fast context-only generation for {pillar_key}", file=sys.stderr)
+    # Pesquisa específica do pilar via unified_research (com timeout seguro)
     research_content = ""
     research_sources = []
     
-    # Desabilitar pesquisa por enquanto para melhor performance
-    # TODO: Reativar quando o sistema estiver mais estável
-    """
     try:
         import threading
-        import time
         
         research_data = None
         research_error = None
@@ -196,33 +194,22 @@ def _generate_pillar_tasks_with_llm(
             except Exception as e:
                 research_error = e
         
-        # Executar pesquisa em thread com timeout
-        thread = threading.Thread(target=research_worker)
+        # Executar pesquisa em thread com timeout de 5s
+        thread = threading.Thread(target=research_worker, daemon=True)
         thread.start()
-        thread.join(timeout=3)  # 3 segundos de timeout
+        thread.join(timeout=5)
         
         if thread.is_alive():
-            print(f"  ⚠️ Research timeout for {pillar_key}, using fallback", file=sys.stderr)
-            research_content = ""
-            research_sources = []
+            print(f"  ⚠️ Research timeout for {pillar_key}, using context only", file=sys.stderr)
         elif research_error:
-            print(f"  ⚠️ Unified research failed for {pillar_key}: {research_error}, using fallback", file=sys.stderr)
-            research_content = ""
-            research_sources = []
+            print(f"  ⚠️ Unified research failed for {pillar_key}: {research_error}, using context only", file=sys.stderr)
         elif research_data:
-            # Extrair conteúdo da pesquisa
             research_content = research_data.get("content", "")
             research_sources = research_data.get("sources", [])
-            print(f"  📦 Used unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
-        else:
-            research_content = ""
-            research_sources = []
+            print(f"  📦 Unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
         
     except Exception as e:
-        print(f"  ⚠️ Research system error for {pillar_key}: {e}, using fallback", file=sys.stderr)
-        research_content = ""
-        research_sources = []
-    """
+        print(f"  ⚠️ Research system error for {pillar_key}: {e}, using context only", file=sys.stderr)
     
     # Construir prompt inteligente
     prompt = _build_context_aware_prompt(pillar_key, context, specialist, research_content)
@@ -234,15 +221,17 @@ def _generate_pillar_tasks_with_llm(
         temperature=0.4,
         json_mode=True
     )
-    
-    if not result.get("success"):
+
+    # call_llm with json_mode=True returns the parsed dict directly (not a wrapper)
+    if result is None:
+        raise Exception("LLM call failed: no response")
+    if isinstance(result, dict) and result.get("error") and not result.get("tarefas"):
         raise Exception(f"LLM call failed: {result.get('error')}")
-    
-    # Processar resposta
-    tasks_data = result.get("content", "{}")
-    
+
+    # result IS the parsed content
+    parsed = result if isinstance(result, dict) else {}
+
     try:
-        parsed = json.loads(tasks_data) if isinstance(tasks_data, str) else tasks_data
         tasks = parsed.get("tarefas", [])
         
         # Enriquecer tarefas com metadados
@@ -268,9 +257,8 @@ def _generate_pillar_tasks_with_llm(
         
         return enriched_tasks
         
-    except json.JSONDecodeError as e:
-        print(f"  ❌ Failed to parse LLM response: {e}", file=sys.stderr)
-        print(f"  📄 Raw response: {str(tasks_data)[:500]}...", file=sys.stderr)
+    except Exception as e:
+        print(f"  ❌ Failed to process LLM response: {e}", file=sys.stderr)
         
         # Fallback: criar tarefas básicas
         return _create_fallback_tasks(pillar_key, context)
@@ -283,74 +271,74 @@ def _build_context_aware_prompt(
     research_content: str = ""
 ) -> str:
     """Constrói prompt inteligente baseado no contexto."""
-    
-    prompt = f"""
-{specialist['persona']}
 
-## CONTEXTO ESPECÍFICO DO PILAR
+    negocio = context["negocio"]
+    loc_str = f", {negocio['localizacao']}" if negocio.get("localizacao") else ""
 
-### Diagnóstico Completo:
-- **Score**: {context['score']}/100
-- **Status**: {context['status']}
-- **Problema Identificado**: {context['diagnostico']}
-- **Meta do Pilar**: {context['meta_pilar']}
-- **Dado Chave**: {context['dado_chave']}
+    acoes_hint = ""
+    if context.get("acoes_imediatas"):
+        acoes_list = "\n".join(f"  - {a}" for a in context["acoes_imediatas"][:5])
+        acoes_hint = f"\n### Ações Prioritárias do Diagnóstico (use como base para as tarefas):\n{acoes_list}\n"
 
-### Dados do Negócio:
-- **Nome**: {context['negocio']['nome']}
-- **Segmento**: {context['negocio']['segmento']}
-- **Localização**: {context['negocio']['localizacao']}
+    research_section = ""
+    if research_content:
+        research_section = f"\n### Referências do Setor:\n{research_content[:500]}\n"
 
-### Contexto de Mercado:
-{context['market_data'].get('summary', 'Dados de mercado relevantes disponíveis')}
+    discovery_summary = context["discovery_data"].get("summary", "")
+    market_summary = context["market_data"].get("summary", "")
 
-### Dados de Discovery:
-{context['discovery_data'].get('summary', 'Dados reais do negócio disponíveis')}
+    prompt = f"""{specialist['persona']}
 
-### Pesquisa Específica do Pilar:
-{research_content if research_content else 'Nenhuma pesquisa específica disponível'}
+Você está criando um plano de execução CONCRETO para "{negocio['nome']}" — {negocio['segmento']}{loc_str}.
 
-## MISSÃO
+## DIAGNÓSTICO DO PILAR
 
-Baseado no diagnóstico específico acima, gere um plano de 3-7 tarefas ALTAMENTE RELEVANTES para resolver o problema detectado no pilar "{pillar_key}".
+- Score atual: {context['score']}/100 ({context['status']})
+- Problema central: {context['diagnostico']}
+- Meta do pilar: {context['meta_pilar']}
+- Dado chave: {context['dado_chave']}
+- Discovery: {discovery_summary}
+- Mercado: {market_summary}
+{acoes_hint}{research_section}
+## SUA MISSÃO
 
-## REGRAS CRÍTICAS
+Gere EXATAMENTE 5 tarefas para resolver o problema acima.
+TODAS as 5 tarefas DEVEM ter `executavel_por_ia: true` — a IA vai executar cada uma delas.
 
-1. **FOCO TOTAL**: Todas as tarefas devem estar 100% focadas em resolver: "{context['diagnostico']}"
-2. **CONTEXT-AWARE**: Use os dados específicos do negócio, mercado e discovery
-3. **PRAGMÁTICO**: Considere as restrições reais (segmento, localização, etc.)
-4. **EXECUTÁVEL**: Cada tarefa deve ser acionável e mensurável
-5. **HIERÁRQUICO**: Comece do mais básico para o mais avançado
+## REGRAS ABSOLUTAS
 
-## ESTRUTURA OBRIGATÓRIA
+1. `executavel_por_ia` deve ser SEMPRE `true` para todas as 5 tarefas
+2. `entregavel_ia` deve descrever o DOCUMENTO COMPLETO que a IA vai produzir (ex: "Relatório de análise de personas com perfis detalhados, dores identificadas e recomendações")
+3. As tarefas devem ser SEQUENCIAIS: diagnóstico → pesquisa → estratégia → implementação → monitoramento
+4. Use dados específicos do negócio: segmento "{negocio['segmento']}", problema "{context['diagnostico'][:80]}"
+5. NÃO gere tarefas que exijam presença física, ligações ou reuniões
 
-Retorne JSON:
+## TIPOS DE ENTREGÁVEIS POSSÍVEIS
+
+- Análise → "Relatório de [tema] com insights, dados levantados e recomendações práticas"
+- Pesquisa → "Documento de pesquisa com benchmarks do setor e referências de boas práticas"
+- Persona/Estratégia → "Documento estratégico com [conteúdo detalhado] e próximos passos"
+- Conteúdo → "[Tipo de conteúdo] completo e pronto para uso"
+- Auditoria → "Relatório de auditoria com pontos críticos priorizados e plano de correção"
+
+## FORMATO — retorne SOMENTE este JSON, sem markdown:
+
 {{
     "tarefas": [
         {{
-            "titulo": "Título específico e acionável",
-            "descricao": "Descrição detalhada do que fazer",
-            "executavel_por_ia": true/false,
-            "entregavel_ia": "Nome do entregável se aplicável",
-            "ferramenta": "Ferramenta necessária",
-            "tempo_estimado": "Ex: 2 semanas",
-            "impacto": "alto/medio/baixo",
-            "prazo": "Ex: 1 semana",
-            "custo": "Ex: R$ 0, R$ 50, R$ 100+"
+            "titulo": "Verbo + objeto específico (ex: 'Auditar presença digital atual')",
+            "descricao": "O que será feito em detalhes, citando o problema específico do diagnóstico",
+            "executavel_por_ia": true,
+            "entregavel_ia": "Descrição completa do documento que a IA vai entregar",
+            "ferramenta": "web_research | analysis | content_creation | strategy | audit",
+            "tempo_estimado": "X dias",
+            "impacto": "alto | medio | baixo",
+            "prazo": "X semana",
+            "custo": "R$ 0"
         }}
     ]
-}}
+}}"""
 
-## EXEMPLO DE QUALIDADE
-
-Se o diagnóstico for "Persona mal definida", as tarefas devem ser:
-1. "Pesquisar personas de referência no segmento"
-2. "Entrevistar clientes existentes"
-3. "Criar documento de persona detalhado"
-
-NÃO gere tarefas genéricas. Seja ESPECÍFICO para o contexto fornecido!
-"""
-    
     return prompt
 
 
@@ -477,6 +465,10 @@ def has_context_aware_tasks(analysis_id: str, pillar_key: str) -> bool:
     """Verifica se já existem tarefas context-aware geradas."""
     try:
         plan = db.get_pillar_plan(analysis_id, pillar_key)
-        return plan and plan.get("generation_method") == "context_aware"
+        return bool(
+            plan
+            and plan.get("plan_data", {}).get("generation_method") == "context_aware"
+            and plan.get("plan_data", {}).get("tarefas")
+        )
     except:
         return False

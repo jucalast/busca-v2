@@ -142,6 +142,8 @@ export default function PillarWorkspace({
     // ─── localStorage persistence ───
     const prevAnalysisIdRef = React.useRef<string | null | undefined>(undefined);
     const [isStorageLoaded, setIsStorageLoaded] = useState(false);
+    // Ref to track current analysisId for save effect — avoids stale writes when analysisId changes
+    const analysisIdForSaveRef = React.useRef<string | null>(analysisId);
 
     // Combined load / reset effect — uses ref to distinguish first mount from reanalysis
     useEffect(() => {
@@ -175,10 +177,14 @@ export default function PillarWorkspace({
             setError('');
             setIsStorageLoaded(true);
 
-            // Only clear localStorage for the previous analysis (avoid hydrating dados antigos)
+            // Clear old analysis localStorage AND pre-emptively clear new analysis localStorage
+            // to prevent stale save-effect writes from being restored on re-mount
             if (previousAnalysisId) {
                 localStorage.removeItem(`pillar_workspace_${previousAnalysisId}`);
             }
+            localStorage.removeItem(`pillar_workspace_${analysisId}`);
+            // Update save ref AFTER clearing so subsequent saves use new key with fresh state
+            analysisIdForSaveRef.current = analysisId;
         } else if (isFirstMount) {
             // On first mount, we will load from localStorage in the next effect
             // We don't want to reset states here because it might wipe what we just restored
@@ -223,9 +229,20 @@ export default function PillarWorkspace({
 
 
 
-    // Save state to localStorage on changes
+    // Keep analysisIdForSaveRef current so save effect always writes to correct key
+    // IMPORTANT: this must stay separate from the save effect deps to avoid stale writes
     useEffect(() => {
-        if (!analysisId) return;
+        analysisIdForSaveRef.current = analysisId;
+    }, [analysisId]);
+
+    // Save state to localStorage on changes
+    // NOTE: analysisId is intentionally NOT in deps — we use analysisIdForSaveRef instead.
+    // This prevents the effect from firing when analysisId changes (before pillarStates resets),
+    // which would write old pillarStates under the new analysis key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const currentId = analysisIdForSaveRef.current;
+        if (!currentId || !isStorageLoaded) return;
         // Don't save empty state (right after reset)
         const hasData = Object.keys(completedTasks).length > 0 ||
             Object.keys(taskDeliverables).length > 0 ||
@@ -237,7 +254,7 @@ export default function PillarWorkspace({
             for (const [k, v] of Object.entries(completedTasks)) {
                 ct[k] = Array.from(v);
             }
-            localStorage.setItem(`pillar_workspace_${analysisId}`, JSON.stringify({
+            localStorage.setItem(`pillar_workspace_${currentId}`, JSON.stringify({
                 completedTasks: ct,
                 taskDeliverables,
                 taskSubtasks,
@@ -249,7 +266,7 @@ export default function PillarWorkspace({
         } catch (e) {
             console.warn('Failed to save state:', e);
         }
-    }, [completedTasks, taskDeliverables, taskSubtasks, autoExecSubtasks, autoExecResults, autoExecStatuses, pillarStates, analysisId]);
+    }, [completedTasks, taskDeliverables, taskSubtasks, autoExecSubtasks, autoExecResults, autoExecStatuses, pillarStates, isStorageLoaded]);
 
     const dims = score?.dimensoes || {};
     const scoreGeral = score?.score_geral || 0;

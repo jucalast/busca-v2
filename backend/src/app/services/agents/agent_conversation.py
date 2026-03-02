@@ -81,13 +81,15 @@ def _extract_business_info(message: str, current_profile: dict) -> dict:
     
     log_debug(f"Extracting info: {message[:60]}...")
     
-    # Schema JSON para forçar estrutura correta
+    # Schema JSON para forçar estrutura correta (26 campos — inclui todos que o pipeline consome)
     json_schema = {
         "type": "object",
         "properties": {
             "nome_negocio": {"type": "string"},
             "segmento": {"type": "string"},
             "localizacao": {"type": "string"},
+            "modelo": {"type": "string"},
+            "tipo_produto": {"type": "string"},
             "faturamento": {"type": "string"},
             "equipe": {"type": "string"},
             "ticket_medio": {"type": "string"},
@@ -102,7 +104,13 @@ def _extract_business_info(message: str, current_profile: dict) -> dict:
             "gargalos": {"type": "string"},
             "site": {"type": "string"},
             "instagram": {"type": "string"},
-            "whatsapp": {"type": "string"}
+            "whatsapp": {"type": "string"},
+            "tempo_operacao": {"type": "string"},
+            "modelo_operacional": {"type": "string"},
+            "capital_disponivel": {"type": "string"},
+            "tempo_entrega": {"type": "string"},
+            "origem_clientes": {"type": "string"},
+            "maior_objecao": {"type": "string"}
         },
         "required": []
     }
@@ -123,12 +131,14 @@ Regras:
 
 Campos para extrair:
 - nome_negocio: Nome do negócio
-- segmento: Área de atuação
+- segmento: Área de atuação (ex: restaurante, advocacia, autopeças)
 - localizacao: Cidade/Estado
+- modelo: Modelo de negócio (B2B, B2C, D2C ou Misto)
+- tipo_produto: Tipo de oferta (produto, serviço ou ambos)
 - faturamento: Faturamento mensal
-- equipe: Número de pessoas
-- ticket_medio: Ticket médio
-- problemas: Problemas e desafios
+- equipe: Número de pessoas na equipe
+- ticket_medio: Ticket médio por venda/serviço
+- problemas: Problemas e desafios principais
 - objetivos: Objetivos e metas
 - investimento: Investimento em marketing
 - canais: Canais de venda/comunicação
@@ -137,9 +147,15 @@ Campos para extrair:
 - diferencial: Diferencial competitivo
 - margem: Margem de lucro
 - gargalos: Gargalos operacionais
-- site: Website
+- site: Website/URL
 - instagram: Instagram handle
 - whatsapp: WhatsApp
+- tempo_operacao: Há quanto tempo o negócio opera
+- modelo_operacional: Modelo operacional (estoque próprio, sob encomenda, dropshipping)
+- capital_disponivel: Capital disponível para investir
+- tempo_entrega: Prazo médio de entrega
+- origem_clientes: De onde vêm os clientes hoje
+- maior_objecao: Maior objeção dos clientes ao comprar
 
 Responda apenas com o JSON, sem texto adicional.
 """
@@ -169,6 +185,13 @@ Responda apenas com o JSON, sem texto adicional.
         for key, value in extracted.items():
             if value is not None and value != "":
                 updated_profile[key] = value
+        
+        # Normalize: create aliases so downstream consumers find fields by their expected names
+        for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
+                         ('equipe', 'num_funcionarios'), ('faturamento', 'faturamento_mensal'),
+                         ('modelo_operacional', 'operacao')]:
+            if updated_profile.get(src):
+                updated_profile[dst] = updated_profile[src]
         
         log_success(f"✅ JSON mode extracted: {len([k for k, v in extracted.items() if v is not None and v != ''])} fields")
         return updated_profile
@@ -243,163 +266,102 @@ Responda apenas com o JSON, sem texto adicional.
             updated_profile = current_profile.copy()
             for key, value in fallback_fields.items():
                 updated_profile[key] = value
+            # Same normalization as LLM path
+            for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
+                             ('equipe', 'num_funcionarios'), ('faturamento', 'faturamento_mensal'),
+                             ('modelo_operacional', 'operacao')]:
+                if updated_profile.get(src):
+                    updated_profile[dst] = updated_profile[src]
             return updated_profile
         
         return current_profile
 
 
-def _build_search_query(profile: dict) -> str:
-    """Build safe search query from profile data."""
-    
-    # Extrair apenas campos string seguros
-    safe_fields = {}
-    
-    # Lista de campos permitidos para busca
-    allowed_fields = [
-        'nome_negocio', 'segmento', 'localizacao', 'site', 
-        'instagram', 'linkedin_url', 'cidade', 'estado'
-    ]
-    
-    for field in allowed_fields:
-        value = profile.get(field, '')
-        if value and isinstance(value, str):
-            # Limpar valor: remover JSON, caracteres especiais
-            clean_value = value.strip()
-            
-            # Se parecer JSON (tem { ou "), ignorar
-            if '{' in clean_value or '"' in clean_value or clean_value.startswith('{'):
-                continue
-                
-            # Limitar tamanho
-            if len(clean_value) > 100:
-                clean_value = clean_value[:100]
-                
-            # Remover caracteres problemáticos para URL
-            clean_value = clean_value.replace('"', '').replace("'", '').replace('{', '').replace('}', '')
-            
-            if clean_value:
-                safe_fields[field] = clean_value
-    
-    # Montar query em ordem de importância
-    query_parts = []
-    
-    # Nome do negócio (mais importante)
-    if 'nome_negocio' in safe_fields:
-        query_parts.append(safe_fields['nome_negocio'])
-    
-    # Segmento
-    if 'segmento' in safe_fields:
-        query_parts.append(safe_fields['segmento'])
-    
-    # Localização
-    if 'localizacao' in safe_fields:
-        query_parts.append(safe_fields['localizacao'])
-    elif 'cidade' in safe_fields:
-        query_parts.append(safe_fields['cidade'])
-        if 'estado' in safe_fields:
-            query_parts.append(safe_fields['estado'])
-    
-    # Site (sem https://)
-    if 'site' in safe_fields:
-        site = safe_fields['site'].replace('https://', '').replace('http://', '').replace('www.', '')
-        if site and len(site) < 50:
-            query_parts.append(site)
-    
-    # Limitar a 3 termos para não sobrecarregar busca
-    return " ".join(query_parts[:3])
+# ═══════════════════════════════════════════════════════════════════
+# DISCOVERY GAPS — Quando o usuário não sabe algo, registra para a análise descobrir
+# ═══════════════════════════════════════════════════════════════════
 
-def _should_search(message: str, last_search_time: float) -> bool:
-    """Determine if we should search based on message content and time."""
-    
-    # Search triggers
-    search_triggers = [
-        "pesquisar", "buscar", "procurar", "encontrar", "descobrir",
-        "saber sobre", "conhecer", "informações", "dados", "estatísticas",
-        "mercado", "concorrência", "concorrentes", "tendências", "oportunidades",
-        "como funciona", "melhores práticas", "estratégias", "exemplos"
-    ]
-    
+_DONT_KNOW_SIGNALS = [
+    "não sei", "nao sei", "não conheço", "nao conheço", "não tenho certeza",
+    "não faço ideia", "nao faco ideia", "sei lá", "nem sei", "não lembro",
+    "nao lembro", "não conheço nenhum", "não sei dizer",
+]
+
+def _detect_discovery_gaps(message: str, current_profile: dict) -> list:
+    """Detect when user doesn't know something and mark it as a gap for analysis to discover."""
     message_lower = message.lower()
-    has_trigger = any(trigger in message_lower for trigger in search_triggers)
+    gaps = current_profile.get("_discovery_gaps", [])
     
-    # Time-based search (avoid too frequent searches)
-    time_since_search = time.time() - last_search_time
-    time_ok = time_since_search > CommonConfig.RATE_LIMIT_DELAY * 5  # 5 seconds between searches
+    # Check if user expressed not knowing something
+    if not any(signal in message_lower for signal in _DONT_KNOW_SIGNALS):
+        return gaps
     
-    return has_trigger and time_ok
-
-
-def _search_internet(query: str, business_context: dict) -> dict:
-    """Search internet for relevant information."""
-    
-    log_info(f"🔍 Searching: {query[:80]}...")  # Truncar query longa
-    
-    try:
-        # Use unified search (se disponível) ou fallback
-        from app.services.research.unified_research import research_engine
-        
-        # Tentar usar unified research
-        results = research_engine.search_discovery(
-            business_name=business_context.get("nome_negocio", ""),
-            segmento=business_context.get("segmento", ""),
-            localizacao=business_context.get("localizacao", ""),
-            force_refresh=False
-        )
-        
-        if results.get("found"):
-            log_success(f"Found {len(results.get('sources', []))} sources")
-            return {
-                "success": True,
-                "query": query,
-                "results": results.get("content", ""),
-                "sources": results.get("sources", [])
-            }
-        
-    except Exception as e:
-        log_warning(f"Unified research failed: {e}, using fallback")
-    
-    # Fallback: search_duckduckgo direto
-    try:
-        from app.services.search.search_service import search_duckduckgo
-        search_results = search_duckduckgo(query, max_results=3, region='br-pt')
-        
-        if search_results:
-            content = ""
-            sources = []
-            
-            for result in search_results[:2]:  # Limit to 2 results
-                title = result.get("title", "")
-                snippet = result.get("body", "")
-                url = result.get("href", "")
-                
-                content += f"Fonte: {title}\n{snippet}\n\n"
-                sources.append(url)
-            
-            log_success(f"Found {len(sources)} sources via fallback")
-            return {
-                "success": True,
-                "query": query,
-                "results": content.strip(),
-                "sources": sources
-            }
-        
-    except Exception as e:
-        log_error(f"Search failed: {e}")
-    
-    return {
-        "success": False,
-        "query": query,
-        "results": "",
-        "sources": []
+    # Map keywords to gap types that analysis can discover
+    gap_mappings = {
+        "concorrent": "concorrentes",
+        "mercado": "mercado_local",
+        "preço": "precificacao",
+        "preco": "precificacao",
+        "público": "publico_alvo",
+        "publico": "publico_alvo",
+        "cliente": "publico_alvo",
+        "tendência": "tendencias",
+        "tendencia": "tendencias",
     }
+    
+    for keyword, gap_type in gap_mappings.items():
+        if keyword in message_lower and gap_type not in gaps:
+            gaps.append(gap_type)
+    
+    # Generic gap if we couldn't identify a specific one
+    if not gaps and any(signal in message_lower for signal in _DONT_KNOW_SIGNALS):
+        if "geral" not in gaps:
+            gaps.append("geral")
+    
+    return gaps
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CAMPOS OBRIGATÓRIOS PARA ANÁLISE — "Lista de Compras" do Chat
+# ═══════════════════════════════════════════════════════════════════
+# Sem TODOS estes, a análise fica comprometida (persona errada, queries genéricas)
+CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos']
+
+# Precisa de pelo menos BONUS_MINIMUM destes para enriquecer a análise
+BONUS_FIELDS = ['ticket_medio', 'concorrentes', 'site', 'instagram', 'equipe', 'capital_disponivel']
+BONUS_MINIMUM = 2
+
+# Labels em português para injeção natural no prompt
+_FIELD_LABELS_PT = {
+    'nome_negocio': 'nome do negócio',
+    'segmento': 'segmento/área de atuação',
+    'modelo': 'modelo de negócio (B2B ou B2C)',
+    'localizacao': 'localização (cidade/estado)',
+    'dificuldades': 'principais dificuldades/desafios',
+    'objetivos': 'objetivos de crescimento',
+    'ticket_medio': 'ticket médio por venda',
+    'concorrentes': 'concorrentes conhecidos',
+    'site': 'site/website',
+    'instagram': 'perfil do Instagram',
+    'equipe': 'tamanho da equipe',
+    'capital_disponivel': 'capital disponível para investir',
+}
+
+
+def _compute_missing_fields(profile: dict) -> tuple:
+    """Compute which critical and bonus fields are still missing."""
+    filled = {k for k, v in profile.items() if v is not None and v != "" and v != []}
+    missing_critical = [f for f in CRITICAL_FIELDS if f not in filled]
+    missing_bonus = [f for f in BONUS_FIELDS if f not in filled]
+    bonus_collected = len(BONUS_FIELDS) - len(missing_bonus)
+    all_missing = missing_critical + (missing_bonus if bonus_collected < BONUS_MINIMUM else [])
+    return missing_critical, missing_bonus, bonus_collected, all_missing
 
 
 def chat_consultant(messages: list, user_message: str, extracted_profile: dict, last_search_time: float = 0) -> dict:
     """
     Main consultant function - handles conversation and searches.
-    
-    ANTES: 49 imports duplicados + logging manual
-    DEPOIS: Imports centralizados + logging padronizado
+    Tracks missing critical fields and guides conversation to collect them naturally.
     """
     
     log_info(f"Chat consultant processing: {user_message[:50]}...")
@@ -407,45 +369,115 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     # 1. Extract business information
     updated_profile = _extract_business_info(user_message, extracted_profile)
     
-    # 2. Determine if we should search
-    should_search = _should_search(user_message, last_search_time)
+    # 1.5. Track missing critical fields ("lista de compras")
+    missing_critical, missing_bonus, bonus_count, all_missing = _compute_missing_fields(updated_profile)
+    missing_labels = [_FIELD_LABELS_PT.get(f, f) for f in all_missing[:4]]  # Top 4
+    
+    if missing_critical:
+        log_info(f"📋 Campos críticos faltando: {missing_critical}")
+    if bonus_count < BONUS_MINIMUM:
+        log_info(f"📋 Campos bônus faltando ({bonus_count}/{BONUS_MINIMUM} mínimo): {missing_bonus}")
+    
+    # 2. Detect discovery gaps (when user says "não sei" about something)
+    discovery_gaps = _detect_discovery_gaps(user_message, updated_profile)
+    if discovery_gaps:
+        updated_profile["_discovery_gaps"] = discovery_gaps
+        log_info(f"📋 Gaps para análise descobrir: {discovery_gaps}")
+    
+    # NO web search in chat — all research happens in analysis phase
     search_result = None
     
-    if should_search:
-        # Build search query using safe builder
-        query = _build_search_query(updated_profile)
-        
-        if query:
-            log_info(f"🔍 Searching: {query}")
-            search_result = _search_internet(query, updated_profile)
-            last_search_time = time.time()
-        else:
-            log_warning("⚠️ No valid search terms found")
-            search_result = None
+    # 3. Generate response — with missing-field guidance & readiness awareness
     
-    # 3. Generate response
-    context = {
-        "user_message": user_message,
-        "profile": updated_profile,
-        "search_result": search_result,
-        "conversation_history": messages[-3:] if messages else []  # Last 3 messages
-    }
+    # ── Build a HUMAN-READABLE profile summary (not raw JSON dump) ──
+    profile_summary_lines = []
+    for key, label in _FIELD_LABELS_PT.items():
+        val = updated_profile.get(key)
+        if val and str(val).strip():
+            profile_summary_lines.append(f"• {label}: {val}")
+    profile_summary = "\n".join(profile_summary_lines) if profile_summary_lines else "(nenhum dado coletado ainda)"
     
-    prompt = f"""
-Você é um consultor de marketing especialista em pequenos negócios.
+    # ── Detect business model for adapted advice ──
+    modelo_raw = (updated_profile.get("modelo") or "").lower()
+    if "b2b" in modelo_raw:
+        modelo_contexto = "B2B (vende para empresas/indústrias). NÃO sugira estratégias de varejo, influenciadores, TikTok ou reels. Foque em prospecção ativa, LinkedIn, vendas consultivas, CRM, cold email, representantes."
+    elif any(kw in modelo_raw for kw in ("serviço", "servico", "consultoria", "agência", "agencia")):
+        modelo_contexto = "Prestação de serviços. Foque em autoridade, portfólio, indicações, Google Meu Negócio, networking."
+    else:
+        modelo_contexto = "B2C (vende para consumidor final). Foque em redes sociais, Instagram, WhatsApp, e-commerce, experiência do cliente."
+    
+    # ── Conversation history (just the text, not raw JSON) ──
+    history_lines = []
+    for m in (messages[-4:] if messages else []):
+        role_label = "Usuário" if m.get("role") == "user" else "Consultor"
+        content = m.get("content", "")[:300]
+        history_lines.append(f"{role_label}: {content}")
+    history_text = "\n".join(history_lines) if history_lines else "(primeira mensagem)"
+    
+    # ── Discovery gaps instruction ──
+    gaps_text = ""
+    if discovery_gaps:
+        gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}. Diga 'Não se preocupe, vamos descobrir isso automaticamente na análise.' NÃO tente pesquisar ou adivinhar.\n"
+    
+    # ── Readiness-aware instruction block ──
+    ready_now = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
+    
+    if ready_now:
+        # ALL fields collected → offer analysis, don't ask more questions
+        status_instruction = """
+ESTADO: ✅ TENHO TODAS AS INFORMAÇÕES NECESSÁRIAS.
 
-CONVERSA ATUAL:
-{safe_json_dumps(context, ensure_ascii=False)}
+INSTRUÇÃO OBRIGATÓRIA:
+- Faça um BREVE resumo (3-5 linhas) mostrando que entendeu o negócio, o problema e o objetivo.
+- Diga que está pronto para gerar a análise completa.
+- NÃO faça perguntas. NÃO peça mais dados. NÃO repita informações que o usuário já deu.
+- Se o usuário deu feedback ou correção, agradeça e incorpore.
+- Seja DIRETO e CURTO. Máximo 8 linhas.
+"""
+    elif missing_critical:
+        campos_str = ", ".join([_FIELD_LABELS_PT.get(f, f) for f in missing_critical])
+        status_instruction = f"""
+ESTADO: ⚠️ Faltam dados CRÍTICOS: {campos_str}
 
-REGRAS:
-1. Seja conversacional e amigável
-2. Use os resultados da busca para enriquecer sua resposta
-3. Ensine conceitos de marketing relevantes
-4. Extraia naturalmente mais informações sobre o negócio
-5. Sugira ações práticas e específicas
-6. Se não encontrar informações relevantes, diga honestamente
+INSTRUÇÃO:
+- Pergunte NATURALMENTE por 1-2 desses campos na conversa.
+- NÃO liste perguntas como formulário. Faça parecer conversa real.
+- Exemplo: "Vocês vendem mais para empresas ou consumidor final?" para descobrir modelo B2B/B2C.
+- Seja BREVE. Não repita o que o usuário já disse. Máximo 6-8 linhas.
+"""
+    else:
+        bonus_missing = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:2]]
+        campos_str = ", ".join(bonus_missing)
+        status_instruction = f"""
+ESTADO: Dados críticos OK. Faltam dados extras para uma análise melhor: {campos_str}
 
-Responda de forma natural, como um consultador real.
+INSTRUÇÃO:
+- Pergunte NATURALMENTE por 1 desses campos, OU ofereça gerar a análise com o que já tem.
+- Diga algo como "Posso gerar sua análise agora ou, se quiser, me conta [campo] para aprofundar ainda mais."
+- Seja BREVE. Máximo 6-8 linhas.
+"""
+    
+    prompt = f"""Você é um consultor de crescimento especialista em negócios brasileiros.
+
+MODELO DO NEGÓCIO: {modelo_contexto}
+
+O QUE JÁ SEI SOBRE O NEGÓCIO:
+{profile_summary}
+
+HISTÓRICO DA CONVERSA:
+{history_text}
+
+MENSAGEM ATUAL DO USUÁRIO:
+{user_message}
+{gaps_text}
+{status_instruction}
+REGRAS ABSOLUTAS:
+1. NUNCA repita de volta os dados que o usuário acabou de fornecer. Ele já sabe o que disse.
+2. NUNCA sugira estratégias incompatíveis com o modelo de negócio descrito acima.
+3. Seja DIRETO e PRÁTICO. Nada de textos longos "para começar...", "é interessante notar que...".
+4. Se o usuário corrigiu algo, agradeça brevemente e adapte.
+5. Use linguagem profissional mas acessível. Sem excesso de emojis.
+6. Máximo 10 linhas totais na resposta.
 """
     
     result = call_llm(
@@ -464,23 +496,25 @@ Responda de forma natural, como um consultador real.
     else:
         reply = result.get("content", "")
     
-    # 4. Determine if ready for analysis
+    # 4. Determine if ready for analysis — ALL critical fields + minimum bonus
     fields_collected = [k for k, v in updated_profile.items() if v is not None and v != ""]
-    ready_for_analysis = len(fields_collected) >= 5  # Need at least 5 fields
+    ready_for_analysis = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
     
     if ready_for_analysis:
-        log_success(f"Ready for analysis with {len(fields_collected)} fields")
-    
-    log_success(f"Consultant response completed")
+        log_success(f"✅ Ready for analysis — all critical fields + {bonus_count} bonus fields")
+    else:
+        log_info(f"⏳ Not ready: {len(missing_critical)} critical missing, {bonus_count}/{BONUS_MINIMUM} bonus")
     
     return {
         "reply": reply,
-        "search_performed": should_search and search_result.get("success", False),
-        "search_query": search_result.get("query") if search_result else None,
+        "search_performed": False,
+        "search_query": None,
         "extracted_profile": updated_profile,
         "ready_for_analysis": ready_for_analysis,
         "fields_collected": fields_collected,
-        "last_search_time": last_search_time
+        "fields_missing": all_missing,
+        "last_search_time": 0,
+        "discovery_gaps": discovery_gaps,
     }
 
 

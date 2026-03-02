@@ -520,8 +520,8 @@ NEGÓCIO: {nome} | {segmento} | {perfil.get('localizacao','?')} | Equipe: {_eq} 
 Canais: {perfil.get('canais_venda','?')} | Diferencial: {_dif_val} | Origem clientes: {_orig}
 Objeção: {_obj} | Cliente ideal: {_cli}{digital_presence_block}
 {restriction_text}{b2b_context}{chain_block}
-{discovery_text[:1500] if discovery_text.strip() else ""}
-MERCADO: {market_text[:1000] if market_text.strip() else "Sem dados."}
+{discovery_text[:3000] if discovery_text.strip() else ""}
+MERCADO: {market_text[:2000] if market_text.strip() else "Sem dados."}
 {dedup_block}
 
 {contexto_dinamico}
@@ -685,6 +685,17 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
     
     # Gerar contexto dinâmico baseado no perfil
     contexto_dinamico = get_dynamic_persona_context(profile)
+
+    # Sales Intelligence Brief — contexto orientado a "vender mais", gerado antes do scorer
+    sales_brief = profile.get("_sales_brief", "")
+    if sales_brief:
+        contexto_dinamico = (
+            "🎯 INTELIGÊNCIA DE VENDAS — use este contexto para orientar TODO o diagnóstico e ações:\n"
+            + sales_brief.strip()
+            + "\n\n"
+            + contexto_dinamico
+        )
+        print(f"  💡 Sales brief injetado: {len(sales_brief)} chars", file=sys.stderr)
     
     # Check for appropriate API key based on provider
     if model_provider == "gemini":

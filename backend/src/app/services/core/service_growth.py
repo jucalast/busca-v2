@@ -43,11 +43,37 @@ ACTIVE_BACKGROUND_TASKS = set()
 
 import json
 
+# Minimum fields the profiler MUST have for a useful analysis
+_PROFILE_REQUIRED = ['nome_negocio', 'segmento']
+# Critical fields — profiler can infer but results degrade significantly without them
+_PROFILE_CRITICAL_SOURCES = {
+    'modelo': ['modelo', 'modelo_negocio'],
+    'localizacao': ['localizacao', 'cidade_estado'],
+    'dificuldades': ['dificuldades', 'problemas'],
+}
+
+
 def do_profile(data: dict) -> dict:
     onboarding = data.get("onboardingData", {})
     
     # Debug: log do perfil recebido
     print(f"🔍 Service Growth - onboarding received:", json.dumps(onboarding, ensure_ascii=False, indent=2))
+    
+    # Validate minimum fields — profiler cannot produce useful results without these
+    perfil_sub = onboarding.get("perfil", {})
+    for field in _PROFILE_REQUIRED:
+        val = onboarding.get(field) or perfil_sub.get(field)
+        if not val:
+            return {
+                "success": False,
+                "erro": f"Campo obrigatório ausente: {field}. Converse mais com o consultor antes de gerar a análise."
+            }
+    
+    # Warn about critical fields but don't block (profiler can infer)
+    for label, sources in _PROFILE_CRITICAL_SOURCES.items():
+        found = any(onboarding.get(s) or perfil_sub.get(s) for s in sources)
+        if not found:
+            print(f"⚠️ Campo crítico ausente: {label} — profiler vai tentar inferir", file=sys.stderr)
     
     result = run_profiler(onboarding, model_provider=data.get("aiModel", "groq"))
     
@@ -463,11 +489,27 @@ def do_analyze(data: dict):
     
     def stream_generator():
         try:
+            # Helper to flatten nested profile payloads
+            def normalize_profile_struct(raw_profile):
+                if not isinstance(raw_profile, dict):
+                    return raw_profile or {}
+                profile_copy = dict(raw_profile)
+                nested_profile = profile_copy.get("profile")
+                if isinstance(nested_profile, dict):
+                    if isinstance(nested_profile.get("perfil"), dict):
+                        profile_copy.update(nested_profile["perfil"])
+                    if isinstance(nested_profile.get("_chat_context"), dict):
+                        profile_copy.update(nested_profile["_chat_context"])
+                    for key, value in nested_profile.items():
+                        if key not in profile_copy:
+                            profile_copy[key] = value
+                return profile_copy
+
             # Extract data no início
             user_id = data.get("user_id", "default_user")
             business_id = data.get("business_id")
             analysis_id = data.get("analysis_id")
-            profile = data.get("profile", {})
+            profile = normalize_profile_struct(data.get("profile", {}))
             model_provider = data.get("aiModel", "groq")
             region = data.get("region", "br-pt")
             
@@ -485,40 +527,41 @@ def do_analyze(data: dict):
             # Import Growth Orchestrator functions directly
             from app.services.analysis.analyzer_business_profiler import run_profiler, identify_dynamic_categories
             from app.services.analysis.analyzer_business_scorer import run_scorer
-            from app.services.analysis.analyzer_business_discovery import discover_business
+            from app.services.analysis.analyzer_business_discovery import discover_business, generate_sales_brief, extract_discovery_gaps
             from app.services.agents.engine_specialist import (
                 generate_business_brief, generate_pillar_plan,
                 get_all_pillars_state, SPECIALISTS,
             )
             from app.services.core.orchestrator_growth import run_market_search
             
-            # Extract data
-            user_id = data.get("user_id", "default_user")
-            business_id = data.get("business_id")
-            analysis_id = data.get("analysis_id")
-            profile = data.get("profile", {})
-            model_provider = data.get("aiModel", "groq")
-            region = data.get("region", "br-pt")
-            
-            # Handle nested profile structure
-            if isinstance(profile, dict) and "profile" in profile:
-                # Extract from nested structure
-                nested_profile = profile["profile"]
-                if "perfil" in nested_profile:
-                    # Merge perfil data to top level for discovery
-                    perfil_data = nested_profile["perfil"]
-                    profile.update(perfil_data)
-                
-                # Also merge _chat_context data
-                if "_chat_context" in nested_profile:
-                    chat_context = nested_profile["_chat_context"]
-                    profile.update(chat_context)
-                
-                # Also keep other nested data
-                for key, value in nested_profile.items():
-                    if key not in profile:
-                        profile[key] = value
-            
+            # Handle nested profile structure (already normalized for first run)
+
+            # Fallback: load enriched profile from previous analyses when IDs are missing
+            def _load_previous_profile(existing_analysis_id: str | None) -> None:
+                nonlocal profile, analysis_id
+                if not existing_analysis_id:
+                    return
+                try:
+                    previous_analysis = db.get_analysis(existing_analysis_id)
+                    if previous_analysis and previous_analysis.get("profile_data"):
+                        profile = normalize_profile_struct(previous_analysis["profile_data"])
+                        print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
+                except Exception as e:
+                    print(f"  ⚠️ Erro ao carregar perfil anterior ({existing_analysis_id}): {e}", file=sys.stderr)
+
+            # If analysis_id not provided but we have a business_id, reuse the latest analysis automatically
+            if not analysis_id and business_id:
+                try:
+                    latest_analysis = db.get_latest_analysis(business_id)
+                    if latest_analysis and latest_analysis.get("profile_data"):
+                        analysis_id = latest_analysis["id"]
+                        profile = normalize_profile_struct(latest_analysis["profile_data"])
+                        print(f"  ♻️ Perfil reutilizado do último analysis_id={analysis_id}", file=sys.stderr)
+                except Exception as e:
+                    print(f"  ⚠️ Não foi possível carregar a última análise do negócio {business_id}: {e}", file=sys.stderr)
+
+            _load_previous_profile(analysis_id)
+
             # Profile summary (otimizado)
             nome = profile.get('nome_negocio', profile.get('nome', 'N/A'))
             site = profile.get('site', profile.get('site_url', 'N/A'))
@@ -534,33 +577,36 @@ def do_analyze(data: dict):
             # Salvar nome no profile para uso posterior
             profile['_business_name'] = nome
             
-            # Load enriched profile if reanalyzing
-            if analysis_id:
-                try:
-                    previous_analysis = db.get_analysis(analysis_id)
-                    if previous_analysis and previous_analysis.get("profile_data"):
-                        profile = previous_analysis["profile_data"]
-                        print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
-                except Exception as e:
-                    print(f"  ⚠️ Erro ao carregar perfil anterior: {e}", file=sys.stderr)
-
             # Clear existing task data for reanalysis
             if analysis_id:
                 try:
-                    db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
-                    db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
-                    db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
-                    db.conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
-                    db.conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
-                    db.conn.commit()
-                except Exception:
-                    pass  # Erros de limpeza não devem bloquear
+                    conn = db.get_connection()
+                    conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
+                    conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
+                    conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
+                    conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
+                    conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"  ⚠️ Clear old data failed (non-blocking): {e}", file=sys.stderr)
 
             # Step 1: Business Discovery
             log_research("🔍 Executando discovery...")
             discovery_data = discover_business(profile, region, model_provider=model_provider)
             discovery_found = discovery_data.get("found", False)
             log_info(f"🌐 Discovery: {'dados encontrados' if discovery_found else 'sem dados específidos'}")
+
+            # Step 1.5: Extrair gaps do discovery para refinar queries de mercado
+            if discovery_found:
+                gap_queries = extract_discovery_gaps(discovery_data, profile)
+                if gap_queries:
+                    existing_queries = profile.get("queries_sugeridas", {})
+                    for cat_id, gap_query in gap_queries.items():
+                        # gap_query is more specific (from discovery findings), so use it directly
+                        existing_queries[cat_id] = gap_query.strip()[:150]
+                    profile["queries_sugeridas"] = existing_queries
+                    log_info(f"💡 {len(gap_queries)} queries refinadas pelo discovery: {list(gap_queries.keys())}")
 
             # Step 2: Market search
             try:
@@ -575,6 +621,15 @@ def do_analyze(data: dict):
             market_data = run_market_search(profile, region, model_provider="groq")  # Vai usar prefer_small=True internamente
             mkt_cats = market_data.get('categories', [])
             log_info(f"📊 Mercado: {len(mkt_cats)} categorias pesquisadas")
+
+            # Step 2.5: Sales Intelligence Brief — sintetiza pesquisa em contexto orientado a vendas
+            log_info("🧠 Gerando brief de inteligência de vendas...")
+            sales_brief = generate_sales_brief(profile, discovery_data, market_data, model_provider)
+            if sales_brief:
+                profile["_sales_brief"] = sales_brief
+                log_success(f"💡 Brief gerado: {len(sales_brief)} chars")
+            else:
+                log_warning("⚠️ Brief de vendas vazio — scorer usará contexto padrão")
 
             # Step 3: Scoring otimizado - Usa modelo pesado só para estratégia
             log_info("📈 Calculando scores...")
@@ -638,27 +693,32 @@ def do_analyze(data: dict):
                 log_warning(f"⚠️ Erro ao salvar negócio: {e}")
             
             # Save analysis data
-            db.create_analysis(
+            analysis_record = db.create_analysis(
                 business_id=business_id,
                 score_data=score_data,
                 task_data=task_plan,
                 market_data=market_data,
-                profile_data=profile
+                profile_data=profile,
+                discovery_data=None
             )
+            analysis_id = analysis_record.get("id", analysis_id)
             
             # Save pillar diagnostics
             if score_data and score_data.get("dimensoes"):
                 for pillar_key, pillar_data in score_data["dimensoes"].items():
-                    diagnostic_data = {
-                        "score": pillar_data.get("score", 0),
-                        "status": pillar_data.get("status", "unknown"),
-                        "justificativa": pillar_data.get("justificativa", ""),
-                        "meta_pilar": pillar_data.get("meta_pilar", ""),
-                        "acoes_imediatas": pillar_data.get("acoes_imediatas", []),
-                        "fontes_utilizadas": pillar_data.get("fontes_utilizadas", []),
-                        "dado_chave": pillar_data.get("dado_chave", "")
-                    }
-                    db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic_data)
+                    try:
+                        diagnostic_data = {
+                            "score": pillar_data.get("score", 0),
+                            "status": pillar_data.get("status", "unknown"),
+                            "justificativa": pillar_data.get("justificativa", ""),
+                            "meta_pilar": pillar_data.get("meta_pilar", ""),
+                            "acoes_imediatas": pillar_data.get("acoes_imediatas", []),
+                            "fontes_utilizadas": pillar_data.get("fontes_utilizadas", []),
+                            "dado_chave": pillar_data.get("dado_chave", "")
+                        }
+                        db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic_data)
+                    except Exception as e:
+                        print(f"  ⚠️ Falha ao salvar diagnóstico de {pillar_key}: {e}", file=sys.stderr)
             
             log_success(f"✅ Análise concluída: {analysis_id}")
 

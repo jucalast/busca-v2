@@ -82,6 +82,7 @@ def init_db():
             task_data TEXT NOT NULL,
             market_data TEXT NOT NULL,
             profile_data TEXT,
+            discovery_data TEXT,
             score_geral INTEGER,
             classificacao TEXT,
             created_at TEXT NOT NULL,
@@ -841,6 +842,7 @@ def hard_delete_business(business_id: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════
 
 _analysis_profile_column_checked = False
+_analysis_discovery_column_checked = False
 
 
 def ensure_analysis_profile_column(cursor):
@@ -855,7 +857,19 @@ def ensure_analysis_profile_column(cursor):
     _analysis_profile_column_checked = True
 
 
-def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_data: Dict, profile_data: Optional[Dict] = None) -> Dict:
+def ensure_analysis_discovery_column(cursor):
+    global _analysis_discovery_column_checked
+    if _analysis_discovery_column_checked:
+        return
+
+    cursor.execute("PRAGMA table_info(analyses)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if 'discovery_data' not in columns:
+        cursor.execute("ALTER TABLE analyses ADD COLUMN discovery_data TEXT")
+    _analysis_discovery_column_checked = True
+
+
+def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_data: Dict, profile_data: Optional[Dict] = None, discovery_data: Optional[Dict] = None) -> Dict:
     """Create a new analysis result."""
     import uuid
     
@@ -869,10 +883,11 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
     classificacao = score_data.get("classificacao", "")
     
     ensure_analysis_profile_column(cursor)
+    ensure_analysis_discovery_column(cursor)
 
     cursor.execute('''
-        INSERT INTO analyses (id, business_id, score_data, task_data, market_data, profile_data, score_geral, classificacao, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO analyses (id, business_id, score_data, task_data, market_data, profile_data, discovery_data, score_geral, classificacao, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         analysis_id, 
         business_id, 
@@ -880,6 +895,7 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
         json.dumps(task_data, ensure_ascii=False),
         json.dumps(market_data, ensure_ascii=False),
         json.dumps(profile_data, ensure_ascii=False) if profile_data else None,
+        json.dumps(discovery_data, ensure_ascii=False) if discovery_data else None,
         score_geral,
         classificacao,
         now
@@ -924,6 +940,8 @@ def get_latest_analysis(business_id: str) -> Optional[Dict]:
         "score_data": json.loads(row["score_data"]),
         "task_data": json.loads(row["task_data"]),
         "market_data": json.loads(row["market_data"]),
+        "profile_data": json.loads(row["profile_data"]) if row["profile_data"] else None,
+        "discovery_data": json.loads(row["discovery_data"]) if row["discovery_data"] else None,
         "score_geral": row["score_geral"],
         "classificacao": row["classificacao"],
         "created_at": row["created_at"]
@@ -976,6 +994,7 @@ def get_analysis(analysis_id: str) -> Optional[Dict]:
         "task_data": json.loads(row["task_data"]),
         "market_data": json.loads(row["market_data"]),
         "profile_data": json.loads(row["profile_data"]) if row["profile_data"] else None,
+        "discovery_data": json.loads(row["discovery_data"]) if row["discovery_data"] else None,
         "score_geral": row["score_geral"],
         "classificacao": row["classificacao"],
         "created_at": row["created_at"]

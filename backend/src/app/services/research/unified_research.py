@@ -269,12 +269,11 @@ class UnifiedResearchEngine:
                 log_cache(f"📦 Cache: {business_name[:30]}...")
                 return cached
         
-        # Queries específicas para discovery
+        # Queries específicas para discovery (sem Instagram/LinkedIn — não retornam dados sem API)
         queries = [
             f"{business_name} {segmento} site oficial",
-            f"{business_name} instagram perfil",
             f"{business_name} google maps {localizacao}",
-            f"{business_name} reviews clientes"
+            f"{business_name} reviews clientes avaliações"
         ]
         
         print(f"  🔍 Discovery research: {business_name}", file=sys.stderr)

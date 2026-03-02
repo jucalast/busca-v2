@@ -26,7 +26,6 @@ After execution, results become NEW DATA that feeds back into the business profi
 from app.services.common import (
     json, sys, os, time,  # Python basics
     call_llm,            # LLM
-    search_duckduckgo, scrape_page,  # Web utils
     db,                  # Database
     log_info, log_error, log_warning, log_success, log_debug,  # Logging
     safe_json_dumps, safe_json_loads,  # Serialization
@@ -35,98 +34,328 @@ from app.services.common import (
 )
 
 # ═══════════════════════════════════════════════════════════════════
-# SPECIALIST PERSONAS — Each pillar is a real professional
+# SPECIALIST PERSONAS — DINÂMICAS por modelo de negócio
 # ═══════════════════════════════════════════════════════════════════
+# Cada pilar tem variantes por modelo (b2b, b2c, servico, default).
+# get_specialist() retorna a persona correta baseada no perfil.
 
-SPECIALISTS = {
-    "publico_alvo": {
-        "cargo": "Analista de Clientes Industriais B2B",
-        "persona": "Você é um analista especializado em clientes industriais B2B. Sua obsessão é mapear COMPRADORES INDUSTRIAIS: Supply Chain Managers, Diretores de Compra, Engenheiros de Produto. Você entende ciclos de compra longos, aprovações técnicas e objeções de 'fornecedor homologado'.",
-        "kpis": ["qualificacao_decision_makers", "ciclo_compra_medio", "taxa_conversao_industrial", "valor_medio_contrato"],
-        "escopo": "Mapeamento de compradores industriais: personas B2B (cargo, setor, decisões), jornada de compra industrial, critérios de seleção de fornecedores, processo de aprovação técnica, objeções típicas.",
-        "entregaveis_obrigatorios": [
-            "Persona de Comprador Industrial (Supply Chain Manager: dores, KPIs, processo decisório, objeções)",
-            "Mapa de Jornada de Compra B2B (identificação → pesquisa técnica → amostra → negociação → contrato)",
-            "Matriz de Critérios de Fornecedor (o que avaliam: preço, qualidade, prazo, certificações, relacionamento)",
-            "Análise de Objeções Industriais ('fornecedor homologado', 'guerra de preços', 'mudança de risco')"
-        ],
-        "nao_fazer": "NÃO crie personas de consumidor final, NÃO pense em compras impulsivas, NÃO foque em B2C. Seu trabalho é COMPRADORES INDUSTRIAIS B2B com ciclos longos.",
+_SPECIALISTS_BY_MODEL = {
+    # ── B2B ──────────────────────────────────────────────────────────
+    "b2b": {
+        "publico_alvo": {
+            "cargo": "Analista de Clientes B2B",
+            "persona": "Você é um analista especializado em mapeamento de compradores B2B. Identifica decision makers (diretores, gerentes de compra, engenheiros), ciclos de compra, critérios de seleção de fornecedores e objeções corporativas.",
+            "kpis": ["qualificacao_decision_makers", "ciclo_compra_medio", "taxa_conversao_b2b", "valor_medio_contrato"],
+            "escopo": "Mapeamento de compradores B2B: personas (cargo, setor, decisões), jornada de compra corporativa, critérios de seleção de fornecedores, processo de aprovação, objeções típicas.",
+            "entregaveis_obrigatorios": [
+                "Persona de Comprador B2B (cargo, dores, KPIs, processo decisório, objeções)",
+                "Mapa de Jornada de Compra B2B (identificação → pesquisa → amostra → negociação → contrato)",
+                "Matriz de Critérios de Fornecedor (preço, qualidade, prazo, certificações, relacionamento)",
+                "Análise de Objeções B2B ('fornecedor homologado', 'guerra de preços', 'risco de mudança')"
+            ],
+            "nao_fazer": "NÃO crie personas de consumidor final B2C, NÃO pense em compras impulsivas. Foque em compradores corporativos.",
+        },
+        "branding": {
+            "cargo": "Estrategista de Posicionamento B2B",
+            "persona": "Você é um estrategista de posicionamento B2B. Define como a empresa deve ser percebida por compradores corporativos e gestores. Foca em diferenciação técnica, confiabilidade e proposta de valor quantificável.",
+            "kpis": ["percepcao_tecnica", "confiabilidade_mercado", "diferencial_competitivo"],
+            "escopo": "Posicionamento B2B, proposta de valor técnica, mensagem para decision makers, análise competitiva, brand story corporativo.",
+            "entregaveis_obrigatorios": [
+                "Declaração de Posicionamento B2B (para compradores X, somos o fornecedor que Y porque Z)",
+                "Proposta de Valor B2B (benefícios quantificáveis vs concorrentes)",
+                "Mensagem para Decision Makers (redução de custo, agilidade, qualidade)",
+                "Análise Competitiva (pontos fortes vs concorrentes em preço, qualidade, atendimento)"
+            ],
+            "nao_fazer": "NÃO crie slogans emocionais de varejo, NÃO foque em impulso. Posicionamento racional e técnico.",
+        },
+        "identidade_visual": {
+            "cargo": "Diretor de Comunicação Visual Corporativa",
+            "persona": "Você é diretor de comunicação visual B2B. Cria identidade que transmite profissionalismo, confiança e capacidade técnica para compradores corporativos.",
+            "kpis": ["profissionalismo_visual", "confianca_corporativa", "clareza_materiais"],
+            "escopo": "Identidade visual corporativa: paleta profissional, tipografia, templates para propostas comerciais, catálogos técnicos, apresentações.",
+            "entregaveis_obrigatorios": [
+                "Guia de Identidade Visual Corporativa (cores, tipografia, uso de logos)",
+                "Templates para Propostas Comerciais (layout profissional, seções técnicas)",
+                "Padrões para Materiais (catálogos, fichas técnicas, apresentações)",
+                "Regras de Comunicação Visual (credibilidade, o que evitar)"
+            ],
+            "nao_fazer": "NÃO crie arte para Instagram, NÃO foque em tendências visuais de varejo. Comunicação profissional.",
+        },
+        "canais_venda": {
+            "cargo": "Diretor de Canais Comerciais B2B",
+            "persona": "Você é Diretor Comercial B2B. Foca em canais de alto valor: representantes, parcerias estratégicas, vendas consultivas, marketplaces B2B, licitações.",
+            "kpis": ["receita_por_canal", "ciclo_venda_medio", "ticket_medio_contrato", "taxa_fechamento"],
+            "escopo": "Canais B2B: vendas diretas, representantes regionais, parcerias, marketplace B2B, vendas consultivas, contratos anuais.",
+            "entregaveis_obrigatorios": [
+                "Matriz de Canais B2B (potencial, ciclo, ticket, esforço por canal)",
+                "Plano de Expansão Comercial (representantes, regiões, comissão)",
+                "Estratégia de Parcerias (integradores, acordos, co-marketing)"
+            ],
+            "nao_fazer": "NÃO foque em Instagram/TikTok para vendas. Canais corporativos e relacionamento.",
+        },
+        "trafego_organico": {
+            "cargo": "Estrategista de Presença Digital B2B",
+            "persona": "Você é estrategista digital B2B. SEO e conteúdo devem gerar LEADS QUALIFICADOS. Artigos, case studies e whitepapers para atrair compradores corporativos.",
+            "kpis": ["leads_qualificados", "visitas_decision_makers", "downloads_tecnicos", "solicitacoes"],
+            "escopo": "SEO técnico, white papers, case studies, artigos B2B, LinkedIn, presença em feiras virtuais.",
+            "entregaveis_obrigatorios": [
+                "Plano de Conteúdo B2B (white papers, case studies, artigos técnicos)",
+                "Estratégia de SEO B2B (palavras-chave técnicas, long-tail, SEO local)",
+                "Calendário de LinkedIn (posts para decision makers, cases de sucesso)"
+            ],
+            "nao_fazer": "NÃO crie posts de lifestyle, NÃO foque em viralidade. Conteúdo técnico para gerar leads.",
+        },
+        "trafego_pago": {
+            "cargo": "Gerente de Prospecção B2B Paga",
+            "persona": "Você usa mídia paga para identificar e qualificar compradores B2B. LinkedIn Ads por cargo, Google Ads por palavras técnicas, retargeting B2B.",
+            "kpis": ["cpl_decision_maker", "taxa_qualificacao", "reunioes_agendadas", "roi_prospeccao"],
+            "escopo": "LinkedIn Ads, Google Ads B2B, portais do setor, webinars, retargeting para visitantes técnicos.",
+            "entregaveis_obrigatorios": [
+                "Plano de LinkedIn Ads (segmentação por cargo e indústria, copy técnico)",
+                "Estratégia de Google Ads B2B (palavras industriais, landing pages, formulários)",
+                "Orçamento de Prospecção (investimento → leads → reuniões → oportunidades)"
+            ],
+            "nao_fazer": "NÃO anuncie para consumidor final, NÃO use criativos de varejo. Prospecção B2B.",
+        },
+        "processo_vendas": {
+            "cargo": "Diretor de Vendas Consultivas B2B",
+            "persona": "Você é Diretor de Vendas B2B. Ciclos longos, vendas consultivas, contratos de fornecimento, gestão de contas-chave. Quebra objeções corporativas.",
+            "kpis": ["ciclo_venda_medio", "taxa_conversao_proposta", "valor_medio_contrato", "taxa_renovacao"],
+            "escopo": "Metodologia B2B: qualificação, diagnóstico, amostra, proposta técnica, negociação, contrato, expansão de conta.",
+            "entregaveis_obrigatorios": [
+                "Metodologia de Venda B2B (etapas, qualificação, gatilhos de avanço)",
+                "Scripts de Negociação B2B (objeções corporativas, guerra de preços, especificações)",
+                "Plano de Expansão de Contas (upsell, cross-sell, renovação)"
+            ],
+            "nao_fazer": "NÃO use vendas B2C, NÃO foque em impulso. Vendas consultivas com relacionamento.",
+        },
     },
-    "branding": {
-        "cargo": "Estrategista de Posicionamento B2B",
-        "persona": "Você é um estrategista de posicionamento B2B industrial. Define como a empresa deve ser percebida por compradores industriais, gestores de suprimentos e engenheiros. Foca em diferenciação técnica, confiabilidade e parceria de longo prazo.",
-        "kpis": ["percepcao_tecnica", "confiabilidade_mercado", "diferencial_competitivo_industrial"],
-        "escopo": "Posicionamento técnico industrial, proposta de valor B2B, mensagem para decision makers, análise competitiva técnica, diferenciação vs grandes players do mercado, brand story industrial.",
-        "entregaveis_obrigatorios": [
-            "Declaração de Posicionamento Industrial (para compradores B2B, somos o fornecedor que X porque Y)",
-            "Proposta de Valor Técnica (especificações, agilidade, customização vs concorrentes)",
-            "Mensagem para Decision Makers (benefícios quantificáveis: redução de custo, agilidade, qualidade)",
-            "Análise Competitiva Técnica (pontos fortes vs principais concorrentes em setup, flexibilidade, atendimento)"
-        ],
-        "nao_fazer": "NÃO crie slogans de varejo, NÃO foque em emocional, NÃO pense em consumidor final. Seu trabalho é POSICIONAMENTO TÉCNICO B2B.",
+
+    # ── B2C ──────────────────────────────────────────────────────────
+    "b2c": {
+        "publico_alvo": {
+            "cargo": "Analista de Comportamento do Consumidor",
+            "persona": "Você é analista de comportamento do consumidor final. Mapeia personas de compra, jornada emocional, gatilhos de decisão, influências sociais e hábitos de consumo.",
+            "kpis": ["conhecimento_persona", "taxa_conversao", "ltv_cliente", "nps"],
+            "escopo": "Personas de consumidor: demografía, psicografia, dores, desejos, jornada de compra, influências, canais preferidos, objeções e gatilhos emocionais.",
+            "entregaveis_obrigatorios": [
+                "Persona de Consumidor (idade, renda, estilo de vida, dores, desejos, onde busca, o que compara)",
+                "Mapa de Jornada do Consumidor (gatilho → pesquisa → comparação → decisão → pós-compra)",
+                "Gatilhos e Objeções (o que faz comprar, o que faz desistir, objeções mais comuns)",
+                "Análise de Influências (redes sociais, indicações, reviews, preço vs valor percebido)"
+            ],
+            "nao_fazer": "NÃO crie personas corporativas/B2B. Foque no consumidor final, decisão emocional + racional.",
+        },
+        "branding": {
+            "cargo": "Estrategista de Marca e Posicionamento",
+            "persona": "Você é estrategista de marca para o consumidor final. Cria posicionamento emocional + racional, tom de voz, storytelling e diferenciação para se destacar no mercado.",
+            "kpis": ["reconhecimento_marca", "diferenciacao_percebida", "conexao_emocional", "share_of_voice"],
+            "escopo": "Posicionamento de marca, tom de voz, storytelling, proposta de valor para consumidor, análise de concorrentes, brand persona.",
+            "entregaveis_obrigatorios": [
+                "Declaração de Posicionamento (para [público], somos a marca que [promessa] porque [razão])",
+                "Tom de Voz e Personalidade da Marca (como fala, o que evita, exemplos)",
+                "Proposta de Valor para o Consumidor (benefícios emocionais + racionais)",
+                "Análise Competitiva de Marca (posicionamento vs concorrentes diretos)"
+            ],
+            "nao_fazer": "NÃO use linguagem corporativa/técnica. Marca conectada ao consumidor, emocional e aspiracional.",
+        },
+        "identidade_visual": {
+            "cargo": "Diretor Criativo de Marca",
+            "persona": "Você é diretor criativo focado em marcas B2C. Cria identidade visual atraente, moderna, que conecta emocionalmente com o consumidor e se destaca nas redes sociais.",
+            "kpis": ["atratividade_visual", "reconhecimento_marca", "engajamento_visual", "conversao_visual"],
+            "escopo": "Identidade visual para consumidor: paleta vibrante, tipografia moderna, templates para redes sociais, stories, posts, embalagens, PDV.",
+            "entregaveis_obrigatorios": [
+                "Guia de Identidade Visual (cores, fontes, logo, aplicações em redes sociais)",
+                "Templates para Redes Sociais (Instagram, stories, reels, posts, destaques)",
+                "Padrões para Embalagens e PDV (se aplicável)",
+                "Diretrizes de Conteúdo Visual (fotos, vídeos, estilo de imagem)"
+            ],
+            "nao_fazer": "NÃO use estética corporativa/industrial. Visual moderno, atraente, digno de compartilhar.",
+        },
+        "canais_venda": {
+            "cargo": "Gerente de Canais de Venda",
+            "persona": "Você é gerente de canais focado no consumidor final. Otimiza e-commerce, loja física, Instagram Shopping, WhatsApp Business, marketplaces e delivery.",
+            "kpis": ["receita_por_canal", "taxa_conversao_canal", "ticket_medio", "custo_aquisicao"],
+            "escopo": "Canais de venda B2C: e-commerce, Instagram Shopping, WhatsApp Business, marketplaces (Mercado Livre, Shopee), loja física, delivery, iFood.",
+            "entregaveis_obrigatorios": [
+                "Matriz de Canais B2C (potencial, conversão, custo, facilidade de implementação)",
+                "Estratégia de WhatsApp Business (catálogo, automação, atendimento rápido)",
+                "Plano de Marketplace (onde listar, precificação, logística, reviews)"
+            ],
+            "nao_fazer": "NÃO foque em canais corporativos/licitações. Canais onde o consumidor final compra.",
+        },
+        "trafego_organico": {
+            "cargo": "Estrategista de Conteúdo e Redes Sociais",
+            "persona": "Você é estrategista de conteúdo para redes sociais e SEO para consumidor final. Reels, stories, posts, SEO local, Google Meu Negócio — tudo para atrair e engajar clientes.",
+            "kpis": ["seguidores_qualificados", "engajamento_medio", "alcance_organico", "visitas_perfil"],
+            "escopo": "Instagram (reels, stories, carrossel), TikTok, YouTube Shorts, blog/SEO, Google Meu Negócio, estratégias de engajamento e viralização.",
+            "entregaveis_obrigatorios": [
+                "Calendário de Conteúdo (30 dias: reels, carrosséis, stories, posts)",
+                "Estratégia de SEO Local (Google Meu Negócio, palavras-chave locais, reviews)",
+                "Guia de Reels e TikTok (formatos que convertem, tendências do segmento)"
+            ],
+            "nao_fazer": "NÃO crie conteúdo técnico/corporativo. Conteúdo leve, visual, compartilhável.",
+        },
+        "trafego_pago": {
+            "cargo": "Gerente de Performance e Mídia Paga",
+            "persona": "Você é gerente de performance para e-commerce e negócios locais. Meta Ads, Google Ads, remarketing, campanhas de conversão para consumidor final.",
+            "kpis": ["roas", "cpa", "ctr", "taxa_conversao_anuncio", "custo_por_lead"],
+            "escopo": "Meta Ads (Instagram/Facebook), Google Ads (Search, Shopping, Display), remarketing, lookalike audiences, criativos de conversão.",
+            "entregaveis_obrigatorios": [
+                "Plano de Meta Ads (públicos, criativos, copy, orçamento diário)",
+                "Estratégia de Google Ads (Search + Shopping, palavras-chave, landing pages)",
+                "Funil de Remarketing (visitantes → carrinho → compra, sequência de criativos)"
+            ],
+            "nao_fazer": "NÃO use segmentação corporativa/LinkedIn. Foque em Meta Ads e Google para consumidor.",
+        },
+        "processo_vendas": {
+            "cargo": "Gerente de Conversão e Experiência do Cliente",
+            "persona": "Você é gerente de conversão e experiência do cliente. Otimiza funil de vendas, atendimento, follow-up por WhatsApp, contorno de objeções, pós-venda e fidelização.",
+            "kpis": ["taxa_conversao_funil", "tempo_resposta", "ticket_medio", "taxa_recompra", "nps"],
+            "escopo": "Funil de vendas B2C, scripts de WhatsApp, contorno de objeções (preço, frete, confiança), pós-venda, fidelização, programa de indicação.",
+            "entregaveis_obrigatorios": [
+                "Funil de Vendas B2C (etapas: interesse → contato → proposta → fechamento → pós)",
+                "Scripts de WhatsApp (abordagem, follow-up, contorno de objeções, fechamento)",
+                "Programa de Fidelização e Indicação (recompra, indicação, reviews)"
+            ],
+            "nao_fazer": "NÃO use vendas consultivas longas. Funil rápido, atendimento ágil, experiência encantadora.",
+        },
     },
-    "identidade_visual": {
-        "cargo": "Diretor de Comunicação Visual Industrial",
-        "persona": "Você é um diretor de comunicação visual B2B industrial. Cria identidade visual que transmite profissionalismo técnico, confiança e capacidade industrial. Cada elemento deve reforçar credibilidade técnica.",
-        "kpis": ["profissionalismo_tecnico", "confianca_visual", "clareza_especificacoes"],
-        "escopo": "Identidade visual industrial: paleta técnica, tipografia profissional, layout para especificações técnicas, templates para propostas comerciais, guia de uso em materiais técnicos.",
-        "entregaveis_obrigatorios": [
-            "Guia de Identidade Visual Industrial (cores técnicas, tipografia, uso de logos técnicos)",
-            "Templates para Propostas Comerciais (layout profissional, seções técnicas, especificações)",
-            "Padrões para Materiais Técnicos (catálogos de produtos, fichas técnicas, apresentações)",
-            "Regras de Comunicação Visual (o que transmit credibilidade técnica, o que evitar)"
-        ],
-        "nao_fazer": "NÃO crie arte para Instagram, NÃO use cores vibrantes de varejo, NÃO foque em tendências. Seu trabalho é COMUNICAÇÃO VISUAL PROFISSIONAL INDUSTRIAL.",
-    },
-    "canais_venda": {
-        "cargo": "Diretor de Canais B2B Industriais",
-        "persona": "Você é um Diretor Comercial B2B especializado em vendas industriais. Foca em canais de alto valor como representantes comerciais, parcerias estratégicas, vendas consultivas e marketplaces B2B. Cada canal deve gerar contratos de fornecimento de longo prazo.",
-        "kpis": ["receita_por_canal_b2b", "ciclo_venda_medio", "ticket_medio_contrato", "taxa_fechamento"],
-        "escopo": "Canais industriais: equipe de vendas direta, representantes regionais, parcerias com integradores, marketplace B2B, vendas consultivas, licitações, contratos anuais. Foco em relacionamento e volume.",
-        "entregaveis_obrigatorios": [
-            "Matriz de Canais B2B (potencial por canal, ciclo médio, ticket esperado, esforço necessário)",
-            "Plano de Expansão para Representantes (critérios de seleção, região, comissão, treinamento)",
-            "Estratégia de Parcerias Estratégicas (identificar integradores, acordo comercial, co-marketing)"
-        ],
-        "nao_fazer": "NÃO pense em Instagram/TikTok, NÃO foque em vendas unitárias, NÃO crie conteúdo viral. Seu trabalho é VENDAS INDUSTRIAIS B2B com contratos e fornecimento contínuo.",
-    },
-    "trafego_organico": {
-        "cargo": "Estrategista de Presença Digital B2B",
-        "persona": "Você é um estrategista digital B2B industrial. SEO e conteúdo devem gerar LEADS QUALIFICADOS para vendas consultivas. Cada artigo, case study e whitepaper deve atrair compradores industriais e gestores de suprimentos.",
-        "kpis": ["leads_qualificados_gerados", "visitas_decision_makers", "downloads_tecnicos", "solicitacoes_amostra"],
-        "escopo": "SEO técnico industrial, white papers, case studies, especificações técnicas, comparativos de produtos, artigos para compradores B2B, LinkedIn articles, presença em feiras virtuais.",
-        "entregaveis_obrigatorios": [
-            "Plano de Conteúdo Técnico (4 white papers, 6 case studies, 8 artigos técnicos por trimestre)",
-            "Estratégia de SEO Industrial (palavras-chave técnicas, long-tail B2B, SEO local para indústrias)",
-            "Calendário de LinkedIn (posts para decision makers, artigos de especialista, cases de sucesso)"
-        ],
-        "nao_fazer": "NÃO crie posts de lifestyle, NÃO faça reels de entretenimento, NÃO pense em viralidade. Seu trabalho é GERAR LEADS B2B QUALIFICADOS através de conteúdo técnico.",
-    },
-    "trafego_pago": {
-        "cargo": "Gerente de Prospecção B2B Paga",
-        "persona": "Você é um gerente de prospecção B2B que usa mídia paga para IDENTIFICAR E QUALIFICAR compradores industriais. Cada anúncio deve gerar leads de Supply Chain Managers, Diretores de Compra e Engenheiros de Produto.",
-        "kpis": ["cpl_decision_maker", "taxa_qualificacao_lead", "reunioes_agendadas", "roi_prospeccao"],
-        "escopo": "LinkedIn Ads (cargos específicos), Google Ads (palavras-chave técnicas), anúncios em portais industriais, patrocínio de webinars B2B, retargeting para visitantes técnicos.",
-        "entregaveis_obrigatorios": [
-            "Plano de LinkedIn Ads (campanhas por cargo, segmentação por indústria, copy técnico)",
-            "Estratégia de Google Ads B2B (palavras-chave industriais, landing pages técnicas, formulários qualificados)",
-            "Orçamento de Prospecção (investimento → leads qualificados → reuniões → oportunidades)"
-        ],
-        "nao_fazer": "NÃO anuncie para consumidor final, NÃO use criativos de varejo, NÃO otimize para vendas diretas. Seu trabalho é PROSPECÇÃO DE LEADS B2B INDUSTRIAIS.",
-    },
-    "processo_vendas": {
-        "cargo": "Diretor de Vendas Consultivas B2B",
-        "persona": "Você é um Diretor de Vendas B2B industrial. Especialista em ciclos longos, vendas consultivas, negociação de contratos de fornecimento e gestão de contas-chave. Foca em quebrar objeções de 'fornecedor homologado' e construir relacionamentos de longo prazo.",
-        "kpis": ["ciclo_venda_medio", "taxa_conversao_proposta", "valor_medio_contrato", "taxa_renovacao"],
-        "escopo": "Metodologia B2B: qualificação, diagnóstico, amostra piloto, proposta técnica, negociação comercial, contrato, implementação, expansão de conta. Scripts para cada etapa, gestão de objeções industriais.",
-        "entregaveis_obrigatorios": [
-            "Metodologia de Venda B2B (etapas do ciclo industrial, critérios de qualificação, gatilhos de avanço)",
-            "Scripts de Negociação Industrial (contornar 'fornecedor homologado', guerra de preços, especificações técnicas)",
-            "Plano de Expansão de Contas (estratégia de upsell/cross-sell, identificação de novas oportunidades, renovação)"
-        ],
-        "nao_fazer": "NÃO use técnicas de vendas B2C, NÃO foque em vendas impulsivas, NÃO pense em funil rápido. Seu trabalho é VENDAS CONSULTIVAS B2B com ciclos longos e relacionamento.",
+
+    # ── SERVIÇOS ─────────────────────────────────────────────────────
+    "servico": {
+        "publico_alvo": {
+            "cargo": "Analista de Clientes de Serviços",
+            "persona": "Você mapeia clientes que buscam serviços especializados. Identifica quem contrata, o que valoriza (expertise, confiança, resultado), e como decide.",
+            "kpis": ["perfil_cliente_ideal", "taxa_conversao_consulta", "ltv", "indicacoes"],
+            "escopo": "Persona do contratante: perfil, dores, expectativas, processo decisório, objeções ('posso fazer sozinho', 'está caro'), valorização de expertise.",
+            "entregaveis_obrigatorios": [
+                "Persona do Contratante (quem busca o serviço, por quê, o que compara)",
+                "Jornada de Contratação (problema → pesquisa → orçamento → decisão → indicação)",
+                "Gatilhos de Decisão e Objeções (preço vs valor, confiança, 'faço sozinho')",
+                "Análise de Influências (indicações, portfólio, presença online, autoridade)"
+            ],
+            "nao_fazer": "NÃO crie personas de compra impulsiva. Foque no cliente que busca solução especializada.",
+        },
+        "branding": {
+            "cargo": "Estrategista de Autoridade e Posicionamento",
+            "persona": "Você posiciona prestadores de serviço como autoridade no segmento. Foca em credibilidade, portfólio, cases de sucesso e prova social.",
+            "kpis": ["autoridade_percebida", "taxa_indicacao", "diferenciacao"],
+            "escopo": "Posicionamento de autoridade, portfólio, cases de sucesso, prova social, diferenciação vs freelancers e concorrentes.",
+            "entregaveis_obrigatorios": [
+                "Declaração de Posicionamento (sou o especialista que X para quem precisa de Y)",
+                "Estratégia de Prova Social (cases, depoimentos, antes/depois, resultados)",
+                "Proposta de Valor (por que contratar em vez de fazer sozinho)",
+                "Análise Competitiva (diferenciação vs outros prestadores)"
+            ],
+            "nao_fazer": "NÃO use linguagem de produto. Foque em expertise, resultado e confiança.",
+        },
+        "identidade_visual": {
+            "cargo": "Diretor de Imagem Profissional",
+            "persona": "Você cria identidade visual que transmite profissionalismo, expertise e confiança para prestadores de serviço.",
+            "kpis": ["profissionalismo_visual", "confianca_transmitida", "consistencia"],
+            "escopo": "Identidade visual profissional: logo, cartão, proposta comercial, apresentação, redes sociais com tom de autoridade.",
+            "entregaveis_obrigatorios": [
+                "Guia Visual Profissional (cores, tipografia, logo, aplicações)",
+                "Templates de Proposta e Orçamento (layout profissional)",
+                "Padrões para Redes Sociais (posts de autoridade, cases, dicas)",
+                "Diretrizes de Imagem (o que transmite confiança, o que evitar)"
+            ],
+            "nao_fazer": "NÃO use estética de varejo. Visual profissional que transmite competência.",
+        },
+        "canais_venda": {
+            "cargo": "Gerente de Aquisição de Clientes",
+            "persona": "Você gera clientes para serviços via indicações, networking, presença online, parcerias estratégicas e prospecção ativa.",
+            "kpis": ["clientes_por_canal", "custo_aquisicao", "taxa_indicacao", "lifetime_value"],
+            "escopo": "Canais para serviços: indicações, networking, LinkedIn, Google Meu Negócio, parcerias, prospecção ativa, eventos.",
+            "entregaveis_obrigatorios": [
+                "Matriz de Canais de Serviço (indicação, Google, LinkedIn, parcerias, prospecção)",
+                "Programa de Indicações (incentivos, processo, follow-up)",
+                "Estratégia de Prospecção (como abordar, sequência, follow-up)"
+            ],
+            "nao_fazer": "NÃO foque em marketplace de produtos. Canais de serviço e relacionamento.",
+        },
+        "trafego_organico": {
+            "cargo": "Estrategista de Autoridade Digital",
+            "persona": "Você constrói autoridade online para prestadores de serviço. Conteúdo educativo, cases, dicas práticas que posicionam como especialista.",
+            "kpis": ["autoridade_online", "leads_organicos", "engajamento_educativo"],
+            "escopo": "Conteúdo de autoridade: blog/SEO, LinkedIn, Instagram educativo, YouTube, cases, Google Meu Negócio.",
+            "entregaveis_obrigatorios": [
+                "Plano de Conteúdo de Autoridade (artigos, vídeos educativos, cases)",
+                "Estratégia de SEO para Serviços (palavras-chave locais, Google Meu Negócio)",
+                "Calendário de Conteúdo (mix: educativo, cases, bastidores, dicas)"
+            ],
+            "nao_fazer": "NÃO foque em conteúdo de entretenimento puro. Conteúdo que gera autoridade e leads.",
+        },
+        "trafego_pago": {
+            "cargo": "Gerente de Captação Paga",
+            "persona": "Você usa anúncios para gerar leads qualificados para serviços. Google Ads local, Meta Ads, remarketing para quem visitou o site/perfil.",
+            "kpis": ["custo_por_lead", "taxa_agendamento", "roi_campanhas"],
+            "escopo": "Google Ads (serviços locais), Meta Ads (social proof), remarketing, geradores de lead (diagnóstico grátis, consultoria grátis).",
+            "entregaveis_obrigatorios": [
+                "Plano de Google Ads para Serviços (palavras-chave locais, extensões, landing page)",
+                "Estratégia de Meta Ads (prova social, cases, oferta de diagnóstico)",
+                "Funil de Captação (anúncio → landing → formulário → contato → agendamento)"
+            ],
+            "nao_fazer": "NÃO otimize para vendas diretas de produto. Foque em gerar agendamentos e leads.",
+        },
+        "processo_vendas": {
+            "cargo": "Gerente de Vendas Consultivas",
+            "persona": "Você fecha contratos de serviço com vendas consultivas. Diagnóstico, proposta personalizada, contorno de objeções ('posso fazer sozinho', 'está caro'), follow-up e fidelização.",
+            "kpis": ["taxa_conversao_proposta", "ticket_medio_servico", "taxa_recontratacao"],
+            "escopo": "Vendas consultivas para serviços: diagnóstico, proposta, negociação, objeções, follow-up, pós-venda, indicação.",
+            "entregaveis_obrigatorios": [
+                "Metodologia de Venda de Serviço (diagnóstico → proposta → negociação → fechamento)",
+                "Scripts de Contorno de Objeções ('está caro', 'vou pensar', 'consigo sozinho')",
+                "Programa de Pós-Venda e Indicação (acompanhamento, recontratação, referral)"
+            ],
+            "nao_fazer": "NÃO use funil impulsivo. Venda consultiva focada em valor e resultado.",
+        },
     },
 }
+
+
+def _detect_business_model(profile: dict) -> str:
+    """Detect business model from profile data. Returns 'b2b', 'b2c', or 'servico'."""
+    perfil = profile.get("perfil", profile)
+    modelo = (perfil.get("modelo_negocio") or perfil.get("modelo") or "").lower()
+    segmento = (perfil.get("segmento") or "").lower()
+    tipo = (perfil.get("tipo_oferta") or perfil.get("tipo_produto") or "").lower()
+
+    if "b2b" in modelo:
+        return "b2b"
+    if "b2c" in modelo or "varejo" in segmento or "loja" in segmento:
+        return "b2c"
+    if any(kw in segmento for kw in ("serviço", "servico", "consultoria", "agência", "agencia", "freelancer")):
+        return "servico"
+    if any(kw in tipo for kw in ("serviço", "servico")):
+        return "servico"
+    # Default: B2C is the safer fallback for unknown small businesses
+    return "b2c"
+
+
+def get_specialist(pillar_key: str, profile: dict) -> dict:
+    """Return the correct specialist persona based on pillar + business model."""
+    model_key = _detect_business_model(profile)
+    specialists_for_model = _SPECIALISTS_BY_MODEL.get(model_key, _SPECIALISTS_BY_MODEL["b2c"])
+    return specialists_for_model.get(pillar_key, _SPECIALISTS_BY_MODEL["b2c"].get(pillar_key, {}))
+
+
+# Legacy compat: SPECIALISTS dict — returns B2C defaults for code that reads SPECIALISTS[key]
+SPECIALISTS = _SPECIALISTS_BY_MODEL["b2c"]
+
+
+def _get_specialist_from_brief(pillar_key: str, brief: dict) -> dict:
+    """Extract business model from brief's DNA and return the right specialist."""
+    modelo = brief.get("dna", {}).get("modelo", "").lower() if brief else ""
+    if "b2b" in modelo:
+        model_key = "b2b"
+    elif any(kw in modelo for kw in ("serviço", "servico", "consultoria", "agência", "agencia")):
+        model_key = "servico"
+    else:
+        model_key = "b2c"
+    specs = _SPECIALISTS_BY_MODEL.get(model_key, _SPECIALISTS_BY_MODEL["b2c"])
+    return specs.get(pillar_key, SPECIALISTS.get(pillar_key, {}))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -258,7 +487,7 @@ def get_adapted_specialist_persona(pillar_key: str, profile: dict) -> dict:
     Retorna a persona modificada com as instruções específicas.
     """
     
-    base_persona = SPECIALISTS.get(pillar_key, {})
+    base_persona = get_specialist(pillar_key, profile)
     contexto = get_dynamic_persona_context(profile)
     
     # Criar cópia da persona
@@ -352,22 +581,28 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
     if equipe in ("1", "solo", "só eu", "sozinho"):
         restricao_flags.append("equipe_solo")
 
+    # ── Sales Brief (from scorer pipeline) ──
+    sales_brief = profile.get("_sales_brief", "")
+
     brief = {
         "dna": dna,
         "footprint": footprint,
         "market_digest": market_digest,
         "restricoes": restricao_flags,
+        "sales_brief": sales_brief,
     }
 
     return brief
 
 
-def brief_to_text(brief: dict, max_tokens: int = 600) -> str:
-    """Convert business brief to compact text for LLM injection."""
+def brief_to_text(brief: dict, max_tokens: int = 800) -> str:
+    """Convert business brief to compact text for LLM injection.
+    Now includes sales_brief so every specialist gets the '3 alavancas + riscos' synthesis."""
     dna = brief.get("dna", {})
     fp = brief.get("footprint", {})
     md = brief.get("market_digest", {})
     restr = brief.get("restricoes", [])
+    sb = brief.get("sales_brief", "")
 
     lines = [
         f"NEGÓCIO: {dna.get('nome','?')} | {dna.get('segmento','?')} | {dna.get('modelo','?')} | {dna.get('localizacao','?')}",
@@ -379,6 +614,10 @@ def brief_to_text(brief: dict, max_tokens: int = 600) -> str:
         f"Concorrentes: {dna.get('concorrentes','?')}",
         f"Objeção: {dna.get('maior_objecao','?')}",
     ]
+
+    if sb:
+        lines.append("SÍNTESE DE VENDAS (o que bloqueia, 3 alavancas, riscos):")
+        lines.append(f"  {sb[:600]}")
 
     if fp:
         lines.append("PRESENÇA DIGITAL REAL:")
@@ -564,7 +803,7 @@ def generate_pillar_plan(
     """
     # Removed GROQ_API_KEY check since call_llm handles keys per provider
     
-    spec = SPECIALISTS.get(pillar_key)
+    spec = _get_specialist_from_brief(pillar_key, brief)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
@@ -599,25 +838,27 @@ def generate_pillar_plan(
     if opps:
         diag_text += "\nOPORTUNIDADES:\n" + "\n".join(f"  💡 {o}" for o in (opps[:5] if isinstance(opps, list) else [opps]))
 
-    # ── RAG: search for specialist content ──
+    # ── RAG: search via unified_research (with cache) ──
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
     nome = dna.get("nome", "")
-    search_query = f"{dim_cfg.get('label', pillar_key)} {segmento} como implementar passo a passo 2025"
-
-    print(f"  🔍 Specialist plan search: {search_query[:80]}...", file=sys.stderr)
-    search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
 
     specialist_research = ""
     sources = []
-    for i, r in enumerate(search_results or []):
-        url = r.get("href", "")
-        sources.append(url)
-        specialist_research += f"Fonte {i+1}: {r.get('body', '')}\n"
-        if i < 1:
-            content = scrape_page(url, timeout=4)
-            if content:
-                specialist_research += f"Detalhes: {content[:2500]}\n"
+    try:
+        from app.services.research.unified_research import research_engine
+        research_data = research_engine.search_tasks(
+            pillar_key=pillar_key,
+            score=score,
+            diagnostic={"justificativa": diag_text[:200]},
+            segmento=segmento,
+            force_refresh=False
+        )
+        specialist_research = research_data.get("content", "")
+        sources = research_data.get("sources", [])
+        print(f"  📦 Plan search via unified_research: {len(sources)} sources", file=sys.stderr)
+    except Exception as e:
+        print(f"  ⚠️ Unified research failed for plan: {e}", file=sys.stderr)
 
     # ── Restriction flags ──
     restr = brief.get("restricoes", [])
@@ -1018,7 +1259,7 @@ def _extract_market_for_pillar(pillar_key: str, market_data: dict) -> str:
     if not categories:
         return ""
 
-    from app.services.analysis.business_scorer import _score_category_relevance
+    from app.services.analysis.analyzer_business_scorer import _score_category_relevance
 
     scored = []
     for cat in categories:
@@ -1076,7 +1317,7 @@ def generate_specialist_tasks(
     # Comprehensive normalization (convert all hyphens to underscores)
     pillar_key = pillar_key.replace("-", "_")
 
-    spec = SPECIALISTS.get(pillar_key)
+    spec = _get_specialist_from_brief(pillar_key, brief)
     if not spec:
         print(f"DEBUG: Specialist not found for {pillar_key}", file=sys.stderr)
         return {"success": False, "error": f"Pilar desconhecido: {pillar_key}"}
@@ -1095,14 +1336,15 @@ def generate_specialist_tasks(
         analysis_data = db.get_analysis(analysis_id)
         if not analysis_data:
             print(f"  ⚠️ No analysis data found for {pillar_key}, falling back to original method", file=sys.stderr)
-            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider, market_data=market_data)
         
         score_data = analysis_data.get("score_data", {})
         discovery_data = analysis_data.get("discovery_data", {})
+        analysis_market_data = market_data or analysis_data.get("market_data", {})
         
         if not score_data:
             print(f"  ⚠️ No score data found for {pillar_key}, falling back to original method", file=sys.stderr)
-            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider, market_data=analysis_market_data)
         
         # Generate context-aware tasks
         print(f"  🎯 Using context-aware generation for {pillar_key}", file=sys.stderr)
@@ -1111,7 +1353,7 @@ def generate_specialist_tasks(
             pillar_key=pillar_key,
             profile=brief,
             score_data=score_data,
-            market_data=market_data or {},
+            market_data=analysis_market_data,
             discovery_data=discovery_data,
             model_provider=model_provider
         )
@@ -1121,20 +1363,32 @@ def generate_specialist_tasks(
             return result
         else:
             print(f"  ⚠️ Context-aware generation failed for {pillar_key}: {result.get('error')}", file=sys.stderr)
-            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+            return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider, market_data=analysis_market_data)
             
     except ImportError as e:
         print(f"  ⚠️ Context-aware module not available for {pillar_key}: {e}", file=sys.stderr)
-        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider, market_data=market_data)
     except Exception as e:
         print(f"  ❌ Context-aware generation error for {pillar_key}: {e}", file=sys.stderr)
-        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider)
+        return _fallback_to_original_generation(analysis_id, pillar_key, brief, model_provider, market_data=market_data)
 
 
-def _fallback_to_original_generation(analysis_id: str, pillar_key: str, brief: dict, model_provider: str) -> dict:
+def _fallback_to_original_generation(
+    analysis_id: str,
+    pillar_key: str,
+    brief: dict,
+    model_provider: str,
+    market_data: dict | None = None,
+) -> dict:
     """Fallback to original generation method for backward compatibility."""
     print(f"  🔄 Using original generation method for {pillar_key}", file=sys.stderr)
     
+    from app.services.analysis.analyzer_business_scorer import DIMENSIONS
+    dim_cfg = DIMENSIONS.get(pillar_key, {})
+    spec = _get_specialist_from_brief(pillar_key, brief)
+    if not spec:
+        return {"success": False, "error": f"Especialista desconhecido: {pillar_key}"}
+
     # Load all diagnostics for cross-pillar context
     all_diags_list = db.get_all_diagnostics(analysis_id)
     all_diagnostics = {d["pillar_key"].replace("-", "_"): d for d in all_diags_list}
@@ -1162,7 +1416,25 @@ def _fallback_to_original_generation(analysis_id: str, pillar_key: str, brief: d
         
         if not diagnostic:
             print(f"DEBUG: No diagnostic found for any key format", file=sys.stderr)
-            return {"success": False, "error": f"Diagnostic not found for pillar {pillar_key}"}
+            # Last resort: reconstruct from analysis score_data
+            analysis_record = db.get_analysis(analysis_id)
+            if analysis_record and analysis_record.get("score_data", {}).get("dimensoes", {}).get(pillar_key):
+                pd = analysis_record["score_data"]["dimensoes"][pillar_key]
+                diagnostic = {
+                    "score": pd.get("score", 0),
+                    "status": pd.get("status", "unknown"),
+                    "justificativa": pd.get("justificativa", ""),
+                    "estado_atual": {"justificativa": pd.get("justificativa", ""), "meta_pilar": pd.get("meta_pilar", "")},
+                    "gaps": [a.get("acao", str(a)) for a in pd.get("acoes_imediatas", []) if isinstance(a, dict)][:3],
+                    "dado_chave": pd.get("dado_chave", ""),
+                    "meta_pilar": pd.get("meta_pilar", ""),
+                    "acoes_imediatas": pd.get("acoes_imediatas", []),
+                }
+                # Save it to avoid repeated recovery on next call
+                db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic)
+                print(f"DEBUG: Reconstructed diagnostic for {pillar_key} from score_data", file=sys.stderr)
+            else:
+                return {"success": False, "error": f"Diagnostic not found for pillar {pillar_key}"}
 
     # ... (rest of the code remains the same)
     # Check dependencies first
@@ -1197,35 +1469,35 @@ def _fallback_to_original_generation(analysis_id: str, pillar_key: str, brief: d
             dep_text += f"  - {w['label']} ({w['score']}/100): {w['message']}\n"
 
     # ── Primary: Market research from Phase 1 (already collected) ──
-    market_context = _extract_market_for_pillar(pillar_key, market_data)
+    market_context = _extract_market_for_pillar(pillar_key, market_data or {})
     sources = []
     if market_data:
         for cat in market_data.get("categories", []):
             sources.extend(cat.get("fontes", [])[:2])
         sources = list(dict.fromkeys(sources))  # dedup
 
-    # ── Supplemental RAG: Only search web if market + upstream data is thin ──
-    # Assembly line logic: upstream reports + market data = primary source
+    # ── Supplemental RAG: Only search web via unified_research if context is thin ──
     total_context_len = len(market_context) + len(cross_pillar)
     research = ""
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
 
-    # Smart supplemental search based on task specificity and context richness
     pillar_label = dim_cfg.get('label', pillar_key)
     if _should_search_for_task(pillar_label, f"Plano de ação para o pilar de {pillar_label}", market_context + cross_pillar):
-        # Use smart query building for task-specific research
-        search_query = _build_smart_search_query(pillar_label, f"Estratégias para {pillar_label}", segmento, pillar_key)
-        print(f"  🔍 Smart plan generation search: {search_query[:80]}...", file=sys.stderr)
-        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
-        for i, r in enumerate(search_results or []):
-            url = r.get("href", "")
-            sources.append(url)
-            research += f"Fonte {i+1}: {r.get('body', '')}\n"
-            if i < 1:
-                content = scrape_page(url, timeout=4)
-                if content:
-                    research += f"Detalhes: {content[:2000]}\n"
+        try:
+            from app.services.research.unified_research import research_engine
+            research_data = research_engine.search_tasks(
+                pillar_key=pillar_key,
+                score=score,
+                diagnostic={"justificativa": diag_text[:200] if 'diag_text' in dir() else ""},
+                segmento=segmento,
+                force_refresh=False
+            )
+            research = research_data.get("content", "")
+            sources.extend(research_data.get("sources", []))
+            print(f"  📦 Smart plan gen via unified_research: {len(research_data.get('sources', []))} sources", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ Unified research failed: {e}", file=sys.stderr)
     else:
         print(f"  ✅ Contexto de planejamento rico ({total_context_len} chars: market={len(market_context)}, upstream={len(cross_pillar)}) — sem busca web", file=sys.stderr)
 
@@ -1484,7 +1756,7 @@ def agent_execute_task(
     try:
         # Removed GROQ_API_KEY check since call_llm handles keys per provider
 
-        spec = SPECIALISTS.get(pillar_key)
+        spec = _get_specialist_from_brief(pillar_key, brief)
         if not spec:
             return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
 
@@ -1508,38 +1780,34 @@ def agent_execute_task(
                 sources.extend(cat.get("fontes", [])[:2])
             sources = list(dict.fromkeys(sources))
 
-        # ── Task-specific RAG search (always run for execution — need specific examples) ──
+        # ── Task-specific RAG search via unified_research (cached) ──
         dna = brief.get("dna", {})
         task_title = task_data.get("titulo", "")
         segmento = dna.get("segmento", "")
-        search_query = f"{task_title} {segmento} como fazer exemplo prático 2025"
 
         print(f"  🤖 Agent executing: {task_title[:60]}...", file=sys.stderr)
-        print(f"  🔍 Task-specific search: {search_query[:80]}...", file=sys.stderr)
         
         # Check for cancellation before search
         check_cancelled_ultra()
         
-        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt', cancellation_check=check_cancelled_ultra)
-
         research = ""
-        for i, r in enumerate(search_results or []):
-            # Check for cancellation before each scraping
-            check_cancelled_ultra()
-                
-            if not r or not isinstance(r, dict):
-                continue
-            url = r.get("href", "")
-            if not url:
-                continue
-            sources.append(url)
-            research += f"Fonte {i+1}: {r.get('body', '')}\n"
-            if i < 1:
-                # Check cancellation again before scraping
-                check_cancelled_ultra()
-                content = scrape_page(url, timeout=2, cancellation_check=check_cancelled_ultra)  # Reduced timeout further
-                if content:
-                    research += f"Detalhes: {content[:3000]}\n"
+        task_sources = []
+        try:
+            from app.services.research.unified_research import research_engine
+            research_data = research_engine.search_subtasks(
+                task_title=task_title,
+                task_desc=task_data.get("descricao", ""),
+                pillar_key=pillar_key,
+                segmento=segmento,
+                task_context=task_data,
+                force_refresh=False
+            )
+            research = research_data.get("content", "")
+            task_sources = research_data.get("sources", [])
+            sources.extend(task_sources)
+            print(f"  📦 Task execute via unified_research: {len(task_sources)} sources", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ Unified research failed for task exec: {e}", file=sys.stderr)
 
         # Combine all research
         all_research = ""
@@ -1811,11 +2079,10 @@ def expand_task_subtasks(
     if not market_data:
         market_data = db.get_analysis_market_data(analysis_id)
 
-    # Try to use unified research for subtask research
+    # Use unified research ONLY — no duplicate fallback searches
     try:
         from app.services.research.unified_research import research_engine
         
-        # Use unified research for subtask level
         research_data = research_engine.search_subtasks(
             task_title=task_data.get("titulo", ""),
             task_desc=task_data.get("descricao", ""),
@@ -1828,37 +2095,12 @@ def expand_task_subtasks(
         research_text = research_data.get("content", "")
         research_sources = research_data.get("sources", [])
         
-        print(f"  📦 Used unified research for subtasks: {len(research_sources)} sources", file=sys.stderr)
+        print(f"  📦 Subtask expansion via unified_research: {len(research_sources)} sources", file=sys.stderr)
         
     except Exception as e:
-        print(f"  ⚠️ Unified research failed for subtasks: {e}, using fallback", file=sys.stderr)
-        # Fallback to original method
+        print(f"  ⚠️ Unified research failed for subtasks: {e}", file=sys.stderr)
         research_text = ""
         research_sources = []
-        
-        # Original research logic as fallback
-        queries = pillar["search_queries_template"]
-        for qi, query_tpl in enumerate(queries):
-            query = query_tpl.format(
-                segmento=brief.get("dna", {}).get("segmento", ""),
-                localizacao=brief.get("localizacao", ""),
-                nome=brief.get("nome_negocio", brief.get("nome", "")),
-            )
-            
-            results = search_duckduckgo(query, max_results=4, region='br-pt')
-            for i, r in enumerate(results or []):
-                url = r.get("href", "")
-                research_sources.append(url)
-                snippet = r.get("body", "")
-                title = r.get("title", "")
-                research_text += f"[Fonte {len(research_sources)}] {title}: {snippet}\n"
-
-                if i < 1:  # Scrape top result per query
-                    content = scrape_page(url, timeout=4)
-                    if content:
-                        research_text += f"Conteúdo: {content[:2500]}\n\n"
-
-            time.sleep(1)  # Rate limit courtesy
 
     brief_text = brief_to_text(brief)
     exec_history = build_execution_context(analysis_id, pillar_key)
@@ -1869,35 +2111,14 @@ def expand_task_subtasks(
 
     # Primary: saved market research
     market_context = _extract_market_for_pillar(pillar_key, market_data)
-    sources = []
+    sources = list(research_sources)  # Start with unified_research sources
 
-    # Smart supplemental search based on task specificity
-    research = ""
-    dna = brief.get("dna", {})
-    segmento = dna.get("segmento", "")
-    
-    # Enhanced search logic: considers both context length AND task specificity
-    needs_specific_search = _should_search_for_task(task_title, task_desc, market_context)
-    
-    if needs_specific_search:
-        # Build intelligent query based on task type
-        search_query = _build_smart_search_query(task_title, task_desc, segmento, pillar_key)
-        print(f"  🔍 Smart subtask search: {search_query[:80]}...", file=sys.stderr)
-        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
-        for i, r in enumerate(search_results or []):
-            url = r.get("href", "")
-            sources.append(url)
-            research += f"Fonte {i+1}: {r.get('body', '')}\n"
-            if i < 1:
-                content = scrape_page(url, timeout=4)
-                if content:
-                    research += f"Detalhes: {content[:2000]}\n"
-
+    # Combine all research — no additional web search needed
     all_research = ""
     if market_context:
         all_research += f"DADOS DE MERCADO:\n{market_context}\n\n"
-    if research:
-        all_research += f"PESQUISA COMPLEMENTAR:\n{research[:2000]}\n"
+    if research_text:
+        all_research += f"PESQUISA ESPECIALIZADA:\n{research_text[:3000]}\n"
     if not all_research:
         all_research = "Use seu conhecimento.\n"
 
@@ -2013,30 +2234,26 @@ def ai_try_user_task(
             sources.extend(cat.get("fontes", [])[:2])
         sources = list(dict.fromkeys(sources))
 
-    # Smart task-specific RAG search
+    # Smart task-specific RAG search via unified_research
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
     
-    # Use intelligent search decision
-    if _should_search_for_task(task_title, task_desc, market_context):
-        search_query = _build_smart_search_query(task_title, task_desc, segmento, pillar_key)
-        print(f"  🤖 Smart AI task attempt: {search_query[:80]}...", file=sys.stderr)
-        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
-    else:
-        # Fallback to simple query for non-specific tasks
-        search_query = f"{task_title} {segmento} guia completo exemplo 2025"
-        print(f"  🤖 AI trying user task: {task_title[:60]}...", file=sys.stderr)
-        search_results = search_duckduckgo(search_query, max_results=3, region='br-pt')
-
     research = ""
-    for i, r in enumerate(search_results or []):
-        url = r.get("href", "")
-        sources.append(url)
-        research += f"Fonte {i+1}: {r.get('body', '')}\n"
-        if i < 1:
-            content = scrape_page(url, timeout=5)
-            if content:
-                research += f"Detalhes: {content[:3000]}\n"
+    try:
+        from app.services.research.unified_research import research_engine
+        research_data = research_engine.search_subtasks(
+            task_title=task_title,
+            task_desc=task_desc,
+            pillar_key=pillar_key,
+            segmento=segmento,
+            task_context=task_data,
+            force_refresh=False
+        )
+        research = research_data.get("content", "")
+        sources.extend(research_data.get("sources", []))
+        print(f"  📦 AI user task via unified_research: {len(research_data.get('sources', []))} sources", file=sys.stderr)
+    except Exception as e:
+        print(f"  ⚠️ Unified research failed for AI user task: {e}", file=sys.stderr)
 
     all_research = ""
     if market_context:

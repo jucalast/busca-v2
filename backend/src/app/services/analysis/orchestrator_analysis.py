@@ -197,7 +197,7 @@ class AnalysisOrchestrator:
             if business_id:
                 # Update existing business
                 self.logger.info(f"Creating analysis for existing business: {business_id}")
-                analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
+                analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile, discovery_data=None)
             else:
                 # Create new business
                 self.logger.info("Creating new business and analysis")
@@ -209,7 +209,7 @@ class AnalysisOrchestrator:
                 business = db.create_business(user_id, name, profile)
                 business_id = business["id"]
                 
-                analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
+                analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile, discovery_data=None)
             
             self.logger.info(f"Analysis persisted: {analysis['id']}")
             return {

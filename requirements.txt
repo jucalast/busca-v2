@@ -4,7 +4,7 @@ ddgs
 python-dotenv
 groq
 openai
-google-generativeai
+google-genai
 langgraph
 chromadb
 pydantic

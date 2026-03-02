@@ -22,8 +22,9 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Each model has its own separate daily quota on the free tier,
 # so when 2.0-flash is exhausted we can still use 1.5-flash, etc.
 GEMINI_MODELS = [
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite",
 ]
 
 def _parse_retry_wait(error_msg: str) -> int:
@@ -54,18 +55,16 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "llama-3.1-8b-instant",
             "llama-3.3-70b-versatile",
             "meta-llama/llama-4-scout-17b-16e-instruct",
-            "qwen/qwen-2.5-32b-instruct",
+            "meta-llama/llama-4-maverick-17b-128e-instruct",
             "qwen/qwen3-32b",
-            "mixtral-8x7b-32768",
         ]
     else:
         models = [
             "llama-3.3-70b-versatile",
+            "meta-llama/llama-4-maverick-17b-128e-instruct",
             "llama-3.1-8b-instant",
             "meta-llama/llama-4-scout-17b-16e-instruct",
-            "qwen/qwen-2.5-32b-instruct",
             "qwen/qwen3-32b",
-            "mixtral-8x7b-32768",
         ]
 
     kwargs = {}

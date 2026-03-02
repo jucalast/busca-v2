@@ -509,7 +509,7 @@ def main():
     elif args.action == "analyze":
         from app.services.analysis.analyzer_business_profiler import run_profiler, identify_dynamic_categories
         from app.services.analysis.analyzer_business_scorer import run_scorer
-        from app.services.analysis.analyzer_business_discovery import discover_business
+        from app.services.analysis.analyzer_business_discovery import discover_business, extract_discovery_gaps, generate_sales_brief
         from app.services.agents.engine_specialist import (
             generate_business_brief, generate_pillar_plan,
             get_all_pillars_state, SPECIALISTS,
@@ -522,12 +522,21 @@ def main():
         analysis_id = input_data.get("analysis_id")  # Optional: for persistence
 
         # Step 0: Load enriched profile if reanalyzing
+        discovery_data = None
+        discovery_found = False
         if analysis_id:
             try:
                 previous_analysis = db.get_analysis(analysis_id)
                 if previous_analysis and previous_analysis.get("profile_data"):
                     profile = previous_analysis["profile_data"]
                     print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
+                # Carregar discovery_data anterior se existir
+                if previous_analysis and previous_analysis.get("discovery_data"):
+                    discovery_data = previous_analysis["discovery_data"]
+                    discovery_found = discovery_data.get("found", False)
+                    print("  ✅ Discovery data carregado da análise anterior", file=sys.stderr)
+                else:
+                    print("  ⚠️ Nenhum discovery_data encontrado na análise anterior", file=sys.stderr)
             except Exception as e:
                 print(f"  ⚠️ Erro ao carregar perfil anterior: {e}", file=sys.stderr)
 
@@ -546,13 +555,28 @@ def main():
             except Exception as e:
                 print(f"  ⚠️ Erro ao limpar dados anteriores: {e}", file=sys.stderr)
 
-        # Step 1: Business Discovery (search for the ACTUAL business online)
-        print("THOUGHT: Executando discovery do negócio...")
-        print("🔎 Executando discovery do negócio...", file=sys.stderr)
-        discovery_data = discover_business(profile, region, model_provider=model_provider)
-        discovery_found = discovery_data.get("found", False)
-        print(f"THOUGHT: Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}")
-        print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+        # Step 1: Business Discovery (search for the ACTUAL business online) - only if not reanalyzing
+        if not discovery_data:
+            print("THOUGHT: Executando discovery do negócio...")
+            print("🔎 Executando discovery do negócio...", file=sys.stderr)
+            discovery_data = discover_business(profile, region, model_provider=model_provider)
+            discovery_found = discovery_data.get("found", False)
+            print(f"THOUGHT: Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}")
+            print(f"  {'✅' if discovery_found else '⚠️'} Discovery: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+        else:
+            print("THOUGHT: Usando discovery data da análise anterior...")
+            print(f"  ♻️ Discovery reutilizado: {'dados reais encontrados' if discovery_found else 'sem dados específicos'}", file=sys.stderr)
+
+        # Step 1.5: Extrair gaps do discovery para refinar queries de mercado
+        if discovery_found:
+            gap_queries = extract_discovery_gaps(discovery_data, profile)
+            if gap_queries:
+                existing_queries = profile.get("queries_sugeridas", {})
+                for cat_id, gap_query in gap_queries.items():
+                    # gap_query is more specific (from discovery findings), so use it directly
+                    existing_queries[cat_id] = gap_query.strip()[:150]
+                profile["queries_sugeridas"] = existing_queries
+                print(f"  💡 {len(gap_queries)} queries refinadas pelo discovery", file=sys.stderr)
 
         # Step 2: Market search
         # Safety: remap + fill categories before market search (belt-and-suspenders)
@@ -586,6 +610,13 @@ def main():
             mc_resumo = mc.get("resumo", {})
             has_data = bool(mc_resumo.get("visao_geral") or mc_resumo.get("pontos_chave"))
             print(f"    📂 id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'✅' if has_data else '❌'}", file=sys.stderr)
+
+        # Step 2.5: Sales Intelligence Brief — sintetiza pesquisa em contexto orientado a vendas
+        print("🧠 Gerando brief de inteligência de vendas...", file=sys.stderr)
+        sales_brief = generate_sales_brief(profile, discovery_data, market_data, model_provider)
+        if sales_brief:
+            profile["_sales_brief"] = sales_brief
+            print(f"  💡 Brief gerado: {len(sales_brief)} chars", file=sys.stderr)
 
         # Step 3: Per-dimension scoring with discovery context
         print("THOUGHT: Calculando score por dimensão...")
@@ -623,7 +654,7 @@ def main():
         if business_id:
             print("THOUGHT: Salvando análise no banco de dados...")
             print("💾 Salvando análise...", file=sys.stderr)
-            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile, discovery_data=discovery_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
         else:
             # Create new business if no business_id provided
@@ -636,7 +667,7 @@ def main():
             business_id = business["id"]
             print(f"  ✅ Negócio criado: {business_id}", file=sys.stderr)
             
-            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile)
+            analysis = db.create_analysis(business_id, score_data, task_plan, market_data, profile_data=profile, discovery_data=discovery_data)
             print(f"  ✅ Análise salva: {analysis['id']}", file=sys.stderr)
 
         # Step 5: Generate Compact Business Brief (CBB)
@@ -1040,7 +1071,7 @@ def main():
         task_data = input_data.get("taskPlan", {})
         market_data = input_data.get("marketData", {})
         
-        analysis = db.create_analysis(business_id, score_data, task_data, market_data)
+        analysis = db.create_analysis(business_id, score_data, task_data, market_data, discovery_data=None)
         
         print("--- SAVE_ANALYSIS_RESULT ---")
         print(json.dumps({"success": True, "analysis": analysis}, ensure_ascii=False, indent=2))

@@ -15,6 +15,7 @@ interface Business {
   location: string;
   created_at: string;
   updated_at: string;
+  profile_data?: any;
   latest_analysis?: {
     id: string;
     score_geral: number;
@@ -168,6 +169,31 @@ export default function SidebarLayout({
                 </div>
               ) : (
                 businesses.map((business) => {
+                  const profileRoot = business.profile_data?.profile || business.profile_data || {};
+                  const perfil = profileRoot.perfil || profileRoot || {};
+                  const displaySegment =
+                    business.segment ||
+                    perfil.segmento ||
+                    perfil.segmento_principal ||
+                    perfil.industria ||
+                    profileRoot.segmento ||
+                    '—';
+                  const displayModel =
+                    business.model ||
+                    perfil.modelo_negocio ||
+                    perfil.modelo ||
+                    profileRoot.modelo_negocio ||
+                    profileRoot.modelo ||
+                    '—';
+                  const displayLocation =
+                    business.location ||
+                    perfil.localizacao ||
+                    perfil.cidade ||
+                    perfil.estado ||
+                    profileRoot.localizacao ||
+                    profileRoot.cidade ||
+                    profileRoot.estado ||
+                    '—';
                   return (
                     <div key={business.id} className="relative">
                       <Link
@@ -184,7 +210,7 @@ export default function SidebarLayout({
                               {business.name}
                             </h3>
                             <p className="text-xs text-zinc-500 truncate">
-                              {business.segment}
+                              {displaySegment}
                             </p>
                           </div>
                           {business.latest_analysis && (
@@ -213,11 +239,11 @@ export default function SidebarLayout({
                         <div className="flex items-center justify-between gap-2 text-xs text-zinc-600">
                           <div className="flex items-center gap-2">
                             <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
-                              {business.model}
+                              {displayModel}
                             </span>
                             <div className="flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
-                              <span>{business.location}</span>
+                              <span>{displayLocation}</span>
                             </div>
                           </div>
                           <div className="relative" ref={openMenuId === business.id ? menuRef : null}>

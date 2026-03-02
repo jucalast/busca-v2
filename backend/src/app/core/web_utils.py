@@ -36,8 +36,20 @@ def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', c
         print(f"Erro na busca DuckDuckGo: {e}", file=sys.stderr)
         return []
 
+# Domains that block scraping or return useless content without API
+_SCRAPE_BLOCKLIST = [
+    "instagram.com", "linkedin.com", "facebook.com", "tiktok.com",
+    "twitter.com", "x.com", "threads.net",
+]
+
 def scrape_page(url: str, timeout: int = 2, cancellation_check=None) -> str:
-    """Scrape text content from a webpage URL with cancellation support."""
+    """Scrape text content from a webpage URL with cancellation support.
+    Skips social media sites that require API access."""
+    # Skip social media sites that never return useful content via scraping
+    url_lower = url.lower()
+    for blocked in _SCRAPE_BLOCKLIST:
+        if blocked in url_lower:
+            return ""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         

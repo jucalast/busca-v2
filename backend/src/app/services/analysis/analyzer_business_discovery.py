@@ -167,20 +167,8 @@ def _build_discovery_queries(hints: dict) -> list:
             "extract": ["site", "redes_sociais", "avaliacoes", "mencoes"],
         })
 
-    # 2. Instagram — direct handle search if known, otherwise name search
-    if hints["has_instagram"]:
-        if hints["instagram_handle"]:
-            ig_query = f'site:instagram.com "{hints["instagram_handle"]}"'
-        elif nome:
-            ig_query = f'site:instagram.com "{nome}" {segmento}'
-        else:
-            ig_query = f'site:instagram.com {segmento} {loc}'
-        queries.append({
-            "id": "instagram_real",
-            "query": ig_query,
-            "purpose": "Analisar perfil real do Instagram: bio, seguidores, tipo de conteúdo, frequência",
-            "extract": ["handle", "bio", "seguidores", "tipo_conteudo", "frequencia_posts", "engajamento"],
-        })
+    # 2. Instagram — SKIP: scraping Instagram never works without API
+    # A presença no Instagram já é registrada via hints["has_instagram"] do perfil do chat
 
     # 3. Site — scrape directly if URL known, otherwise search for it
     if hints["has_site"]:
@@ -200,18 +188,8 @@ def _build_discovery_queries(hints: dict) -> list:
                 "extract": ["url_site", "produtos", "precos", "seo"],
             })
 
-    # 4. LinkedIn — if B2B or LinkedIn URL known
-    if hints["has_linkedin"] or is_b2b:
-        if hints.get("linkedin_url"):
-            li_q = f'site:linkedin.com "{hints["linkedin_url"]}"'
-        else:
-            li_q = f'site:linkedin.com/company "{nome}" {segmento}'
-        queries.append({
-            "id": "linkedin_real",
-            "query": li_q,
-            "purpose": "Analisar presença no LinkedIn: seguidores, posts, posicionamento B2B",
-            "extract": ["seguidores_linkedin", "descricao_empresa", "posts_recentes", "funcionarios"],
-        })
+    # 4. LinkedIn — SKIP: scraping LinkedIn never works without API
+    # A presença no LinkedIn já é registrada via hints["has_linkedin"] do perfil do chat
 
     # 5. Google Maps / Reviews
     if loc and nome and nome != "?":
@@ -405,7 +383,23 @@ JSON:
     "email": {{ "encontrado": false, "endereco": null, "fonte": null }},
     "outras_plataformas": []
   }},
-  "concorrentes_encontrados": [],
+  "concorrentes_encontrados": [
+    {{
+      "nome": "Nome do concorrente",
+      "tipo": "direto_regional ou referencia_nacional",
+      "porte": "micro/pequeno/medio/grande",
+      "site": "url ou null",
+      "instagram": "@handle ou null",
+      "preco_referencia": "faixa de preço ou null",
+      "diferencial": "principal vantagem competitiva identificada",
+      "ponto_fraco": "vulnerabilidade, reclamação ou gap identificado",
+      "canais_digitais": ["lista de canais digitais ativos"],
+      "gap_vs_negocio": "o que este concorrente faz que {nome} NÃO faz",
+      "oportunidade": "como {nome} pode superar ou se diferenciar deste concorrente",
+      "fonte": "url da fonte"
+    }}
+  ],
+  "analise_competitiva_resumo": "Síntese em 2-3 frases: posicionamento competitivo de {nome}, principal vulnerabilidade e maior oportunidade de diferenciação para vender mais",
   "dados_mercado_local": {{ "preco_medio_regiao": null, "tendencias": [], "oportunidades": [] }},
   "problemas_detectados": [],
   "resumo_executivo": "Dados insuficientes para análise completa"
@@ -437,6 +431,8 @@ JSON:
                 result["problemas_detectados"] = []
             if "resumo_executivo" not in result:
                 result["resumo_executivo"] = "Análise parcial dos dados"
+            if "analise_competitiva_resumo" not in result:
+                result["analise_competitiva_resumo"] = ""
             
             result["found"] = True
             
@@ -661,7 +657,13 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
     if "outras" in allowed_sections:
         outras = pd.get("outras_plataformas") or []
         if outras:
-            lines.append(f"\n🛒 OUTRAS PLATAFORMAS: {', '.join(outras)}")
+            outras_str = []
+            for item in outras:
+                if isinstance(item, dict):
+                    outras_str.append(item.get("nome") or item.get("plataforma") or str(item))
+                else:
+                    outras_str.append(str(item))
+            lines.append(f"\n🛒 OUTRAS PLATAFORMAS: {', '.join(outras_str)}")
 
     # ── Competitors ──
     if "concorrentes" in allowed_sections:
@@ -670,7 +672,10 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
             lines.append(f"\n🎯 CONCORRENTES REAIS ENCONTRADOS:")
             for c in competitors[:5]:
                 if isinstance(c, dict):
-                    comp_line = f"  • {c.get('nome', '?')}"
+                    tipo = c.get("tipo", "")
+                    tipo_label = f" [{tipo}]" if tipo else ""
+                    comp_line = f"  • {c.get('nome', '?')}{tipo_label}"
+                    if c.get("porte"): comp_line += f" | Porte: {c['porte']}"
                     if c.get("instagram"): comp_line += f" (IG: {c['instagram']})"
                     if c.get("site"): comp_line += f" | Site: {c['site']}"
                     if c.get("preco_referencia"): comp_line += f" | Preço: {c['preco_referencia']}"
@@ -678,10 +683,17 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
                     if c.get("ponto_fraco"): comp_line += f" | Fraqueza: {c['ponto_fraco']}"
                     canais_c = c.get("canais_digitais") or []
                     if canais_c: comp_line += f" | Canais: {', '.join(canais_c)}"
+                    if c.get("gap_vs_negocio"): comp_line += f"\n    → GAP: {c['gap_vs_negocio']}"
+                    if c.get("oportunidade"): comp_line += f"\n    → OPORTUNIDADE: {c['oportunidade']}"
                     if c.get("fonte"): comp_line += f" | Fonte: {c['fonte']}"
                     lines.append(comp_line)
                 elif isinstance(c, str):
                     lines.append(f"  • {c}")
+
+        # Competitive analysis summary
+        analise_comp = discovery_data.get("analise_competitiva_resumo", "")
+        if analise_comp:
+            lines.append(f"\n🏆 ANÁLISE COMPETITIVA: {analise_comp}")
 
     # ── Market data ──
     if "mercado" in allowed_sections:
@@ -710,3 +722,222 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
             lines.append(f"\n📝 RESUMO EXECUTIVO: {resumo}")
 
     return "\n".join(lines)
+
+
+def generate_sales_brief(profile: dict, discovery_data: dict, market_data: dict, model_provider: str = "groq") -> str:
+    """Generate a focused sales intelligence brief from all research data.
+
+    Synthesizes discovery + market findings into a ~400-word text that answers:
+    'Why isn't this business selling more, and what should it do?'
+
+    This brief is injected into ALL 7 scorer pillars so every pillar analysis is
+    grounded in the real sales situation — not a generic category template.
+    """
+    perfil = profile.get("perfil", profile)
+    nome = perfil.get("nome", perfil.get("nome_negocio", "?"))
+    segmento = perfil.get("segmento", "?")
+    localizacao = perfil.get("localizacao", perfil.get("cidade_estado", ""))
+    dificuldades = perfil.get("dificuldades", "")
+    principal_gargalo = perfil.get("principal_gargalo", perfil.get("maior_objecao", ""))
+    objetivos = perfil.get("objetivos", "")
+    modelo_negocio = perfil.get("modelo_negocio", perfil.get("modelo", ""))
+    ticket_medio = perfil.get("ticket_medio", perfil.get("ticket_medio_estimado", ""))
+
+    # Compact discovery summary (full, no pillar filter)
+    discovery_summary = format_discovery_for_scorer(discovery_data) if (discovery_data and discovery_data.get("found")) else ""
+
+    # Top market highlights across all categories
+    market_highlights = ""
+    for cat in (market_data.get("categories", []) or [])[:5]:
+        resumo = cat.get("resumo", {})
+        if isinstance(resumo, dict) and resumo.get("visao_geral"):
+            market_highlights += f"\n[{cat.get('nome', '')}]: {resumo['visao_geral'][:250]}"
+            for pt in (resumo.get("pontos_chave") or [])[:2]:
+                market_highlights += f"\n• {pt}"
+            for rec in (resumo.get("recomendacoes") or [])[:1]:
+                market_highlights += f"\n→ {rec}"
+
+    prompt = f"""Você é um consultor sênior de crescimento especializado em PMEs brasileiras.
+A finalidade do sistema é fazer este negócio VENDER MAIS. Com os dados abaixo, gere um BRIEF DE INTELIGÊNCIA DE VENDAS.
+
+NEGÓCIO: {nome} | {segmento} | {localizacao}
+MODELO: {modelo_negocio} | Ticket médio: {ticket_medio}
+PROBLEMA DECLARADO: {dificuldades or "Não informado"}
+GARGALO PRINCIPAL: {principal_gargalo or "Não informado"}
+OBJETIVO: {objetivos or "Não informado"}
+
+PRESENÇA DIGITAL ENCONTRADA:
+{discovery_summary[:900] if discovery_summary else "Sem dados de presença digital encontrados."}
+
+INTELIGÊNCIA DE MERCADO COLETADA:
+{market_highlights[:900] if market_highlights else "Sem dados de mercado coletados."}
+
+Gere um BRIEF DE INTELIGÊNCIA DE VENDAS em texto corrido (máximo 350 palavras), respondendo:
+1. O QUE ESTÁ TRAVANDO AS VENDAS: diagnóstico real baseado nos dados encontrados (presença digital, posicionamento, processo)
+2. O QUE OS MELHORES PLAYERS FAZEM: 2-3 práticas concretas que funcionam neste segmento para vender mais
+3. AS 3 ALAVANCAS DE VENDAS: as ações mais promissoras para este negócio específico gerar mais receita agora
+4. RISCOS E ARMADILHAS: o que pode desperdiçar tempo/dinheiro e deve ser evitado
+5. FRASE-SÍNTESE: uma frase orientadora para a estratégia completa
+
+Seja ESPECÍFICO. Use os dados encontrados. Mencione o segmento ({segmento}) e os problemas reais declarados.
+NÃO seja genérico — cada ponto deve ser diretamente aplicável a ESTE negócio."""
+
+    try:
+        result = call_llm(provider=model_provider, prompt=prompt, temperature=0.25, json_mode=False)
+        if isinstance(result, dict):
+            # LLM returned JSON despite json_mode=False — extract text content
+            brief_text = result.get("brief", result.get("texto", result.get("raw_response", "")))
+            if not brief_text:
+                brief_text = " ".join(str(v) for v in result.values() if isinstance(v, str))
+            return str(brief_text)[:2500]
+        return str(result)[:2500]
+    except Exception as e:
+        print(f"  ⚠️ Erro ao gerar sales brief: {e}", file=sys.stderr)
+        # Return minimal fallback so scorer still works
+        return (
+            f"NEGÓCIO: {nome} ({segmento}). "
+            f"PROBLEMA: {dificuldades or 'não informado'}. "
+            f"OBJETIVO: vender mais e aumentar receita."
+        )
+
+
+def extract_discovery_gaps(discovery_data: dict, profile: dict) -> dict:
+    """Analyze discovery findings and generate gap-oriented queries for market search.
+
+    Turns real findings into targeted research questions:
+    - 120 Instagram followers → "como crescer Instagram B2B industrial de 100 a 2000"
+    - No site found → "site gera leads B2B embalagens quanto custa"
+    - Competitor has LinkedIn, business doesn't → "LinkedIn B2B industrial como gerar clientes"
+
+    Returns: dict of {pillar_id: refined_query} to merge into market search queries.
+    """
+    if not discovery_data or not discovery_data.get("found"):
+        return {}
+
+    perfil = profile.get("perfil", profile)
+    segmento = perfil.get("segmento", "")
+    modelo = perfil.get("modelo_negocio", perfil.get("modelo", "")).upper()
+    dificuldades = perfil.get("dificuldades", "")
+
+    gap_queries = {}
+    pd = discovery_data.get("presenca_digital", {})
+
+    # ── Instagram gaps ──
+    ig = pd.get("instagram", {})
+    if ig.get("encontrado"):
+        seg_str = str(ig.get("seguidores", "0"))
+        seg_num = 0
+        nums = re.findall(r'\d+', seg_str.replace('.', '').replace(',', ''))
+        if nums:
+            seg_num = int(nums[0])
+        if seg_num < 1000:
+            gap_queries["trafego_organico"] = (
+                f"como crescer Instagram {segmento} de {seg_num} seguidores "
+                f"estratégia conteúdo engajamento gerar clientes"
+            )
+        eng = str(ig.get("engajamento_estimado", "")).lower()
+        if eng and ("baixo" in eng or "fraco" in eng):
+            existing = gap_queries.get("trafego_organico", "")
+            gap_queries["trafego_organico"] = (
+                f"como aumentar engajamento Instagram {segmento} "
+                f"reels stories conteúdo que converte {existing}"
+            ).strip()
+    else:
+        b2x = "B2B" if "B2B" in modelo else "B2C"
+        gap_queries["trafego_organico"] = (
+            f"vale a pena Instagram para {segmento} {b2x} "
+            f"como começar do zero e gerar clientes"
+        )
+
+    # ── Site gaps ──
+    site = pd.get("site", {})
+    if site.get("encontrado"):
+        if not site.get("tem_preco_visivel"):
+            gap_queries["processo_vendas"] = (
+                f"mostrar preço no site aumenta vendas {segmento} "
+                f"estratégia precificação online transparência"
+            )
+        if not site.get("tem_cta"):
+            gap_queries["canais_venda"] = (
+                f"como site gera leads {segmento} CTA landing page "
+                f"converter visitante em cliente formulário"
+            )
+        seo = str(site.get("qualidade_seo", "")).lower()
+        if seo and ("ruim" in seo or "fraco" in seo or "baixo" in seo):
+            existing = gap_queries.get("trafego_organico", "")
+            gap_queries["trafego_organico"] = (
+                f"SEO para {segmento} como posicionar no Google "
+                f"palavras-chave que geram vendas {existing}"
+            ).strip()
+    else:
+        b2x = "B2B" if "B2B" in modelo else ""
+        gap_queries.setdefault("canais_venda",
+            f"site para {segmento} {b2x} como gerar vendas online "
+            f"qual plataforma custo benefício"
+        )
+
+    # ── Google Maps gaps ──
+    gm = pd.get("google_maps", {})
+    if gm.get("encontrado"):
+        try:
+            nota = float(str(gm.get("nota", "5")).replace(",", "."))
+            if nota < 4.0:
+                gap_queries["branding"] = (
+                    f"como melhorar nota Google Maps {segmento} "
+                    f"gestão avaliações reputação online gerar confiança"
+                )
+        except (ValueError, TypeError):
+            pass
+    else:
+        gap_queries.setdefault("trafego_organico",
+            f"Google Meu Negócio {segmento} como aparecer "
+            f"busca local clientes região"
+        )
+
+    # ── LinkedIn gap (se B2B e não tem) ──
+    li = pd.get("linkedin", {})
+    if "B2B" in modelo and not li.get("encontrado"):
+        gap_queries.setdefault("trafego_organico",
+            f"LinkedIn para vender {segmento} B2B "
+            f"como prospectar gerar leads industrial"
+        )
+
+    # ── Competitive gaps ──
+    competitors = discovery_data.get("concorrentes_encontrados", [])
+    for comp in competitors[:2]:
+        if not isinstance(comp, dict):
+            continue
+        comp_name = comp.get("nome", "")
+        gap = comp.get("gap_vs_negocio", "")
+        oportunidade = comp.get("oportunidade", "")
+
+        if gap and comp_name:
+            # Use competitor gap to drive branding query
+            gap_queries.setdefault("branding",
+                f"como superar concorrente {segmento} que {gap[:50]} "
+                f"estratégia diferenciação posicionamento vender mais"
+            )
+        if oportunidade:
+            # Use opportunity to refine processo_vendas
+            gap_queries.setdefault("processo_vendas",
+                f"como vender mais {segmento} {oportunidade[:40]} "
+                f"estratégia conversão fechar mais clientes"
+            )
+
+    # ── Problems detected → targeted queries ──
+    problems = discovery_data.get("problemas_detectados", [])
+    for prob in problems[:2]:
+        prob_lower = str(prob).lower()
+        if "preço" in prob_lower or "precificação" in prob_lower or "caro" in prob_lower:
+            gap_queries.setdefault("processo_vendas",
+                f"estratégia precificação {segmento} como vender valor "
+                f"não competir por preço agregar diferencial"
+            )
+        elif "visibilidade" in prob_lower or "desconhecido" in prob_lower:
+            gap_queries.setdefault("branding",
+                f"como aumentar visibilidade {segmento} "
+                f"marca desconhecida ganhar credibilidade mercado"
+            )
+
+    print(f"  💡 Discovery gaps extraídos: {list(gap_queries.keys())}", file=sys.stderr)
+    return gap_queries
