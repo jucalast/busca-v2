@@ -172,7 +172,10 @@ class ToolPlugin(ABC):
         from app.services.agents.engine_specialist import brief_to_text, _format_previous_results
         
         brief_text = brief_to_text(ctx.business_profile)
-        prev_text = _format_previous_results(ctx.previous_results) if ctx.previous_results else ""
+        # For finalization tasks, allow much more context from previous results
+        is_finalization = "finalization" in ctx.task_id or "editor_final" in ctx.task_data.get("ferramenta", "")
+        max_prev_chars = 20000 if is_finalization else 6000
+        prev_text = _format_previous_results(ctx.previous_results, max_chars_per_item=max_prev_chars) if ctx.previous_results else ""
         
         parts = [
             f"{ctx.specialist.get('persona', '')}",
@@ -190,7 +193,9 @@ class ToolPlugin(ABC):
         if prev_text:
             parts.append(f"\n{prev_text}")
         if ctx.research_content:
-            parts.append(f"\n═══ DADOS COLETADOS ═══\n{ctx.research_content[:4000]}")
+            # Finalization tasks get more research context to produce richer documents
+            max_research = 24000 if is_finalization else 10000
+            parts.append(f"\n═══ DADOS COLETADOS ═══\n{ctx.research_content[:max_research]}")
         
         return "\n".join(parts)
     
@@ -285,6 +290,10 @@ REGRAS ANTI-GENÉRICO (CRÍTICO):
 - OBRIGATÓRIO usar dados ESPECÍFICOS do negócio em análise
 - OBRIGATÓRIO incluir nomes, números, datas e detalhes concretos
 - OBRIGATÓRIO que o resultado seja UTILIZÁVEL IMEDIATAMENTE
+- CADEIA PRODUTIVA (PRIORIDADE MÁXIMA): Se há dados de CADEIA PRODUTIVA ou FORNECEDORES no contexto:
+  * Empresas listadas como FORNECEDORES são quem vende insumos/matéria-prima para o negócio → NUNCA listar como concorrentes
+  * CONCORRENTES são APENAS empresas que vendem o MESMO produto final para os MESMOS clientes
+  * Se o dono do negócio informou fornecedores, esses dados têm AUTORIDADE ABSOLUTA sobre qualquer inferência
 """
 
 CASCADE_RULES = """

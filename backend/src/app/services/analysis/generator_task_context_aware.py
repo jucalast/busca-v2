@@ -139,6 +139,9 @@ def _prepare_rich_context(
     segmento = _profile.get("segmento", profile.get("segmento", ""))
     localizacao = _profile.get("localizacao", profile.get("localizacao", ""))
     
+    # Cadeia produtiva (se disponível no brief)
+    cadeia_produtiva = profile.get("cadeia_produtiva", "")
+    
     # Dados de mercado relevantes
     market_context = _extract_relevant_market_data(pillar_key, market_data)
     
@@ -165,6 +168,7 @@ def _prepare_rich_context(
             "segmento": segmento,
             "localizacao": localizacao
         },
+        "cadeia_produtiva": cadeia_produtiva,
         "market_data": market_context,
         "discovery_data": discovery_context,
         "sources": list(set(sources))  # Remove duplicatas
@@ -305,6 +309,10 @@ def _build_context_aware_prompt(
     discovery_summary = context["discovery_data"].get("summary", "")
     market_summary = context["market_data"].get("summary", "")
 
+    cadeia_hint = ""
+    if context.get("cadeia_produtiva"):
+        cadeia_hint = f"\n### CADEIA PRODUTIVA (RESPEITE):\n{context['cadeia_produtiva']}\n"
+
     prompt = f"""{specialist['persona']}
 
 Você está criando um plano de execução CONCRETO para "{negocio['nome']}" — {negocio['segmento']}{loc_str}.
@@ -317,7 +325,7 @@ Você está criando um plano de execução CONCRETO para "{negocio['nome']}" —
 - Dado chave: {context['dado_chave']}
 - Discovery: {discovery_summary}
 - Mercado: {market_summary}
-{acoes_hint}{research_section}
+{acoes_hint}{research_section}{cadeia_hint}
 ## SUA MISSÃO
 
 Gere EXATAMENTE 5 tarefas ORIGINAIS e ESPECÍFICAS para resolver o problema acima.

@@ -151,58 +151,100 @@ class UnifiedResearchEngine:
             
             research_data["sources"].append(url)
             
-            # Scraping apenas do TOP 1 resultado com timeout reduzido
+            # Scraping apenas do TOP 1 resultado usando web_extractor (trafilatura)
             if i == 0:  # Apenas o primeiro resultado
-                content = scrape_page(url, timeout=2)  # Reduzido de 4 para 2 segundos
+                try:
+                    from app.services.intelligence.intelligence_hub import intel_hub
+                    content = intel_hub.extract_content(url, timeout=2, max_chars=1500)
+                except Exception:
+                    content = scrape_page(url, timeout=2)
                 if content:
-                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"  # Reduzido de 2000 para 1500
+                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"
         
         # ── ENRIQUECIMENTO INTELIGENTE (intel_hub) ────────────────
-        # Para pilares estratégicos, busca dados extras automaticamente
+        # Todas as ferramentas de inteligência são aplicadas por pilar
+        tools_used = []
         try:
             from app.services.intelligence.intelligence_hub import intel_hub
             
-            if pillar_key == "publico_alvo":
-                # Trends: volume de busca e demanda real
-                trends_data = intel_hub.trends.analyze_demand(segmento, geo="BR")
-                if "error" not in trends_data:
-                    research_data["intelligence_trends"] = {
-                        "current_interest": trends_data.get("current_interest"),
-                        "growth_rate_3m": trends_data.get("growth_rate_3m"),
-                        "trend_direction": trends_data.get("trend_direction"),
-                    }
-                    research_data["content"] += (
-                        f"\n[DADOS TRENDS] Demanda de busca: interesse={trends_data.get('current_interest')}, "
-                        f"crescimento={trends_data.get('growth_rate_3m', 0):+.1f}% (3 meses), "
-                        f"tendência={trends_data.get('trend_direction')}\n"
-                    )
-                
-                # News: gatilhos de venda
-                news_data = intel_hub.news.search_sector_news(segmento, period="30d", max_results=5)
-                if news_data.get("news"):
-                    news_summary = "; ".join([n["title"] for n in news_data["news"][:3]])
-                    research_data["intelligence_news"] = news_data["news"][:3]
-                    research_data["content"] += f"\n[NOTÍCIAS SETOR] {news_summary}\n"
-                
-                if news_data.get("opportunities"):
-                    opp_summary = "; ".join([o["title"] for o in news_data["opportunities"][:2]])
-                    research_data["intelligence_opportunities"] = news_data["opportunities"][:2]
-                    research_data["content"] += f"\n[OPORTUNIDADES] {opp_summary}\n"
+            # ── TRENDS: Disponível para TODOS os pilares ─────────────
+            if pillar_key in ("publico_alvo", "branding", "trafego_organico", "trafego_pago", "canais_venda", "processo_vendas", "presenca_online"):
+                try:
+                    print(f"  📈 [Intel] Trends: analisando demanda para {pillar_key}...", file=sys.stderr)
+                    trends_data = intel_hub.trends.analyze_demand(segmento, geo="BR")
+                    if "error" not in trends_data:
+                        research_data["intelligence_trends"] = {
+                            "current_interest": trends_data.get("current_interest"),
+                            "growth_rate_3m": trends_data.get("growth_rate_3m"),
+                            "trend_direction": trends_data.get("trend_direction"),
+                        }
+                        research_data["content"] += (
+                            f"\n[DADOS TRENDS] Demanda de busca: interesse={trends_data.get('current_interest')}, "
+                            f"crescimento={trends_data.get('growth_rate_3m', 0):+.1f}% (3 meses), "
+                            f"tendência={trends_data.get('trend_direction')}\n"
+                        )
+                        tools_used.append({"tool": "trend_analyzer", "status": "success", "detail": f"interesse={trends_data.get('current_interest')}, trend={trends_data.get('trend_direction')}"})
+                    else:
+                        tools_used.append({"tool": "trend_analyzer", "status": "error", "detail": str(trends_data.get("error", ""))[:100]})
+                except Exception as te:
+                    tools_used.append({"tool": "trend_analyzer", "status": "error", "detail": str(te)[:100]})
+            
+            # ── RISING QUERIES: Para pilares de tráfego e conteúdo ───
+            if pillar_key in ("trafego_organico", "trafego_pago", "presenca_online", "branding"):
+                try:
+                    print(f"  🔥 [Intel] Trends: buscando termos em alta para {pillar_key}...", file=sys.stderr)
+                    rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
+                    if rising.get("rising_queries"):
+                        queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:5]])
+                        research_data["intelligence_rising_queries"] = rising["rising_queries"][:5]
+                        research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
+                        tools_used.append({"tool": "trend_analyzer_rising", "status": "success", "detail": f"{len(rising['rising_queries'])} termos encontrados"})
+                    else:
+                        tools_used.append({"tool": "trend_analyzer_rising", "status": "no_data", "detail": "Nenhum termo em alta"})
+                except Exception as re:
+                    tools_used.append({"tool": "trend_analyzer_rising", "status": "error", "detail": str(re)[:100]})
+            
+            # ── NEWS: Para todos os pilares ──────────────────────────
+            if pillar_key in ("publico_alvo", "branding", "canais_venda", "processo_vendas", "trafego_organico", "trafego_pago"):
+                try:
+                    print(f"  📰 [Intel] News: buscando notícias do setor para {pillar_key}...", file=sys.stderr)
+                    news_data = intel_hub.news.search_sector_news(segmento, period="30d", max_results=5)
+                    if news_data.get("news"):
+                        news_summary = "; ".join([n["title"] for n in news_data["news"][:3]])
+                        research_data["intelligence_news"] = news_data["news"][:3]
+                        research_data["content"] += f"\n[NOTÍCIAS SETOR] {news_summary}\n"
+                        tools_used.append({"tool": "news_extractor", "status": "success", "detail": f"{len(news_data['news'])} notícias"})
+                    else:
+                        tools_used.append({"tool": "news_extractor", "status": "no_data", "detail": "Nenhuma notícia encontrada"})
                     
-                print(f"  🧠 Intel enrichment applied for publico_alvo", file=sys.stderr)
+                    if news_data.get("opportunities"):
+                        opp_summary = "; ".join([o["title"] for o in news_data["opportunities"][:2]])
+                        research_data["intelligence_opportunities"] = news_data["opportunities"][:2]
+                        research_data["content"] += f"\n[OPORTUNIDADES] {opp_summary}\n"
+                except Exception as ne:
+                    tools_used.append({"tool": "news_extractor", "status": "error", "detail": str(ne)[:100]})
+            
+            # ── SALES TRIGGERS: Para pilares de vendas ───────────────
+            if pillar_key in ("processo_vendas", "canais_venda"):
+                try:
+                    print(f"  🎯 [Intel] News: detectando gatilhos de venda para {pillar_key}...", file=sys.stderr)
+                    triggers = intel_hub.news.detect_sales_triggers(segmento, period="14d", max_results=5)
+                    if triggers:
+                        triggers_text = "; ".join([t.get("title", "") for t in triggers[:3]] if isinstance(triggers, list) else [])
+                        if triggers_text:
+                            research_data["intelligence_triggers"] = triggers[:3] if isinstance(triggers, list) else triggers
+                            research_data["content"] += f"\n[GATILHOS DE VENDA] {triggers_text}\n"
+                            tools_used.append({"tool": "sales_triggers", "status": "success", "detail": f"{len(triggers) if isinstance(triggers, list) else 1} gatilhos"})
+                except Exception as ste:
+                    tools_used.append({"tool": "sales_triggers", "status": "error", "detail": str(ste)[:100]})
                 
-            elif pillar_key in ("trafego_organico", "presenca_online"):
-                # Trends: queries em ascensão (útil para SEO/conteúdo)
-                rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
-                if rising.get("rising_queries"):
-                    queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:5]])
-                    research_data["intelligence_rising_queries"] = rising["rising_queries"][:5]
-                    research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
-                
-                print(f"  🧠 Intel enrichment applied for {pillar_key}", file=sys.stderr)
+            print(f"  🧠 Intel enrichment applied for {pillar_key}: {[t['tool'] for t in tools_used]}", file=sys.stderr)
                 
         except Exception as e:
             print(f"  ⚠️ Intel enrichment skipped: {e}", file=sys.stderr)
+        
+        # Salvar ferramentas usadas nos dados da pesquisa
+        research_data["intelligence_tools_used"] = tools_used
         
         # Salvar cache
         self._set_cache(cache_key, "task", research_data)
@@ -220,7 +262,8 @@ class UnifiedResearchEngine:
         pillar_key: str,
         segmento: str,
         task_context: Optional[Dict] = None,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        subtask_index: int = 0
     ) -> Dict[str, Any]:
         """
         Pesquisa de subtarefas (micro level).
@@ -230,7 +273,8 @@ class UnifiedResearchEngine:
             "task_title": task_title,
             "task_desc": task_desc[:100],  # Limitar para cache
             "pillar_key": pillar_key,
-            "segmento": segmento
+            "segmento": segmento,
+            "subtask_index": subtask_index
         })
         
         # Verificar cache
@@ -240,14 +284,14 @@ class UnifiedResearchEngine:
                 print(f"  📦 Subtask research from cache: {task_title[:30]}...", file=sys.stderr)
                 return cached
         
-        # Construir query específica
-        query = self._build_subtask_query(task_title, task_desc, pillar_key, segmento)
+        # Construir query específica (com variação por subtask_index para evitar duplicação)
+        query = self._build_subtask_query(task_title, task_desc, pillar_key, segmento, subtask_index)
         
         print(f"  🔍 Subtask research: {task_title[:30]}...", file=sys.stderr)
         print(f"    Query: {query[:80]}...", file=sys.stderr)
         
-        # Executar pesquisa
-        search_results = search_duckduckgo(query, max_results=3, region='br-pt')
+        # Executar pesquisa — 5 resultados para mais diversidade de dados
+        search_results = search_duckduckgo(query, max_results=5, region='br-pt')
         
         research_data = {
             "task_title": task_title,
@@ -276,28 +320,55 @@ class UnifiedResearchEngine:
             
             research_data["sources"].append(url)
             
-            # Scraping dos top resultados para mais contexto relevante
-            if i < 2:
-                content = scrape_page(url, timeout=3)
+            # Extração de conteúdo via web_extractor (trafilatura) com fallback
+            if i < 3:
+                try:
+                    from app.services.intelligence.intelligence_hub import intel_hub
+                    content = intel_hub.extract_content(url, timeout=5, max_chars=4000)
+                except Exception:
+                    content = scrape_page(url, timeout=5)
                 if content:
-                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:2500]}\n\n"
+                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:4000]}\n\n"
         
-        # ── ENRIQUECIMENTO INTEL para subtarefas de público_alvo ──
-        if pillar_key == "publico_alvo":
-            try:
-                from app.services.intelligence.intelligence_hub import intel_hub
-                
-                # Notícias específicas da subtarefa
-                news = intel_hub.news.search_sector_news(
-                    f"{segmento} {task_title[:30]}", period="14d", max_results=3
-                )
-                if news.get("news"):
-                    for n in news["news"][:2]:
-                        research_data["content"] += f"\n[NOTÍCIA] {n['title']}\n"
-                    research_data["intelligence_news"] = news["news"][:2]
-                
-            except Exception as e:
-                print(f"  ⚠️ Subtask intel enrichment skipped: {e}", file=sys.stderr)
+        # ── ENRIQUECIMENTO INTEL para subtarefas (TODOS os pilares) ──
+        subtask_tools_used = []
+        try:
+            from app.services.intelligence.intelligence_hub import intel_hub
+            
+            # Notícias contextuais da subtarefa — para todos os pilares com foco em dados
+            if pillar_key in ("publico_alvo", "branding", "canais_venda", "processo_vendas", "trafego_organico", "trafego_pago"):
+                try:
+                    print(f"  📰 [Intel] Subtask news: {task_title[:30]}...", file=sys.stderr)
+                    news = intel_hub.news.search_sector_news(
+                        f"{segmento} {task_title[:30]}", period="14d", max_results=3
+                    )
+                    if news.get("news"):
+                        for n in news["news"][:2]:
+                            research_data["content"] += f"\n[NOTÍCIA] {n['title']}\n"
+                        research_data["intelligence_news"] = news["news"][:2]
+                        subtask_tools_used.append({"tool": "news_extractor", "status": "success", "detail": f"{len(news['news'])} notícias"})
+                    else:
+                        subtask_tools_used.append({"tool": "news_extractor", "status": "no_data"})
+                except Exception as ne:
+                    subtask_tools_used.append({"tool": "news_extractor", "status": "error", "detail": str(ne)[:80]})
+            
+            # Rising queries para subtarefas de tráfego/SEO
+            if pillar_key in ("trafego_organico", "trafego_pago"):
+                try:
+                    print(f"  🔥 [Intel] Subtask rising queries: {pillar_key}...", file=sys.stderr)
+                    rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
+                    if rising.get("rising_queries"):
+                        queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:3]])
+                        research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
+                        research_data["intelligence_rising_queries"] = rising["rising_queries"][:3]
+                        subtask_tools_used.append({"tool": "trend_analyzer_rising", "status": "success", "detail": f"{len(rising['rising_queries'])} termos"})
+                except Exception as tre:
+                    subtask_tools_used.append({"tool": "trend_analyzer_rising", "status": "error", "detail": str(tre)[:80]})
+            
+        except Exception as e:
+            print(f"  ⚠️ Subtask intel enrichment skipped: {e}", file=sys.stderr)
+        
+        research_data["intelligence_tools_used"] = subtask_tools_used
         
         # Salvar cache
         self._set_cache(cache_key, "subtask", research_data)
@@ -507,7 +578,8 @@ class UnifiedResearchEngine:
         task_title: str,
         task_desc: str,
         pillar_key: str,
-        segmento: str
+        segmento: str,
+        subtask_index: int = 0
     ) -> str:
         """Constrói query de INTELIGÊNCIA SETORIAL para subtarefa.
         
@@ -518,6 +590,7 @@ class UnifiedResearchEngine:
         - Strip TODOS os verbos de ação e palavras meta-task
         - Manter apenas palavras-ASSUNTO (persona, dores, necessidades etc)
         - Combinar com inteligência do pilar (3 termos de dados reais)
+        - Variar termos de busca por subtask_index para evitar resultados duplicados
         """
         import unicodedata
         def _norm(text: str) -> str:
@@ -564,16 +637,48 @@ class UnifiedResearchEngine:
                 unique_kw.append(w)
         
         # Inteligência setorial por pilar — termos que buscam DADOS REAIS
-        pillar_intel = {
-            "publico_alvo": "perfil comprador B2B necessidades comportamento",
-            "branding": "marca posicionamento concorrentes diferenciação mercado",
-            "identidade_visual": "identidade visual design tendências referências",
-            "canais_venda": "canais venda distribuição B2B marketplace",
-            "trafego_organico": "SEO palavras-chave conteúdo tráfego orgânico",
-            "trafego_pago": "anúncios Google Ads mídia paga benchmarks",
-            "processo_vendas": "vendas funil B2B jornada compra industrial",
+        # Cada pilar tem variantes para que subtasks diferentes busquem ângulos DIFERENTES
+        pillar_intel_variants = {
+            "publico_alvo": [
+                "perfil comprador B2B necessidades comportamento decisão",
+                "jornada compra industrial critérios seleção fornecedor",
+                "segmentação mercado industrial tendências compradores",
+            ],
+            "branding": [
+                "marca posicionamento concorrentes diferenciação mercado",
+                "proposta valor competitiva análise benchmark setor",
+                "estratégia marca cases sucesso indústria",
+            ],
+            "identidade_visual": [
+                "identidade visual design tendências referências",
+                "comunicação visual corporativa catálogo profissional",
+                "design embalagem materiais gráficos industriais",
+            ],
+            "canais_venda": [
+                "canais venda distribuição B2B marketplace",
+                "representantes comerciais prospecção ativa industrial",
+                "logística distribuição cadeia suprimentos vendas",
+            ],
+            "trafego_organico": [
+                "SEO palavras-chave conteúdo tráfego orgânico",
+                "marketing conteúdo B2B LinkedIn artigos técnicos",
+                "Google Meu Negócio presença digital local",
+            ],
+            "trafego_pago": [
+                "anúncios Google Ads mídia paga benchmarks",
+                "LinkedIn Ads segmentação B2B decisores compras",
+                "remarketing industrial custo aquisição leads",
+            ],
+            "processo_vendas": [
+                "vendas funil B2B jornada compra industrial",
+                "script vendas objeções negociação contratos",
+                "CRM pipeline comercial taxas conversão B2B",
+            ],
         }
-        intel = pillar_intel.get(pillar_key, "")
+        variants = pillar_intel_variants.get(pillar_key, [["dados setor mercado análise"]])
+        # Rotate through variants based on subtask_index to get diverse search results
+        variant_idx = subtask_index % len(variants)
+        intel = variants[variant_idx]
         intel_words = intel.split()[:3]  # Top 3 intelligence terms
         
         # Build: segmento + subject keywords (sem sobreposição) + intelligence

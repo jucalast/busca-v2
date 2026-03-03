@@ -169,6 +169,12 @@ def do_execute_all_subtasks(data: dict, background_tasks) -> dict:
 
     from app.core import database as db
 
+    # PREVENT DUPLICATE EXECUTIONS: If task is already running, don't start another
+    task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
+    if task_identifier in ACTIVE_BACKGROUND_TASKS:
+        print(f"  ⚠️ Task {task_id} already running, ignoring duplicate execution request.", file=sys.stderr)
+        return {"success": True, "message": "Task already running"}
+
     # CLEANUP OLD EXECUTIONS: Clear any previous subtask executions for this task so the UI doesn't see old data while running
     db.delete_specialist_executions(analysis_id, pillar_key, task_id)
 
@@ -267,7 +273,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
                 task_data=st,
                 brief=profile,
                 model_provider=model_provider,
-                previous_results=results
+                previous_results=results,
+                subtask_index=i
             )
             
             # Check if the task was cancelled during execution
@@ -292,6 +299,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # Separate PESQUISA (research context) from PRODUCAO (real deliverables)
         pesquisa_content = ""
         producao_content = ""
+        # Collect ALL research data from subtask executions
+        accumulated_research = ""
         for i, r in enumerate(results):
             if r and isinstance(r, dict):
                 titulo = subtasks_list[i].get('titulo', f'Subtarefa {i+1}')
@@ -301,6 +310,10 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
                     producao_content += section
                 else:
                     pesquisa_content += section
+                # Accumulate research context from subtasks
+                research_ctx = r.get('_research_context', '')
+                if research_ctx and research_ctx not in accumulated_research:
+                    accumulated_research += research_ctx + "\n\n"
 
         # Combined for finalization context; deliverable focuses on production artifacts
         combined_content = ""
@@ -309,12 +322,25 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         if pesquisa_content:
             combined_content += "\n# CONTEXTO DE PESQUISA\n\n" + pesquisa_content
 
-        # Create finalization subtask
+        # Build rich description for finalization using original task info
+        task_titulo = task_data.get('titulo', 'Tarefa principal')
+        task_desc = task_data.get('descricao', '')
+        task_entregavel = task_data.get('entregavel_ia', task_data.get('entregavel', ''))
+
+        # Create finalization subtask with explicit, detailed instructions
         finalization_task = {
             "id": f"{task_id}_finalization",
-            "titulo": "Finalização do Documento para Entrega",
-            "descricao": f"Consolide e finalize o documento completo para entrega: {task_data.get('titulo', 'Tarefa principal')}",
-            "entregavel_ia": "Documento Final Consolidado",
+            "titulo": f"Produzir Documento Final: {task_titulo}",
+            "descricao": (
+                f"SINTETIZE e APROFUNDE todos os dados coletados em um DOCUMENTO FINAL PROFISSIONAL para: {task_titulo}. "
+                f"Descrição original: {task_desc}. "
+                f"INTEGRE os dados de TODAS as subtarefas em uma narrativa coesa. "
+                f"NÃO RESUMA superficialmente. APROFUNDE cada ponto com análise crítica. "
+                f"CITE dados específicos: nomes de empresas, números, tendências reais, personas já definidas. "
+                f"O documento deve ter MÍNIMO 2000 palavras com seções claras (##), dados concretos, "
+                f"análises cruzadas entre subtarefas, recomendações ULTRA-ESPECÍFICAS para o negócio."
+            ),
+            "entregavel_ia": task_entregavel or "Documento Final Consolidado",
             "ferramenta": "editor_final"
         }
         
@@ -330,6 +356,21 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         db.save_background_task_progress(analysis_id, task_id, pillar_key, "running", current_step=total, total_steps=total_steps)
         
         print(f"  🔄 Executing finalization subtask: {finalization_task['titulo']}", file=sys.stderr)
+        print(f"  📊 Finalization input: {len(combined_content)} chars content + {len(accumulated_research)} chars research", file=sys.stderr)
+
+        # Build rich previous_results for finalization:
+        # Include subtask content + original research data
+        finalization_previous = [
+            {"titulo": "Conteúdo das Subtarefas Executadas", "conteudo": combined_content[:28000], "execution_mode": "producao"},
+        ]
+        # Add accumulated research as separate context item (this is the raw research data
+        # that was collected during subtask execution but may not be reflected in short outputs)
+        if accumulated_research:
+            finalization_previous.append({
+                "titulo": "Dados Brutos de Pesquisa Coletados",
+                "conteudo": accumulated_research[:20000],
+                "execution_mode": "pesquisa"
+            })
         
         # Execute the finalization subtask
         finalization_res = agent_execute_task(
@@ -339,10 +380,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             task_data=finalization_task,
             brief=profile,
             model_provider=model_provider,
-            previous_results=[
-                {"titulo": "Conteúdo das Subtarefas", "conteudo": combined_content[:15000]},
-                {"titulo": "Resumo das Execuções", "conteudo": f"Resultados de {len(results)} subtarefas executadas com sucesso."}
-            ]
+            previous_results=finalization_previous
         )
         
         # Check for cancellation during finalization
@@ -370,7 +408,14 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # Final full deliverable
         final_content = combined_content
         if finalization_res and finalization_res.get("success") and finalization_res.get("execution"):
-            final_content = finalization_res["execution"].get("conteudo", combined_content)
+            fin_content = finalization_res["execution"].get("conteudo", "")
+            # Use finalization content if it's substantial enough (at least 2000 chars or 1/4 of combined)
+            min_acceptable = max(2000, len(combined_content) // 4)
+            if len(str(fin_content)) > min_acceptable:
+                final_content = fin_content
+            else:
+                print(f"  ⚠️ Finalization content too short ({len(str(fin_content))} chars vs {len(combined_content)} combined). Using combined content.", file=sys.stderr)
+                final_content = combined_content
         
         combined_sources = []
         for r in results:

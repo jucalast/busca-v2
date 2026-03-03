@@ -95,7 +95,7 @@ export default function TaskCard({
 
         <div className="flex-1 min-w-0 flex flex-col items-start gap-0.5">
           <div className="flex items-center gap-2 w-full text-left">
-            <span className={`text-[13px] font-medium truncate ${
+            <span className={`text-[13px] font-medium leading-snug ${
               isExpanded ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-300'
             }`}>
               {task.titulo}

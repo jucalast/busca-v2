@@ -532,15 +532,19 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
         "segmento": perfil.get("segmento", "?"),
         "modelo": perfil.get("modelo_negocio", perfil.get("modelo", "?")),
         "localizacao": perfil.get("localizacao", "?"),
-        "equipe": perfil.get("num_funcionarios", "?"),
+        "equipe": perfil.get("num_funcionarios", perfil.get("equipe", "?")),
         "capital": restricoes.get("capital_disponivel", perfil.get("capital_disponivel", "?")),
-        "faturamento": perfil.get("faturamento_mensal", perfil.get("faturamento_faixa", "?")),
+        "faturamento": perfil.get("faturamento_mensal", perfil.get("faturamento_faixa", perfil.get("faturamento", "?"))),
         "ticket_medio": perfil.get("ticket_medio", perfil.get("ticket_medio_estimado", "?")),
         "diferencial": perfil.get("diferencial", "?"),
-        "cliente_ideal": perfil.get("cliente_ideal", perfil.get("publico_alvo", "?")),
-        "dificuldade_principal": perfil.get("dificuldades", "?"),
-        "canais_atuais": perfil.get("canais_venda", "?"),
+        "cliente_ideal": perfil.get("cliente_ideal", perfil.get("publico_alvo", perfil.get("clientes", "?"))),
+        "dificuldade_principal": perfil.get("dificuldades", perfil.get("problemas", "?")),
+        "canais_atuais": perfil.get("canais_venda", perfil.get("canais", "?")),
         "concorrentes": perfil.get("concorrentes", "?"),
+        "fornecedores": perfil.get("fornecedores", "?"),
+        "tipo_cliente": perfil.get("tipo_cliente", "?"),
+        "capacidade_produtiva": perfil.get("capacidade_produtiva", "?"),
+        "regiao_atendimento": perfil.get("regiao_atendimento", "?"),
         "origem_clientes": perfil.get("origem_clientes", "?"),
         "maior_objecao": perfil.get("maior_objecao", "?"),
     }
@@ -589,15 +593,129 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
     # ── Sales Brief (from scorer pipeline) ──
     sales_brief = profile.get("_sales_brief", "")
 
+    # ── Supply Chain Context (cadeia produtiva) ──
+    # Detect manufacturing/transformation businesses and clarify their position
+    # in the supply chain so the LLM doesn't confuse suppliers with competitors
+    cadeia_produtiva = _detect_supply_chain_context(dna)
+
     brief = {
         "dna": dna,
         "footprint": footprint,
         "market_digest": market_digest,
         "restricoes": restricao_flags,
         "sales_brief": sales_brief,
+        "cadeia_produtiva": cadeia_produtiva,
     }
 
     return brief
+
+
+# Module-level cache for supply chain detection (computed once per business)
+_SUPPLY_CHAIN_CACHE: dict = {}
+
+
+def _detect_supply_chain_context(dna: dict) -> str:
+    """
+    Use the LLM to dynamically classify the business's position in its supply chain.
+    Prevents LLM from confusing suppliers with competitors in downstream analysis.
+    
+    Uses prefer_small=True for speed and caches the result in a module-level dict
+    keyed by (nome, segmento) so it's only computed once per business.
+    
+    NEW: Also incorporates user-provided fornecedores data from the chat profile.
+    """
+    segmento = str(dna.get("segmento", "")).strip()
+    nome = str(dna.get("nome", dna.get("nome_negocio", ""))).strip()
+    modelo = str(dna.get("modelo", "")).strip()
+    concorrentes = str(dna.get("concorrentes", "")).strip()
+    diferencial = str(dna.get("diferencial", "")).strip()
+    fornecedores_user = str(dna.get("fornecedores", "")).strip()
+    tipo_cliente = str(dna.get("tipo_cliente", "")).strip()
+    
+    if not segmento or segmento == "?":
+        return ""
+    
+    # Cache key
+    cache_key = f"{nome}|{segmento}".lower()
+    if cache_key in _SUPPLY_CHAIN_CACHE:
+        return _SUPPLY_CHAIN_CACHE[cache_key]
+    
+    # If user already provided fornecedores, use them directly without LLM
+    fornecedores_info = ""
+    if fornecedores_user and fornecedores_user != "?":
+        fornecedores_info = f"\nFORNECEDORES INFORMADOS PELO USUÁRIO: {fornecedores_user}"
+    
+    clientes_info = ""
+    if tipo_cliente and tipo_cliente != "?":
+        clientes_info = f"\nCLIENTES INFORMADOS PELO USUÁRIO: {tipo_cliente}"
+    
+    prompt = f"""Classifique a posição deste negócio na cadeia produtiva do setor.
+
+NEGÓCIO: {nome}
+SEGMENTO: {segmento}
+MODELO: {modelo}
+CONCORRENTES INFORMADOS: {concorrentes if concorrentes and concorrentes != '?' else 'não informados'}
+DIFERENCIAL: {diferencial if diferencial and diferencial != '?' else 'não informado'}{fornecedores_info}{clientes_info}
+
+Responda APENAS com este JSON:
+{{
+    "posicao": "FABRICANTE_MATERIA_PRIMA | TRANSFORMADOR | DISTRIBUIDOR | VAREJISTA | SERVICO | OUTRO",
+    "descricao_curta": "O que este negócio faz na cadeia (1 frase)",
+    "fornecedores_tipicos": "Quem fornece insumos/matéria-prima para este negócio (NÃO são concorrentes)",
+    "concorrentes_reais": "Quem compete diretamente com este negócio (vendem o MESMO produto/serviço para os MESMOS clientes)",
+    "clientes_tipicos": "Quem compra o produto/serviço deste negócio",
+    "risco_confusao": true ou false (se há risco de confundir fornecedores com concorrentes neste segmento)
+}}
+
+REGRAS:
+- Baseie-se no segmento real do negócio, não invente.
+- Se o negócio TRANSFORMA matéria-prima em produto (ex: cartonagem compra chapa e faz caixa), marque risco_confusao=true.
+- Se o negócio é varejista ou serviço puro, risco_confusao geralmente é false.
+- Seja específico para o segmento "{segmento}" no Brasil."""
+
+    try:
+        result = call_llm(
+            provider="groq",
+            prompt=prompt,
+            temperature=0.1,
+            json_mode=True,
+            prefer_small=True,
+        )
+        
+        if not isinstance(result, dict) or not result.get("posicao"):
+            _SUPPLY_CHAIN_CACHE[cache_key] = ""
+            return ""
+        
+        # Only inject context when there's real risk of confusion
+        if not result.get("risco_confusao", False) and not fornecedores_user:
+            _SUPPLY_CHAIN_CACHE[cache_key] = ""
+            return ""
+        
+        # Build rich, structured text that the LLM MUST respect
+        text = (
+            f"⚠️ CADEIA PRODUTIVA — LEIA ANTES DE ANALISAR (OBRIGATÓRIO):\n"
+            f"Posição na cadeia: {result.get('posicao', '')}\n"
+            f"O que faz: {result.get('descricao_curta', '')}\n"
+        )
+        # Prioritize user-provided fornecedores over LLM-inferred ones
+        if fornecedores_user and fornecedores_user != "?":
+            text += f"🔴 FORNECEDORES DE MATÉRIA-PRIMA (INFORMADO PELO DONO): {fornecedores_user} — ESTES NÃO SÃO CONCORRENTES!\n"
+        else:
+            text += f"FORNECEDORES (NÃO confundir com concorrentes): {result.get('fornecedores_tipicos', '')}\n"
+        text += (
+            f"CONCORRENTES REAIS (vendem o MESMO produto final para os MESMOS clientes): {result.get('concorrentes_reais', '')}\n"
+            f"CLIENTES-ALVO: {result.get('clientes_tipicos', '')}\n"
+            f"⛔ REGRA: Se uma empresa aparece como FORNECEDOR acima, NUNCA a liste como concorrente."
+        )
+        
+        _SUPPLY_CHAIN_CACHE[cache_key] = text
+        log_info(f"📋 Cadeia produtiva detectada para {segmento}: {result.get('posicao', '?')}")
+        return text
+        
+    except Exception as e:
+        log_warning(f"Falha ao detectar cadeia produtiva: {e}")
+        _SUPPLY_CHAIN_CACHE[cache_key] = ""
+        return ""
 
 
 def brief_to_text(brief: dict, max_tokens: int = 800) -> str:
@@ -608,15 +726,20 @@ def brief_to_text(brief: dict, max_tokens: int = 800) -> str:
     md = brief.get("market_digest", {})
     restr = brief.get("restricoes", [])
     sb = brief.get("sales_brief", "")
+    cadeia = brief.get("cadeia_produtiva", "")
 
     lines = [
         f"NEGÓCIO: {dna.get('nome','?')} | {dna.get('segmento','?')} | {dna.get('modelo','?')} | {dna.get('localizacao','?')}",
         f"Equipe: {dna.get('equipe','?')} | Capital: {dna.get('capital','?')} | Faturamento: {dna.get('faturamento','?')} | Ticket: {dna.get('ticket_medio','?')}",
         f"Diferencial: {dna.get('diferencial','?')}",
         f"Cliente ideal: {dna.get('cliente_ideal','?')}",
+        f"Tipos de clientes atendidos: {dna.get('tipo_cliente','?')}",
         f"Canais atuais: {dna.get('canais_atuais','?')}",
         f"Dificuldade: {dna.get('dificuldade_principal','?')}",
-        f"Concorrentes: {dna.get('concorrentes','?')}",
+        f"Concorrentes (diretos): {dna.get('concorrentes','?')}",
+        f"Fornecedores (matéria-prima/insumos): {dna.get('fornecedores','?')}",
+        f"Capacidade produtiva: {dna.get('capacidade_produtiva','?')}",
+        f"Região de atendimento: {dna.get('regiao_atendimento','?')}",
         f"Objeção: {dna.get('maior_objecao','?')}",
     ]
 
@@ -636,6 +759,9 @@ def brief_to_text(brief: dict, max_tokens: int = 800) -> str:
 
     if restr:
         lines.append(f"RESTRIÇÕES: {', '.join(restr)}")
+
+    if cadeia:
+        lines.append(cadeia)
 
     text = "\n".join(lines)
     return text[:max_tokens * 4]  # rough char→token estimate
@@ -1665,7 +1791,7 @@ def _classify_task_executability(text: str) -> bool:
 # AI AGENT EXECUTION — The specialist generates deliverables
 # ═══════════════════════════════════════════════════════════════════
 
-def _format_previous_results(previous_results: list = None) -> str:
+def _format_previous_results(previous_results: list = None, max_chars_per_item: int = 6000) -> str:
     """Format previous subtask results into context for the next subtask."""
     if not previous_results:
         return ""
@@ -1673,10 +1799,14 @@ def _format_previous_results(previous_results: list = None) -> str:
     text = "═══ RESULTADOS EXATOS DAS SUBTAREFAS ANTERIORES ═══\n"
     text += "É OBRIGATÓRIO (CRÍTICO) manter exatamente os mesmos dados descritos abaixo (mesmo nome de persona, mesma idade, mesmos canais). NÃO re-invente coisas que já descrevemos!\n\n"
     
+    # Collect titles for anti-repetition summary
+    covered_topics = []
+    
     for i, pr in enumerate(previous_results):
         if not pr or not isinstance(pr, dict):
             continue
         titulo = pr.get("titulo", pr.get("entregavel_titulo", f"Subtarefa {i+1}"))
+        covered_topics.append(titulo)
         conteudo = pr.get("conteudo", "")
         mode = pr.get("execution_mode", "pesquisa")
         mode_label = "🏭 PRODUZIDO" if mode == "producao" else "📚 PESQUISA"
@@ -1684,9 +1814,22 @@ def _format_previous_results(previous_results: list = None) -> str:
         if isinstance(conteudo, dict):
             import json
             conteudo = json.dumps(conteudo, ensure_ascii=False)
-        if isinstance(conteudo, str) and len(conteudo) > 2000:
-            conteudo = conteudo[:2000] + "..."
+        if isinstance(conteudo, str) and len(conteudo) > max_chars_per_item:
+            conteudo = conteudo[:max_chars_per_item] + "..."
         text += f"── Subtarefa {i+1} [{mode_label}]: {titulo} ──\n{conteudo}\n\n"
+    
+    # Add strong anti-repetition block
+    if covered_topics:
+        text += "\n⛔ REGRA ANTI-REPETIÇÃO (OBRIGATÓRIO):\n"
+        text += "As subtarefas anteriores JÁ cobriram os seguintes temas:\n"
+        for t in covered_topics:
+            text += f"  - {t}\n"
+        text += "Você DEVE:\n"
+        text += "  1. NÃO repetir análises, dados ou conclusões já apresentadas acima\n"
+        text += "  2. REFERENCIAR os resultados anteriores quando relevante (ex: 'conforme identificado na subtarefa 1...')\n"
+        text += "  3. COMPLEMENTAR com informações NOVAS e DIFERENTES\n"
+        text += "  4. Se precisar citar algo já dito, faça uma referência breve — não copie parágrafos\n"
+        text += "═══════════════════════════════════════════════════\n\n"
     
     return text
 
@@ -1700,6 +1843,7 @@ def agent_execute_task(
     market_data: dict = None,
     previous_results: list = None,
     model_provider: str = "groq",
+    subtask_index: int = 0,
 ) -> dict:
     """
     The AI specialist EXECUTES a task — generates the actual deliverable.
@@ -1798,6 +1942,7 @@ def agent_execute_task(
         
         research = ""
         task_sources = []
+        intelligence_tools_used = []
         try:
             from app.services.research.unified_research import research_engine
             research_data = research_engine.search_subtasks(
@@ -1806,22 +1951,33 @@ def agent_execute_task(
                 pillar_key=pillar_key,
                 segmento=segmento,
                 task_context=task_data,
-                force_refresh=False
+                force_refresh=False,
+                subtask_index=subtask_index
             )
             research = research_data.get("content", "")
             task_sources = research_data.get("sources", [])
+            intelligence_tools_used = research_data.get("intelligence_tools_used", [])
             sources.extend(task_sources)
-            print(f"  📦 Task execute via unified_research: {len(task_sources)} sources", file=sys.stderr)
+            # Add web_search as tool used (always runs)
+            intelligence_tools_used.insert(0, {"tool": "web_search", "status": "success" if task_sources else "no_data", "detail": f"{len(task_sources)} fontes"})
+            # Add web_extractor if we got content
+            if research:
+                intelligence_tools_used.insert(1, {"tool": "web_extractor", "status": "success", "detail": f"{len(research)} chars extraídos"})
+            print(f"  📦 Task execute via unified_research: {len(task_sources)} sources | tools: {[t['tool'] for t in intelligence_tools_used]}", file=sys.stderr)
         except Exception as e:
             print(f"  ⚠️ Unified research failed for task exec: {e}", file=sys.stderr)
+            intelligence_tools_used.append({"tool": "web_search", "status": "error", "detail": str(e)[:80]})
 
         # Combine all research with clear structure
+        # Finalization tasks get more research context for richer documents
+        is_finalization = "finalization" in task_id or "editor_final" in task_data.get("ferramenta", "")
+        max_research_chars = 20000 if is_finalization else 10000
         all_research = ""
         if market_context:
             all_research += f"═══ DADOS DE MERCADO DO SETOR ═══\n{market_context}\n\n"
         if research:
             all_research += f"═══ DADOS COLETADOS ═══\n"
-            all_research += f"{research[:5000]}\n"
+            all_research += f"{research[:max_research_chars]}\n"
         if not all_research:
             all_research = "Nenhuma pesquisa web disponível. Baseie-se no contexto do negócio fornecido e na sua expertise do setor.\n"
 
@@ -1874,6 +2030,9 @@ def agent_execute_task(
                         # Add standard metadata
                         result["task_id"] = task_id
                         result["sources"] = sources
+                        result["intelligence_tools_used"] = intelligence_tools_used
+                        # Propagate research data so finalization can use it
+                        result["_research_context"] = all_research
                         
                         # Save to DB
                         db.save_execution_result(
@@ -1930,15 +2089,18 @@ ENTREGÁVEL ESPERADO: {entregavel}
 3. PROIBIDO comentar sobre qualidade ou formato dos dados. NUNCA escreva "dados corrompidos", "seção incompleta", "não foi possível extrair" etc. Apenas execute a tarefa.
 4. USE resultados das subtarefas anteriores. NÃO contradiga o que já foi definido.
 5. Ultra-específico para {segmento}. PROIBIDO conteúdo genérico.
+6. Se houver informação de CADEIA PRODUTIVA no contexto, RESPEITE: NÃO confunda FORNECEDORES de matéria-prima com CONCORRENTES. Fornecedores são quem vende insumos para o negócio. Concorrentes são empresas que vendem o MESMO tipo de produto/serviço para os MESMOS clientes.
+7. O campo "conteudo" DEVE conter o ENTREGÁVEL COMPLETO com MÍNIMO 800 palavras. Inclua: análise detalhada, dados extraídos da pesquisa, recomendações práticas, exemplos concretos do setor. INCORPORE os dados da pesquisa NO CORPO do texto — não apenas mencione que existem, ESCREVA-OS.
 
 EXECUTE a tarefa AGORA. Produza o ENTREGÁVEL COMPLETO, profissional, específico para {segmento} e pronto para uso.
+O "conteudo" deve ser um documento EXTENSO e DETALHADO em markdown com seções (##), dados reais, e recomendações acionáveis.
 
 JSON:
 {{
     "entregavel_titulo": "Título do entregável",
     "entregavel_tipo": "texto|estrategia|analise|calendario|script|template|plano",
     "opiniao": "Seu pensamento analítico sobre os dados e o entregável produzido. Tom conversacional natural. CITE SEMPRE dados concretos da pesquisa (empresas, números, tendências reais encontradas). Mínimo 4 linhas. ⛔ ABSOLUTAMENTE PROIBIDO: NÃO escreva NADA sobre qualidade, formato ou ausência de dados ('corrompidos', 'incompletos', 'seção inválida', 'não foi possível extrair', 'baseio-me em minha expertise', 'dados insuficientes'). Se os dados estão fragmentados, use-os e complemente com análise — sem citar essa limitação.",
-    "conteudo": "O ENTREGÁVEL COMPLETO — baseado nos dados reais pesquisados, detalhado e pronto para uso",
+    "conteudo": "O ENTREGÁVEL COMPLETO em markdown (##seções). MÍNIMO 800 palavras. INCORPORE todos os dados da pesquisa: nomes de empresas, números, tendências, análises. Documento profissional pronto para uso.",
     "como_aplicar": "Instruções de como aplicar este entregável",
     "proximos_passos": "Próximos passos após aplicar",
     "fontes_consultadas": ["urls das fontes reais usadas"],
@@ -1986,16 +2148,25 @@ Retorne APENAS o JSON."""
             content_len = len(content)
             print(f"  📤 Generated content length: {content_len} chars", file=sys.stderr)
             
-            if content_len < 50:
-                print(f"  ⚠️ Content too short! Retrying with fallback model...", file=sys.stderr)
+            # Determine minimum acceptable content length based on task type
+            task_tipo = task_data.get("tipo", "").lower()
+            has_ferramenta = bool(task_data.get("ferramenta", "").strip())
+            is_production_task = task_tipo == "producao" or has_ferramenta or "finalization" in task_id
+            min_content_len = 1500 if is_production_task else 300
+            
+            if content_len < min_content_len:
+                print(f"  ⚠️ Content too short ({content_len} chars)! Retrying with explicit length requirement...", file=sys.stderr)
                 
                 # Check for cancellation before retry
                 check_cancelled_ultra()
                 
+                # Retry with explicit length requirement prepended
+                retry_prompt = prompt + "\n\n⚠️ ATENÇÃO: Sua resposta anterior tinha apenas " + str(content_len) + " caracteres. ISSO É INACEITÁVEL. O campo 'conteudo' DEVE ter MÍNIMO 800 palavras com dados reais da pesquisa. Reescreva AGORA com o documento COMPLETO."
+                
                 # Try with fallback model (don't use prefer_small — it's too weak for complex JSON)
                 result = call_llm(
                     provider=model_provider,
-                    prompt=prompt,
+                    prompt=retry_prompt,
                     temperature=0.3,
                     json_mode=True,
                     prefer_small=False
@@ -2062,6 +2233,9 @@ Retorne APENAS o JSON."""
             # Add required metadata
             result["task_id"] = task_id
             result["sources"] = sources
+            result["intelligence_tools_used"] = intelligence_tools_used
+            # Propagate research data so finalization can use it
+            result["_research_context"] = all_research
 
             # Auto-record as executed (pending user confirmation)
             db.save_execution_result(
@@ -2264,7 +2438,8 @@ FOQUE EXCLUSIVAMENTE no escopo desta tarefa: "{task_data.get('titulo', '')}".
             pillar_key=pillar_key,
             segmento=_segmento,
             task_context=task_data,
-            force_refresh=False
+            force_refresh=False,
+            subtask_index=0
         )
         
         research_text = research_data.get("content", "")
@@ -2469,7 +2644,8 @@ def ai_try_user_task(
             pillar_key=pillar_key,
             segmento=segmento,
             task_context=task_data,
-            force_refresh=False
+            force_refresh=False,
+            subtask_index=0
         )
         research = research_data.get("content", "")
         sources.extend(research_data.get("sources", []))

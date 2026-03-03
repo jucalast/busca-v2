@@ -198,24 +198,26 @@ class ToolRegistry:
             
             # Handle raw_response fallback (when JSON constraint was relaxed by LLM router)
             if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
-                result["conteudo"] = result["raw_response"][:8000]
+                result["conteudo"] = result["raw_response"][:16000]
                 result.setdefault("entregavel_titulo", "Resultado gerado")
                 result.setdefault("entregavel_tipo", "documento")
             
-            # Validate minimum content
+            # Validate minimum content — production tools always need substantial output
             content = result.get("conteudo", "")
-            if len(str(content)) < 50:
-                print(f"  ⚠️ Production content too short ({len(str(content))} chars), retrying...", file=sys.stderr)
+            content_len = len(str(content))
+            if content_len < 1500:
+                print(f"  ⚠️ Production content too short ({content_len} chars), retrying with explicit length requirement...", file=sys.stderr)
+                retry_prompt = prompt + "\n\n⚠️ ATENÇÃO: Sua resposta anterior tinha apenas " + str(content_len) + " caracteres no campo 'conteudo'. ISSO É INACEITÁVEL. O campo 'conteudo' DEVE ter MÍNIMO 1000 palavras com dados reais. Reescreva AGORA com o documento COMPLETO."
                 result = call_llm(
                     provider=model_provider,
-                    prompt=prompt,
+                    prompt=retry_prompt,
                     temperature=0.3,
                     json_mode=True,
                     prefer_small=False,
                 )
                 # Handle raw_response on retry too
                 if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
-                    result["conteudo"] = result["raw_response"][:8000]
+                    result["conteudo"] = result["raw_response"][:16000]
                     result.setdefault("entregavel_titulo", "Resultado gerado")
             
             # Normalize text fields (same as generic execution)

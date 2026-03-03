@@ -81,7 +81,7 @@ def _extract_business_info(message: str, current_profile: dict) -> dict:
     
     log_debug(f"Extracting info: {message[:60]}...")
     
-    # Schema JSON para forçar estrutura correta (26 campos — inclui todos que o pipeline consome)
+    # Schema JSON para forçar estrutura correta (30 campos — inclui todos que o pipeline consome)
     json_schema = {
         "type": "object",
         "properties": {
@@ -99,6 +99,10 @@ def _extract_business_info(message: str, current_profile: dict) -> dict:
             "canais": {"type": "string"},
             "clientes": {"type": "string"},
             "concorrentes": {"type": "string"},
+            "fornecedores": {"type": "string"},
+            "tipo_cliente": {"type": "string"},
+            "capacidade_produtiva": {"type": "string"},
+            "regiao_atendimento": {"type": "string"},
             "diferencial": {"type": "string"},
             "margem": {"type": "string"},
             "gargalos": {"type": "string"},
@@ -143,7 +147,11 @@ Campos para extrair:
 - investimento: Investimento em marketing
 - canais: Canais de venda/comunicação
 - clientes: Tipo de clientes
-- concorrentes: Concorrentes conhecidos
+- concorrentes: Concorrentes diretos (quem vende o MESMO produto/serviço para os MESMOS clientes)
+- fornecedores: Fornecedores de matéria-prima/insumos (NÃO são concorrentes)
+- tipo_cliente: Tipos de clientes/indústrias atendidas (ex: alimentos, autopeças, cosméticos)
+- capacidade_produtiva: Capacidade de produção/volume (ex: 50 mil caixas/mês)
+- regiao_atendimento: Região geográfica atendida (local, estadual, nacional, etc)
 - diferencial: Diferencial competitivo
 - margem: Margem de lucro
 - gargalos: Gargalos operacionais
@@ -189,7 +197,8 @@ Responda apenas com o JSON, sem texto adicional.
         # Normalize: create aliases so downstream consumers find fields by their expected names
         for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
                          ('equipe', 'num_funcionarios'), ('faturamento', 'faturamento_mensal'),
-                         ('modelo_operacional', 'operacao')]:
+                         ('modelo_operacional', 'operacao'),
+                         ('canais', 'canais_venda'), ('clientes', 'cliente_ideal')]:
             if updated_profile.get(src):
                 updated_profile[dst] = updated_profile[src]
         
@@ -328,7 +337,7 @@ def _detect_discovery_gaps(message: str, current_profile: dict) -> list:
 CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos']
 
 # Precisa de pelo menos BONUS_MINIMUM destes para enriquecer a análise
-BONUS_FIELDS = ['ticket_medio', 'concorrentes', 'site', 'instagram', 'equipe', 'capital_disponivel']
+BONUS_FIELDS = ['ticket_medio', 'concorrentes', 'site', 'instagram', 'equipe', 'capital_disponivel', 'fornecedores', 'tipo_cliente', 'capacidade_produtiva', 'regiao_atendimento']
 BONUS_MINIMUM = 2
 
 # Labels em português para injeção natural no prompt
@@ -340,7 +349,11 @@ _FIELD_LABELS_PT = {
     'dificuldades': 'principais dificuldades/desafios',
     'objetivos': 'objetivos de crescimento',
     'ticket_medio': 'ticket médio por venda',
-    'concorrentes': 'concorrentes conhecidos',
+    'concorrentes': 'concorrentes diretos (quem vende o mesmo produto/serviço)',
+    'fornecedores': 'fornecedores de matéria-prima/insumos',
+    'tipo_cliente': 'tipos de clientes/indústrias atendidas',
+    'capacidade_produtiva': 'capacidade produtiva / volume de produção',
+    'regiao_atendimento': 'região geográfica de atendimento',
     'site': 'site/website',
     'instagram': 'perfil do Instagram',
     'equipe': 'tamanho da equipe',

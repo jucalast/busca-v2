@@ -1,13 +1,62 @@
 'use client';
 
 import React from 'react';
-import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check, Globe, Newspaper, TrendingUp, Search, Building2, Zap } from 'lucide-react';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
 import { SourceBadgeList } from '@/features/workspace/components/pillar-workspace/components/SourceBadgeList';
 import { MarkdownContent } from '@/features/workspace/components/pillar-workspace/components/MarkdownContent';
 import { StreamingText } from '@/features/workspace/components/pillar-workspace/components/StreamingText';
 import { cleanMarkdown, exportAsCSV, openInGoogleDocs, openInGoogleSheets, openInGoogleForms } from '@/features/workspace/components/pillar-workspace/utils';
 import { useSession } from 'next-auth/react';
+
+// ═══ Intelligence Tools Visualization ═══
+const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string; bgColor: string }> = {
+    web_search:            { icon: Search,      label: 'Web Search',       color: 'text-blue-400',    bgColor: 'bg-blue-500/10 border-blue-500/20' },
+    web_extractor:         { icon: Globe,        label: 'Web Extractor',    color: 'text-cyan-400',    bgColor: 'bg-cyan-500/10 border-cyan-500/20' },
+    news_extractor:        { icon: Newspaper,    label: 'News Intel',       color: 'text-amber-400',   bgColor: 'bg-amber-500/10 border-amber-500/20' },
+    trend_analyzer:        { icon: TrendingUp,   label: 'Google Trends',    color: 'text-emerald-400', bgColor: 'bg-emerald-500/10 border-emerald-500/20' },
+    trend_analyzer_rising: { icon: Zap,          label: 'Termos em Alta',   color: 'text-orange-400',  bgColor: 'bg-orange-500/10 border-orange-500/20' },
+    sales_triggers:        { icon: Zap,          label: 'Sales Triggers',   color: 'text-rose-400',    bgColor: 'bg-rose-500/10 border-rose-500/20' },
+    cnpj_lookup:           { icon: Building2,    label: 'CNPJ Lookup',      color: 'text-violet-400',  bgColor: 'bg-violet-500/10 border-violet-500/20' },
+};
+
+function IntelToolRow({ tool }: { tool: any }) {
+    const [open, setOpen] = React.useState(false);
+    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool };
+    const Icon = config.icon;
+    const detail = tool.detail as string | undefined;
+
+    return (
+        <div className="flex flex-col">
+            <button
+                onClick={() => detail && setOpen(p => !p)}
+                className={`group flex items-center gap-1.5 w-fit transition-colors ${detail ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+                <Icon className="w-3 h-3 text-zinc-500 shrink-0 group-hover:text-zinc-200 transition-colors" />
+                <span className="text-[11px] text-zinc-500 group-hover:text-zinc-200 transition-colors">{config.label}</span>
+                {detail && (
+                    <ChevronDown className={`w-3 h-3 text-zinc-600 group-hover:text-zinc-300 transition-all duration-200 ${open ? 'rotate-180' : ''}`} />
+                )}
+            </button>
+            {open && detail && (
+                <p className="text-[11px] text-zinc-500 leading-relaxed mt-1 pl-[18px]">{detail}</p>
+            )}
+        </div>
+    );
+}
+
+function IntelligenceToolsBadges({ tools, isRunning = false }: { tools?: any[]; isRunning?: boolean }) {
+    const applied = tools?.filter(t => t.status === 'success') ?? [];
+    if (applied.length === 0) return null;
+
+    return (
+        <div className="flex flex-col gap-1 py-3">
+            {applied.map((tool, idx) => (
+                <IntelToolRow key={`${tool.tool}-${idx}`} tool={tool} />
+            ))}
+        </div>
+    );
+}
 
 /**
  * If a string looks like raw JSON (starts with { or [), format it into readable markdown.
@@ -126,6 +175,80 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
     );
 }
 
+// ── Content accordion: "Ver pensamento da IA" + export buttons alongside ──────
+function ContentAccordion({
+    content,
+    executionMode,
+    safeRenderFn,
+    exportFormats,
+    loadingDocId,
+    onExport,
+}: {
+    content: string;
+    executionMode?: string;
+    safeRenderFn: (t: string) => string;
+    exportFormats?: string[];
+    loadingDocId: string | null;
+    onExport: (fmt: string) => void;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const fmts = exportFormats || [];
+
+    return (
+        <div className="mt-3">
+            {/* Header row: toggle + export buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+                <button
+                    onClick={() => setOpen(p => !p)}
+                    className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                    <span>Ver pensamento da IA</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+                </button>
+                {fmts.length > 0 && (
+                    <>
+                        <span className="text-zinc-700 select-none">·</span>
+                        {fmts.map((fmt) => {
+                            const isLoading = loadingDocId === fmt;
+                            return (
+                                <button
+                                    key={fmt}
+                                    disabled={!!isLoading}
+                                    onClick={() => onExport(fmt)}
+                                    className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-medium hover:bg-white/[0.08] hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                    {isLoading ? '...' : (
+                                        <>
+                                            {fmt === 'google_docs' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain" />}
+                                            {fmt === 'google_forms' && <img src="/forms.svg" alt="" className="w-3 h-3 object-contain" />}
+                                            {(fmt === 'google_sheets' || fmt === 'csv') && <img src="/sheets.png" alt="" className={`w-3 h-3 object-contain ${fmt === 'csv' ? 'opacity-60' : ''}`} />}
+                                            {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
+                                            {fmt === 'google_docs' ? 'Google Docs' :
+                                             fmt === 'google_forms' ? 'Google Forms' :
+                                             fmt === 'google_sheets' ? 'Google Sheets' :
+                                             fmt === 'pdf' ? 'PDF' :
+                                             fmt === 'csv' ? 'CSV' : fmt}
+                                        </>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </>
+                )}
+            </div>
+
+            {/* Collapsible content */}
+            {open && (
+                <div className="mt-3 text-[13px] font-light text-zinc-100 leading-relaxed">
+                    <MarkdownContent content={cleanMarkdown(safeRenderFn(
+                        executionMode === 'producao' ? content : formatJsonAsReadable(content)
+                    ))} />
+                </div>
+            )}
+        </div>
+    );
+}
+
 interface TaskSubtasksDisplayProps {
     task: TaskItem;
     pillarKey: string;
@@ -220,7 +343,7 @@ export default function TaskSubtasksDisplay({
                 <p
                     key={`${variant}-${idx}`}
                     className={variant === 'full'
-                        ? 'text-[13px] text-zinc-100 leading-relaxed'
+                        ? 'text-[13px] font-light text-zinc-100 leading-relaxed'
                         : 'text-[11px] text-zinc-300 leading-relaxed'}
                 >
                     {paragraph}
@@ -265,7 +388,7 @@ export default function TaskSubtasksDisplay({
         if (items.length === 0) return null;
 
         return (
-            <div className="w-full space-y-6 px-1 pt-3">
+            <div className="w-full space-y-6 px-1">
                 <style>{`
                     @keyframes result-block-fade-in {
                         from { opacity: 0; transform: translateY(10px); }
@@ -285,33 +408,29 @@ export default function TaskSubtasksDisplay({
                             animation: 'result-block-fade-in 0.5s ease-out forwards',
                             opacity: 0
                         }}>
-                            {/* Subtask title + mode badge */}
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                                    {subtaskTitle}
-                                </div>
-                                {result?.execution_mode === 'producao' && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase rounded-full bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
-                                        🏭 produzido
-                                    </span>
-                                )}
-                                {result?.artifact_type && result.artifact_type !== 'documento' && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-medium tracking-wider uppercase rounded-full bg-blue-500/15 text-blue-400/80 border border-blue-500/20">
-                                        {result.artifact_type}
-                                    </span>
-                                )}
-                            </div>
+{/* Intelligence tools visualization */}
+                            <IntelligenceToolsBadges
+                                tools={result?.intelligence_tools_used}
+                                isRunning={isStreaming}
+                            />
 
-                            {/* Sources first */}
+                            {/* Sources above title */}
                             {hasSources && (
                                 <div className="mb-3">
                                     <SourceBadgeList
-                                        sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]}
+                                        sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]} 
                                         maxVisible={4}
                                         animated={isStreaming || taskExecStatuses[index] === 'done'}
                                     />
                                 </div>
                             )}
+
+                            {/* Subtask title */}
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="text-[24px] font-medium text-white tracking-normal">
+                                    {subtaskTitle}
+                                </div>
+                            </div>
 
                             {/* AI opinion / streaming */}
                             {(opinionText || isStreaming) ? (
@@ -347,84 +466,39 @@ export default function TaskSubtasksDisplay({
                             )}
 
                             {/* PESQUISA: instructional "como fazer" content shown as AI opinion */}
-                            {result?.execution_mode !== 'producao' && result?.conteudo && status === 'done' && !isStreaming && (
-                                <div className="mt-3 text-[13px] text-zinc-100 leading-relaxed">
-                                    <MarkdownContent content={cleanMarkdown(safeRender(formatJsonAsReadable(result.conteudo)))} />
-                                </div>
-                            )}
-
-                            {/* Expandable full content — for production artifacts */}
-                            {result?.execution_mode === 'producao' && result?.conteudo && status === 'done' && !isStreaming && (
-                                <div className="mt-2">
-                                    <button
-                                        onClick={() => setExpandedContent(prev => ({ ...prev, [index]: !prev[index] }))}
-                                        className="flex items-center gap-1.5 text-[10px] font-medium text-violet-400/80 hover:text-violet-300 transition-colors"
-                                    >
-                                        {expandedContent[index] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                        {expandedContent[index] ? 'Recolher conteúdo' : '🏭 Ver conteúdo produzido'}
-                                    </button>
-                                    {expandedContent[index] && (
-                                        <div className="mt-2 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] max-h-[400px] overflow-y-auto">
-                                            <MarkdownContent content={cleanMarkdown(safeRender(result.conteudo))} />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Export formats — clickable buttons */}
-                            {result?.export_formats && result.export_formats.length > 0 && status === 'done' && !isStreaming && (
-                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/[0.04]">
-                                    <span className="text-[9px] text-zinc-600 font-medium">Exportar:</span>
-                                    {result.export_formats.map((fmt: string) => {
-                                        const isLoading = loadingDoc === `${tid}_${index}_${fmt}`;
-                                        return (
-                                            <button
-                                                key={fmt}
-                                                disabled={isLoading}
-                                                onClick={() => {
-                                                    if (fmt === 'csv' && result.structured_data) {
-                                                        exportAsCSV(result.structured_data, safeRender(result.entregavel_titulo || 'dados'));
-                                                    } else if (fmt === 'google_sheets' && result.structured_data?.abas?.length > 0) {
-                                                        openInGoogleSheets(
-                                                            result, session,
-                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
-                                                            `${tid}_st${index}`
-                                                        );
-                                                    } else if (fmt === 'google_forms' && result.structured_data?.secoes?.length > 0) {
-                                                        openInGoogleForms(
-                                                            result, session,
-                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
-                                                            `${tid}_st${index}`
-                                                        );
-                                                    } else if (fmt === 'google_docs' || fmt === 'pdf') {
-                                                        openInGoogleDocs(
-                                                            { ...result, conteudo_completo: result.conteudo },
-                                                            '', session, 
-                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
-                                                            `${tid}_st${index}`
-                                                        );
-                                                    }
-                                                }}
-                                                className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-medium hover:bg-white/[0.08] hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-50"
-                                            >
-                                                {isLoading ? '...' : (
-                                                    <>
-                                                        {fmt === 'google_docs' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain" />}
-                                                        {fmt === 'google_forms' && <img src="/forms.svg" alt="" className="w-3 h-3 object-contain" />}
-                                                        {fmt === 'google_sheets' && <img src="/sheets.png" alt="" className="w-3 h-3 object-contain" />}
-                                                        {fmt === 'csv' && <img src="/sheets.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
-                                                        {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
-                                                        {fmt === 'google_docs' ? 'Google Docs' : 
-                                                         fmt === 'google_forms' ? 'Google Forms' :
-                                                         fmt === 'google_sheets' ? 'Google Sheets' :
-                                                         fmt === 'pdf' ? 'PDF' :
-                                                         fmt === 'csv' ? 'CSV' : fmt}
-                                                    </>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                            {/* Content accordion — "Ver pensamento da IA" + export buttons */}
+                            {result?.conteudo && status === 'done' && !isStreaming && (
+                                <ContentAccordion
+                                    content={result.conteudo}
+                                    executionMode={result.execution_mode}
+                                    safeRenderFn={safeRender}
+                                    exportFormats={result.export_formats}
+                                    loadingDocId={loadingDoc}
+                                    onExport={(fmt) => {
+                                        if (fmt === 'csv' && result.structured_data) {
+                                            exportAsCSV(result.structured_data, safeRender(result.entregavel_titulo || 'dados'));
+                                        } else if (fmt === 'google_sheets' && result.structured_data?.abas?.length > 0) {
+                                            openInGoogleSheets(
+                                                result, session,
+                                                (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                `${tid}_st${index}`
+                                            );
+                                        } else if (fmt === 'google_forms' && result.structured_data?.secoes?.length > 0) {
+                                            openInGoogleForms(
+                                                result, session,
+                                                (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                `${tid}_st${index}`
+                                            );
+                                        } else if (fmt === 'google_docs' || fmt === 'pdf') {
+                                            openInGoogleDocs(
+                                                { ...result, conteudo_completo: result.conteudo },
+                                                '', session,
+                                                (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                `${tid}_st${index}`
+                                            );
+                                        }
+                                    }}
+                                />
                             )}
                         </div>
                     );
@@ -555,6 +629,16 @@ export default function TaskSubtasksDisplay({
                                                             ? '🏭 Produzindo artefato...' 
                                                             : 'Pesquisando fontes...'
                                                     )}
+                                                    <div className="px-3 pb-2">
+                                                        <IntelligenceToolsBadges isRunning={true} />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Intelligence tools used — shown after completion */}
+                                            {status === 'done' && resultForSubtask?.intelligence_tools_used && (
+                                                <div className="px-3">
+                                                    <IntelligenceToolsBadges tools={resultForSubtask.intelligence_tools_used} />
                                                 </div>
                                             )}
 

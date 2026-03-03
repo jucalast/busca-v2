@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain } from 'lucide-react';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
+import { HotzoneMapButton } from './HotzoneMapButton';
 
 interface Business {
   id: string;
@@ -338,41 +339,28 @@ export default function SidebarLayout({
           </div>
 
           {/* Right Sidebar - Business Mind Map */}
-          {
-            rightSidebar && (
-              <>
-                {/* Backdrop overlay */}
-                {rightSidebarOpen && (
-                  <div
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
-                    onClick={() => setRightSidebarOpen(false)}
-                  />
-                )}
-                {/* Toggle button */}
-                <button
-                  onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-                  className={`fixed top-24 z-[70] flex items-center gap-2 px-3 py-2 bg-zinc-800/60 hover:bg-zinc-700 rounded-l-xl transition-all duration-500 ${rightSidebarOpen ? 'right-[80vw]' : 'right-0 rounded-r-none'
-                    }`}
-                >
-                  {rightSidebarOpen ? (
-                    <X className="w-4 h-4 text-zinc-400" />
-                  ) : (
-                    <>
-                      <Brain className="w-4 h-4 text-violet-400" />
-                      <span className="text-[11px] font-semibold text-zinc-400 hidden md:inline">Mapa</span>
-                    </>
-                  )}
-                </button>
-                {/* Sidebar panel */}
-                <aside
-                  className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'
-                    }`}
-                >
-                  {rightSidebar}
-                </aside>
-              </>
-            )
-          }
+          {rightSidebar && (
+            <>
+              {/* Backdrop overlay */}
+              {rightSidebarOpen && (
+                <div
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
+                  onClick={() => setRightSidebarOpen(false)}
+                />
+              )}
+              {/* Hotzone para mostrar o botão */}
+              <HotzoneMapButton
+                rightSidebarOpen={rightSidebarOpen}
+                setRightSidebarOpen={setRightSidebarOpen}
+              />
+              {/* Sidebar panel */}
+              <aside
+                className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'}`}
+              >
+                {rightSidebar}
+              </aside>
+            </>
+          )}
         </div>
       </div>
     </div>

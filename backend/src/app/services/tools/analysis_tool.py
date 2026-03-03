@@ -68,6 +68,7 @@ NÃO explique "como fazer uma análise". FAÇA a análise.
 EXECUTE a análise COMPLETA:
 
 Se for ANÁLISE DE CONCORRENTES:
+- ATENÇÃO MÁXIMA À CADEIA PRODUTIVA: Se houver informação de CADEIA PRODUTIVA ou FORNECEDORES no contexto, NÃO confunda FORNECEDORES de matéria-prima com CONCORRENTES. Fabricantes que vendem insumos para o negócio são FORNECEDORES. Concorrentes são APENAS empresas que fabricam o MESMO tipo de produto para os MESMOS clientes. Se o dono informou fornecedores, essa informação é ABSOLUTA.
 - Liste 3-5 concorrentes REAIS do setor (use os dados de mercado)
 - Para cada: posicionamento, preço, diferenciais, pontos fracos, canais
 - Matriz comparativa com scores
@@ -101,7 +102,7 @@ JSON OBRIGATÓRIO:
     "entregavel_titulo": "Título da análise",
     "entregavel_tipo": "analise",
     "opiniao": "Sua análise pessoal sobre os achados (tom conversacional, min 4 linhas)",
-    "conteudo": "A ANÁLISE COMPLETA formatada — com dados, tabelas, insights. Pronta para usar.",
+    "conteudo": "A ANÁLISE COMPLETA formatada em markdown (##seções) — com dados, tabelas, insights. MÍNIMO 800 palavras. Pronta para usar.",
     "structured_data": {{
         "tipo_analise": "concorrentes|swot|mercado|comportamento|auditoria|gap",
         "resumo_executivo": "2-3 frases com os achados mais importantes",

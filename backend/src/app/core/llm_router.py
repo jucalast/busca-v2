@@ -121,11 +121,17 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
         # Method 3: Wrap clean text as content (last resort)
         if len(raw.strip()) > 100:
             print(f"  ⚠️ JSON extraction falhou em {model}, envolvendo texto como conteúdo ({len(raw)} chars)", file=sys.stderr)
+            # Extract first meaningful paragraphs as opiniao
+            _paragraphs = [p.strip() for p in raw.strip().split('\n') if p.strip() and len(p.strip()) > 30]
+            _opiniao = ' '.join(_paragraphs[:3])[:500] if _paragraphs else ""
+            # Try to extract a title from the first line
+            _first_line = raw.strip().split('\n')[0].strip().strip('#').strip()
+            _titulo = _first_line[:120] if len(_first_line) > 10 else "Resultado gerado"
             return json.dumps({
-                "entregavel_titulo": "Resultado gerado",
+                "entregavel_titulo": _titulo,
                 "entregavel_tipo": "documento",
-                "opiniao": "",
-                "conteudo": raw[:6000].strip(),
+                "opiniao": _opiniao,
+                "conteudo": raw[:16000].strip(),
                 "como_aplicar": "",
                 "proximos_passos": "",
                 "fontes_consultadas": [],
@@ -138,6 +144,14 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
         return None
 
 
+# ── Session-level memory of broken Groq models ──
+# When a model produces garbage (ilegível) or its TPD is exhausted,
+# we remember it so subsequent calls skip it immediately instead of
+# wasting time retrying the same broken model.
+_GROQ_BROKEN_MODELS: set = set()
+_GROQ_TPD_EXHAUSTED: set = set()
+
+
 def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 4, json_mode: bool = True, messages: list = None, prefer_small: bool = False):
     """Groq execution engine with aggressive retry logic."""
     client = Groq(api_key=api_key)
@@ -148,7 +162,6 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "llama-3.3-70b-versatile",
             "meta-llama/llama-4-scout-17b-16e-instruct",
             "meta-llama/llama-4-maverick-17b-128e-instruct",
-            # qwen3-32b excluded: thinking model emits binary reasoning tokens without response_format
         ]
     else:
         models = [
@@ -156,8 +169,15 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "meta-llama/llama-4-maverick-17b-128e-instruct",
             "llama-3.1-8b-instant",
             "meta-llama/llama-4-scout-17b-16e-instruct",
-            # qwen3-32b excluded: thinking model emits binary reasoning tokens without response_format
         ]
+
+    # Filter out models known to be broken or TPD-exhausted this session
+    models = [m for m in models if m not in _GROQ_BROKEN_MODELS and m not in _GROQ_TPD_EXHAUSTED]
+    if _GROQ_BROKEN_MODELS or _GROQ_TPD_EXHAUSTED:
+        skipped = (_GROQ_BROKEN_MODELS | _GROQ_TPD_EXHAUSTED)
+        print(f"  ⏭️ Modelos filtrados ({len(skipped)} skip): {', '.join(s.split('/')[-1] for s in skipped)}. Restam: {[m.split('/')[-1] for m in models]}", file=sys.stderr)
+    if not models:
+        raise Exception("Todos os modelos Groq estão marcados como indisponíveis nesta sessão.")
 
     kwargs = {}
     if json_mode:
@@ -187,6 +207,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                 # Model doesn't exist → skip to next model
                 if is_model_error and mi < len(models) - 1:
                     print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
+                    _GROQ_BROKEN_MODELS.add(model)
                     break
 
                 # JSON generation failure → try SAME model without constraint, then next
@@ -197,14 +218,16 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     )
                     if extracted is not None:
                         return extracted
-                    # This model can't produce usable output — try next
+                    # This model can't produce usable output — mark as broken for session
+                    _GROQ_BROKEN_MODELS.add(model)
                     if mi < len(models) - 1:
-                        print(f"  ➡️ Pulando para próximo modelo...", file=sys.stderr)
+                        print(f"  ➡️ {model} marcado como broken. Pulando para próximo modelo...", file=sys.stderr)
                         break
                     raise
 
-                # TPD (daily limit) — switch model immediately after 1 retry
+                # TPD (daily limit) — switch model immediately, remember for session
                 if is_rate_limit and is_tpd:
+                    _GROQ_TPD_EXHAUSTED.add(model)
                     if attempt == 0 and mi < len(models) - 1:
                         print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
                         break

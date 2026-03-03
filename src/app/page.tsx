@@ -210,7 +210,7 @@ export default function Home() {
         <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
       ) : (
         /* Chat Onboarding Stage */
-        <div className="p-6 md:p-10 h-full flex items-center justify-center relative">
+        <div className="p-6 h-full flex items-center justify-center relative">
           <div className="w-full max-w-2xl flex flex-col" style={{ height: 'calc(100vh - 130px)', minHeight: '560px' }}>
             <GrowthChat
               onProfileReady={handleChatProfileReady}
