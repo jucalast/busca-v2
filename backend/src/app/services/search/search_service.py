@@ -184,6 +184,100 @@ def search_and_summarize_category(category, query, business_description, api_key
             if content:
                 aggregated_text += f"Conteúdo completo Fonte {i+1}: {content}\n"
     
+    # --- Intelligence Hub enrichment for specific categories ---
+    try:
+        from app.services.intelligence.intelligence_hub import intel_hub
+        cat_id = category["id"]
+        
+        if cat_id == "publico_alvo":
+            # Trends: demand analysis for the query terms
+            try:
+                keywords = [kw.strip() for kw in query.split()[:5] if len(kw.strip()) > 3]
+                if keywords:
+                    trends_data = intel_hub.trends.analyze_demand(keywords[:3])
+                    if trends_data:
+                        aggregated_text += "\n\n[DADOS DE TENDÊNCIAS GOOGLE - DEMANDA REAL]\n"
+                        for kw, info in trends_data.items():
+                            direction = info.get("trend_direction", "N/A")
+                            growth = info.get("growth_rate_3m", 0)
+                            avg = info.get("average_interest", 0)
+                            aggregated_text += f"- '{kw}': tendência {direction}, crescimento 3m: {growth:.1f}%, interesse médio: {avg:.0f}/100\n"
+                            peaks = info.get("peak_periods", [])
+                            if peaks:
+                                aggregated_text += f"  Picos: {', '.join(peaks[:3])}\n"
+            except Exception as e:
+                print(f"  ⚠ Trends enrichment skipped: {e}", file=sys.stderr)
+            
+            # News: sector news and sales triggers
+            try:
+                short_desc = business_description[:200]
+                news = intel_hub.news.search_sector_news(short_desc, max_results=5)
+                if news:
+                    aggregated_text += "\n\n[NOTÍCIAS RECENTES DO SETOR]\n"
+                    for n in news[:5]:
+                        aggregated_text += f"- {n.get('title', '')} ({n.get('published_date', '')})\n"
+                        if n.get('description'):
+                            aggregated_text += f"  {n['description'][:200]}\n"
+                
+                triggers = intel_hub.news.detect_sales_triggers(short_desc, max_results=5)
+                if triggers:
+                    aggregated_text += "\n[GATILHOS DE VENDAS DETECTADOS]\n"
+                    for t in triggers[:5]:
+                        aggregated_text += f"- [{t.get('trigger_type', 'info')}] {t.get('title', '')} → {t.get('relevance', '')}\n"
+            except Exception as e:
+                print(f"  ⚠ News enrichment skipped: {e}", file=sys.stderr)
+        
+        elif cat_id == "mercado":
+            # Trends: demand analysis for market sizing
+            try:
+                keywords = [kw.strip() for kw in query.split()[:5] if len(kw.strip()) > 3]
+                if keywords:
+                    trends_data = intel_hub.trends.analyze_demand(keywords[:3])
+                    if trends_data:
+                        aggregated_text += "\n\n[DADOS DE TENDÊNCIAS GOOGLE - MERCADO]\n"
+                        for kw, info in trends_data.items():
+                            direction = info.get("trend_direction", "N/A")
+                            growth = info.get("growth_rate_3m", 0)
+                            aggregated_text += f"- '{kw}': tendência {direction}, crescimento 3m: {growth:.1f}%\n"
+                    
+                    rising = intel_hub.trends.get_rising_queries(keywords[:2])
+                    if rising:
+                        aggregated_text += "\n[TERMOS EM ALTA NO GOOGLE]\n"
+                        for kw, queries_list in rising.items():
+                            if queries_list:
+                                aggregated_text += f"- Relacionados a '{kw}': {', '.join(queries_list[:5])}\n"
+            except Exception as e:
+                print(f"  ⚠ Trends enrichment (mercado) skipped: {e}", file=sys.stderr)
+        
+        elif cat_id == "como_vender":
+            # News: detect sales triggers / opportunities
+            try:
+                short_desc = business_description[:200]
+                triggers = intel_hub.news.detect_sales_triggers(short_desc, max_results=5)
+                if triggers:
+                    aggregated_text += "\n\n[GATILHOS DE VENDAS - OPORTUNIDADES ATUAIS]\n"
+                    for t in triggers[:5]:
+                        aggregated_text += f"- [{t.get('trigger_type', 'info')}] {t.get('title', '')} → {t.get('relevance', '')}\n"
+            except Exception as e:
+                print(f"  ⚠ News triggers (como_vender) skipped: {e}", file=sys.stderr)
+        
+        elif cat_id == "presenca_online":
+            # Rising queries for SEO/content opportunities
+            try:
+                keywords = [kw.strip() for kw in query.split()[:5] if len(kw.strip()) > 3]
+                if keywords:
+                    rising = intel_hub.trends.get_rising_queries(keywords[:2])
+                    if rising:
+                        aggregated_text += "\n\n[TERMOS EM ALTA - OPORTUNIDADES DE CONTEÚDO]\n"
+                        for kw, queries_list in rising.items():
+                            if queries_list:
+                                aggregated_text += f"- Buscas em alta para '{kw}': {', '.join(queries_list[:5])}\n"
+            except Exception as e:
+                print(f"  ⚠ Rising queries (presenca_online) skipped: {e}", file=sys.stderr)
+    
+    except ImportError:
+        pass  # intelligence module not available, continue without enrichment
+    
     time.sleep(2)
     
     try:

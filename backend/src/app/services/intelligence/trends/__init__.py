@@ -1,0 +1,1 @@
+"""Trends - Google Trends analysis."""

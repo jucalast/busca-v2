@@ -5,6 +5,24 @@ from ddgs import DDGS
 import threading
 import time
 
+# ═══════════════════════════════════════════════════════════════════
+# TRAFILATURA — Extração de conteúdo aprimorada (fallback BS4)
+# ═══════════════════════════════════════════════════════════════════
+_trafilatura = None
+_trafilatura_checked = False
+
+def _get_trafilatura():
+    """Lazy import do trafilatura (só carrega 1x)."""
+    global _trafilatura, _trafilatura_checked
+    if not _trafilatura_checked:
+        try:
+            import trafilatura
+            _trafilatura = trafilatura
+        except ImportError:
+            _trafilatura = None
+        _trafilatura_checked = True
+    return _trafilatura
+
 def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', cancellation_check=None) -> list:
     """Perform a web search using DuckDuckGo with cancellation support."""
     # Validate query
@@ -44,6 +62,7 @@ _SCRAPE_BLOCKLIST = [
 
 def scrape_page(url: str, timeout: int = 2, cancellation_check=None) -> str:
     """Scrape text content from a webpage URL with cancellation support.
+    Uses trafilatura for high-quality extraction, falls back to BS4.
     Skips social media sites that require API access."""
     # Skip social media sites that never return useful content via scraping
     url_lower = url.lower()
@@ -51,9 +70,24 @@ def scrape_page(url: str, timeout: int = 2, cancellation_check=None) -> str:
         if blocked in url_lower:
             return ""
     try:
+        # Tentar trafilatura primeiro (extração cirúrgica)
+        traf = _get_trafilatura()
+        if traf:
+            downloaded = traf.fetch_url(url)
+            if downloaded:
+                text = traf.extract(
+                    downloaded,
+                    include_comments=False,
+                    include_tables=True,
+                    favor_recall=True,
+                    deduplicate=True,
+                )
+                if text:
+                    return text[:5000]
+        
+        # Fallback: BS4 clássico
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
-        # Use a shorter timeout and check cancellation during request
         response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         

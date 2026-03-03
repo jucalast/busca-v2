@@ -8,3 +8,8 @@ google-genai
 langgraph
 chromadb
 pydantic
+trafilatura
+pytrends
+gnews
+email-validator
+phonenumbers

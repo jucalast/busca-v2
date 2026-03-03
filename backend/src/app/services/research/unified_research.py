@@ -157,6 +157,53 @@ class UnifiedResearchEngine:
                 if content:
                     research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"  # Reduzido de 2000 para 1500
         
+        # ── ENRIQUECIMENTO INTELIGENTE (intel_hub) ────────────────
+        # Para pilares estratégicos, busca dados extras automaticamente
+        try:
+            from app.services.intelligence.intelligence_hub import intel_hub
+            
+            if pillar_key == "publico_alvo":
+                # Trends: volume de busca e demanda real
+                trends_data = intel_hub.trends.analyze_demand(segmento, geo="BR")
+                if "error" not in trends_data:
+                    research_data["intelligence_trends"] = {
+                        "current_interest": trends_data.get("current_interest"),
+                        "growth_rate_3m": trends_data.get("growth_rate_3m"),
+                        "trend_direction": trends_data.get("trend_direction"),
+                    }
+                    research_data["content"] += (
+                        f"\n[DADOS TRENDS] Demanda de busca: interesse={trends_data.get('current_interest')}, "
+                        f"crescimento={trends_data.get('growth_rate_3m', 0):+.1f}% (3 meses), "
+                        f"tendência={trends_data.get('trend_direction')}\n"
+                    )
+                
+                # News: gatilhos de venda
+                news_data = intel_hub.news.search_sector_news(segmento, period="30d", max_results=5)
+                if news_data.get("news"):
+                    news_summary = "; ".join([n["title"] for n in news_data["news"][:3]])
+                    research_data["intelligence_news"] = news_data["news"][:3]
+                    research_data["content"] += f"\n[NOTÍCIAS SETOR] {news_summary}\n"
+                
+                if news_data.get("opportunities"):
+                    opp_summary = "; ".join([o["title"] for o in news_data["opportunities"][:2]])
+                    research_data["intelligence_opportunities"] = news_data["opportunities"][:2]
+                    research_data["content"] += f"\n[OPORTUNIDADES] {opp_summary}\n"
+                    
+                print(f"  🧠 Intel enrichment applied for publico_alvo", file=sys.stderr)
+                
+            elif pillar_key in ("trafego_organico", "presenca_online"):
+                # Trends: queries em ascensão (útil para SEO/conteúdo)
+                rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
+                if rising.get("rising_queries"):
+                    queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:5]])
+                    research_data["intelligence_rising_queries"] = rising["rising_queries"][:5]
+                    research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
+                
+                print(f"  🧠 Intel enrichment applied for {pillar_key}", file=sys.stderr)
+                
+        except Exception as e:
+            print(f"  ⚠️ Intel enrichment skipped: {e}", file=sys.stderr)
+        
         # Salvar cache
         self._set_cache(cache_key, "task", research_data)
         
@@ -234,6 +281,23 @@ class UnifiedResearchEngine:
                 content = scrape_page(url, timeout=3)
                 if content:
                     research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:2500]}\n\n"
+        
+        # ── ENRIQUECIMENTO INTEL para subtarefas de público_alvo ──
+        if pillar_key == "publico_alvo":
+            try:
+                from app.services.intelligence.intelligence_hub import intel_hub
+                
+                # Notícias específicas da subtarefa
+                news = intel_hub.news.search_sector_news(
+                    f"{segmento} {task_title[:30]}", period="14d", max_results=3
+                )
+                if news.get("news"):
+                    for n in news["news"][:2]:
+                        research_data["content"] += f"\n[NOTÍCIA] {n['title']}\n"
+                    research_data["intelligence_news"] = news["news"][:2]
+                
+            except Exception as e:
+                print(f"  ⚠️ Subtask intel enrichment skipped: {e}", file=sys.stderr)
         
         # Salvar cache
         self._set_cache(cache_key, "subtask", research_data)
