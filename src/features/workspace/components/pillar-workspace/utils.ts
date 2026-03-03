@@ -28,25 +28,35 @@ export function cleanMarkdown(raw: string): string {
 }
 
 export function getToolInfo(deliverable: any): { icon: string; name: string; color: string } {
-    const title = (deliverable?.entregavel_titulo || '').toLowerCase();
-    const content = (deliverable?.conteudo || '').toLowerCase();
-    const tipo = (deliverable?.entregavel_tipo || '').toLowerCase();
+    // 1. Use artifact_type as PRIMARY signal (most reliable, comes from backend tool execution)
+    const artifactType = (deliverable?.artifact_type || '').toLowerCase();
+    if (artifactType === 'formulario') return { icon: '/forms.svg', name: 'Google Forms', color: 'text-purple-400' };
+    if (artifactType === 'planilha' || artifactType === 'calendario') return { icon: '/sheets.png', name: 'Google Sheets', color: 'text-green-400' };
+    if (artifactType === 'documento' || artifactType === 'analise') return { icon: '/docs.png', name: 'Google Docs', color: 'text-blue-400' };
 
-    if (title.includes('documento') || title.includes('doc') || tipo.includes('documento') ||
-        content.includes('documento') || content.includes('relatório') || content.includes('texto')) {
-        return { icon: '/docs.png', name: 'Google Docs', color: 'text-blue-400' };
+    // 2. Use entregavel_tipo (set by tools on production results)
+    const tipo = safeRender(deliverable?.entregavel_tipo).toLowerCase();
+    if (tipo === 'formulario' || tipo === 'pesquisa' || tipo === 'survey') return { icon: '/forms.svg', name: 'Google Forms', color: 'text-purple-400' };
+    if (tipo === 'planilha' || tipo === 'calendario' || tipo === 'cronograma') return { icon: '/sheets.png', name: 'Google Sheets', color: 'text-green-400' };
+    if (tipo === 'documento' || tipo === 'analise' || tipo === 'relatorio') return { icon: '/docs.png', name: 'Google Docs', color: 'text-blue-400' };
+
+    // 3. Keyword-based fallback for pre-execution (plan entregáveis)
+    const title = safeRender(deliverable?.entregavel_titulo).toLowerCase();
+    const content = safeRender(deliverable?.conteudo).toLowerCase();
+
+    if (title.includes('formulário') || title.includes('pesquisa online') || title.includes('questionário') ||
+        title.includes('survey') || title.includes('enquete') || tipo.includes('formulario')) {
+        return { icon: '/forms.svg', name: 'Google Forms', color: 'text-purple-400' };
     }
 
     if (title.includes('planilha') || title.includes('sheets') || title.includes('tabela') ||
-        tipo.includes('planilha') || content.includes('planilha') || content.includes('tabela') ||
-        content.includes('dados') || content.includes('métricas')) {
+        title.includes('calendário') || title.includes('cronograma') || title.includes('matriz') ||
+        tipo.includes('planilha') || content.includes('planilha') || content.includes('calendário editorial')) {
         return { icon: '/sheets.png', name: 'Google Sheets', color: 'text-green-400' };
     }
 
     if (title.includes('design') || title.includes('visual') || title.includes('banner') ||
-        title.includes('logo') || title.includes('identidade') || tipo.includes('design') ||
-        content.includes('design') || content.includes('visual') || content.includes('criativo') ||
-        content.includes('identidade visual') || content.includes('marca')) {
+        title.includes('logo') || title.includes('identidade') || tipo.includes('design')) {
         return { icon: '/canva.png', name: 'Canva', color: 'text-pink-400' };
     }
 
@@ -154,4 +164,195 @@ export async function exportFullAnalysis(session: any, setLoadingFull: (loading:
     } finally {
         setLoadingFull(false);
     }
+}
+
+// ════════════════════════════════════════════════════════════════
+// GOOGLE SHEETS EXPORT
+// ════════════════════════════════════════════════════════════════
+
+export async function openInGoogleSheets(result: any, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
+    if (!session || !session.accessToken) {
+        await signIn('google');
+        return;
+    }
+
+    const docId = result.id || fallbackId || 'export-sheet';
+
+    const structured = result.structured_data || {};
+    const abas = Array.isArray(structured.abas) ? structured.abas : [];
+    if (abas.length === 0) {
+        alert('Esta planilha ainda não possui dados estruturados (abas). Execute a tarefa novamente para gerar o conteúdo.');
+        return;
+    }
+
+    setLoadingDoc(docId);
+    const title = safeRender(result.entregavel_titulo || 'Planilha');
+
+    try {
+        const response = await fetch('/api/google-sheets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: session.accessToken,
+                title,
+                structured_data: structured,
+            }),
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Falha ao criar planilha');
+        }
+
+        const data = await response.json();
+        if (data.success && data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            throw new Error('Resposta inválida ao criar planilha');
+        }
+    } catch (err: any) {
+        console.error('Error creating Google Sheet:', err);
+        alert('Erro ao criar planilha: ' + err.message);
+    } finally {
+        setLoadingDoc(null);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// GOOGLE FORMS EXPORT
+// ════════════════════════════════════════════════════════════════
+
+export async function openInGoogleForms(result: any, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
+    if (!session || !session.accessToken) {
+        await signIn('google');
+        return;
+    }
+
+    const docId = result.id || fallbackId || 'export-form';
+    setLoadingDoc(docId);
+
+    const structured = result.structured_data || {};
+    const title = safeRender(result.entregavel_titulo || 'Formulário');
+
+    try {
+        const response = await fetch('/api/google-forms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: session.accessToken,
+                title,
+                structured_data: structured,
+            }),
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Falha ao criar formulário');
+        }
+
+        const data = await response.json();
+        if (data.success && data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            throw new Error('Resposta inválida ao criar formulário');
+        }
+    } catch (err: any) {
+        console.error('Error creating Google Form:', err);
+        alert('Erro ao criar formulário: ' + err.message);
+    } finally {
+        setLoadingDoc(null);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPORT UTILITIES — CSV, structured data download
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * Export structured tabular data as CSV file download.
+ * Works with spreadsheet_tool structured_data format.
+ */
+export function exportAsCSV(structuredData: any, filename?: string) {
+    const abas = structuredData?.abas || [];
+    if (abas.length === 0) return;
+    
+    const lines: string[] = [];
+    
+    for (const aba of abas) {
+        if (abas.length > 1) {
+            lines.push(`--- ${aba.nome || 'Dados'} ---`);
+        }
+        
+        // Header row
+        const cols = aba.colunas || [];
+        if (cols.length > 0) {
+            lines.push(cols.map((c: string) => `"${String(c).replace(/"/g, '""')}"`).join(','));
+        }
+        
+        // Data rows
+        const rows = aba.linhas || [];
+        for (const row of rows) {
+            if (Array.isArray(row)) {
+                lines.push(row.map((cell: any) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','));
+            }
+        }
+        
+        lines.push(''); // blank line between sheets
+    }
+    
+    const csvContent = lines.join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename || 'dados'}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Export form structured_data as a formatted text document ready for Google Forms.
+ */
+export function exportFormAsText(structuredData: any): string {
+    if (!structuredData?.secoes) return '';
+    
+    const lines: string[] = [];
+    lines.push(`# ${structuredData.titulo_formulario || 'Formulário'}`);
+    lines.push('');
+    if (structuredData.descricao_intro) {
+        lines.push(structuredData.descricao_intro);
+        lines.push('');
+    }
+    
+    let qNum = 1;
+    for (const secao of structuredData.secoes) {
+        lines.push(`## ${secao.titulo}`);
+        if (secao.descricao) lines.push(secao.descricao);
+        lines.push('');
+        
+        for (const pergunta of (secao.perguntas || [])) {
+            const req = pergunta.obrigatoria ? ' *' : '';
+            lines.push(`${qNum}. ${pergunta.texto}${req}`);
+            lines.push(`   Tipo: ${pergunta.tipo}`);
+            
+            if (pergunta.opcoes && pergunta.opcoes.length > 0) {
+                for (const opcao of pergunta.opcoes) {
+                    lines.push(`   ( ) ${opcao}`);
+                }
+            }
+            if (pergunta.escala_min != null && pergunta.escala_max != null) {
+                const labels = pergunta.labels || {};
+                lines.push(`   Escala: ${pergunta.escala_min} (${labels.min || ''}) → ${pergunta.escala_max} (${labels.max || ''})`);
+            }
+            lines.push('');
+            qNum++;
+        }
+    }
+    
+    if (structuredData.mensagem_final) {
+        lines.push('---');
+        lines.push(structuredData.mensagem_final);
+    }
+    
+    return lines.join('\n');
 }

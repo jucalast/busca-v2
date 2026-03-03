@@ -518,6 +518,11 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
     
     Data fusion: profile + discovery + market → compressed brief
     """
+    # Unwrap nested profile_data structure: { "profile": { "perfil": {...} } } → { "perfil": {...} }
+    # This happens when the frontend sends profile_data directly (which wraps the real profile)
+    if isinstance(profile, dict) and "profile" in profile and "perfil" not in profile and "dna" not in profile:
+        profile = profile["profile"]
+    
     perfil = profile.get("perfil", profile)
     restricoes = profile.get("restricoes_criticas", {})
 
@@ -1180,62 +1185,50 @@ def _should_search_for_task(task_title: str, task_desc: str, market_context: str
 def _build_smart_search_query(task_title: str, task_desc: str, segmento: str, pillar_key: str) -> str:
     """
     Builds intelligent search queries based on task characteristics.
+    Focuses on the SUBJECT of the task + business segment, NOT generic action verbs.
     """
-    # Extract key concepts from task
-    title_words = task_title.lower().split()
-    desc_words = task_desc.lower().split()
+    # Remove action verbs and stop words to focus on the actual subject
+    stop_words = {
+        "o", "a", "os", "as", "de", "do", "da", "dos", "das", "em", "para",
+        "com", "sem", "um", "uma", "que", "por", "no", "na", "nos", "nas",
+        "ao", "à", "pelo", "pela", "se", "e", "ou", "mas", "como",
+        "criar", "desenvolver", "implementar", "definir", "analisar",
+        "pesquisar", "coletar", "identificar", "elaborar", "estabelecer",
+        "mapear", "levantar", "realizar", "executar", "gerar", "produzir",
+    }
     
-    # Identify main action verbs
-    action_verbs = ["pesquisar", "analisar", "definir", "criar", "desenvolver", "estabelecer"]
-    main_action = "analisar"  # default
-    
-    for verb in action_verbs:
-        if verb in title_words or verb in desc_words:
-            main_action = verb
-            break
-    
-    # Identify core subject
-    # Remove common words to focus on substance
-    stop_words = {"o", "a", "os", "as", "de", "do", "da", "em", "para", "com", "sem", "um", "uma"}
-    title_keywords = [w for w in title_words if w not in stop_words and len(w) > 2]
-    desc_keywords = [w for w in desc_words if w not in stop_words and len(w) > 2]
-    
-    # Combine keywords, prioritizing title
-    keywords = list(dict.fromkeys(title_keywords + desc_keywords))  # remove duplicates, keep order
-    core_subjects = keywords[:3]  # top 3 most relevant
+    all_text = f"{task_title} {task_desc}".lower()
+    words = all_text.split()
+    keywords = []
+    seen = set()
+    for w in words:
+        if w not in stop_words and len(w) > 2 and w not in seen:
+            seen.add(w)
+            keywords.append(w)
     
     # Build contextual query based on pillar
     pillar_contexts = {
-        "publico_alvo": ["público-alvo", "persona", "cliente ideal", "segmentação"],
-        "branding": ["branding", "marca", "identidade", "posicionamento"],
-        "identidade_visual": ["identidade visual", "logo", "design", "cores"],
-        "canais_venda": ["canais de venda", "vendas", "distribuição", "e-commerce"],
-        "trafego_organico": ["tráfego orgânico", "seo", "conteúdo", "blog"],
-        "trafego_pago": ["tráfego pago", "anúncios", "mídia paga", "performance"],
-        "processo_vendas": ["processo de vendas", "vendas", "conversão", "funil"]
+        "publico_alvo": "público-alvo persona comprador",
+        "branding": "branding marca posicionamento",
+        "identidade_visual": "identidade visual design",
+        "canais_venda": "canais vendas e-commerce",
+        "trafego_organico": "SEO tráfego orgânico conteúdo",
+        "trafego_pago": "anúncios tráfego pago",
+        "processo_vendas": "processo vendas funil",
     }
     
-    context_terms = pillar_contexts.get(pillar_key, [])
+    pillar_term = pillar_contexts.get(pillar_key, "").split()[0] if pillar_key in pillar_contexts else ""
     
-    # Assemble smart query
-    query_parts = []
-    
-    # Add main action + core subject
-    if core_subjects:
-        query_parts.append(f"{main_action} {' '.join(core_subjects)}")
-    
-    # Add segmento if available
+    # Assemble: segmento + subject keywords + pillar context + year
+    parts = []
     if segmento:
-        query_parts.append(segmento)
+        parts.append(segmento)
+    parts.extend(keywords[:4])
+    if pillar_term and pillar_term not in seen:
+        parts.append(pillar_term)
+    parts.append("2025")
     
-    # Add pillar context
-    if context_terms:
-        query_parts.append(context_terms[0])  # most relevant context term
-    
-    # Add temporal and quality indicators
-    query_parts.extend(["2025", "dados", "estatísticas"])
-    
-    return " ".join(query_parts)
+    return " ".join(parts)
 
 
 def _extract_market_for_pillar(pillar_key: str, market_data: dict) -> str:
@@ -1685,13 +1678,15 @@ def _format_previous_results(previous_results: list = None) -> str:
             continue
         titulo = pr.get("titulo", pr.get("entregavel_titulo", f"Subtarefa {i+1}"))
         conteudo = pr.get("conteudo", "")
+        mode = pr.get("execution_mode", "pesquisa")
+        mode_label = "🏭 PRODUZIDO" if mode == "producao" else "📚 PESQUISA"
         # Truncate long content to avoid token overflow
         if isinstance(conteudo, dict):
             import json
             conteudo = json.dumps(conteudo, ensure_ascii=False)
-        if isinstance(conteudo, str) and len(conteudo) > 1000:
-            conteudo = conteudo[:1000] + "..."
-        text += f"── Subtarefa {i+1}: {titulo} ──\n{conteudo}\n\n"
+        if isinstance(conteudo, str) and len(conteudo) > 2000:
+            conteudo = conteudo[:2000] + "..."
+        text += f"── Subtarefa {i+1} [{mode_label}]: {titulo} ──\n{conteudo}\n\n"
     
     return text
 
@@ -1782,6 +1777,17 @@ def agent_execute_task(
 
         # ── Task-specific RAG search via unified_research (cached) ──
         dna = brief.get("dna", {})
+        # Fallback: if brief was passed as raw profile (no dna key), try to extract segmento directly
+        if not dna:
+            # Unwrap nested profile_data: { "profile": { "perfil": {...} } } → { "perfil": {...} }
+            _brief_inner = brief
+            if "profile" in _brief_inner and "perfil" not in _brief_inner:
+                _brief_inner = _brief_inner["profile"]
+            perfil = _brief_inner.get("perfil", _brief_inner)
+            dna = {
+                "segmento": perfil.get("segmento", ""),
+                "nome": perfil.get("nome", perfil.get("nome_negocio", "")),
+            }
         task_title = task_data.get("titulo", "")
         segmento = dna.get("segmento", "")
 
@@ -1809,14 +1815,15 @@ def agent_execute_task(
         except Exception as e:
             print(f"  ⚠️ Unified research failed for task exec: {e}", file=sys.stderr)
 
-        # Combine all research
+        # Combine all research with clear structure
         all_research = ""
         if market_context:
-            all_research += f"DADOS DE MERCADO (da análise):\n{market_context}\n\n"
+            all_research += f"═══ DADOS DE MERCADO DO SETOR ═══\n{market_context}\n\n"
         if research:
-            all_research += f"PESQUISA ESPECÍFICA DA TAREFA:\n{research[:4000]}\n"
+            all_research += f"═══ DADOS COLETADOS ═══\n"
+            all_research += f"{research[:5000]}\n"
         if not all_research:
-            all_research = "Use seu conhecimento profissional.\n"
+            all_research = "Nenhuma pesquisa web disponível. Baseie-se no contexto do negócio fornecido e na sua expertise do setor.\n"
 
         entregavel = task_data.get("entregavel_ia", task_data.get("descricao", ""))
         restr = brief.get("restricoes", [])
@@ -1826,7 +1833,68 @@ def agent_execute_task(
         if "equipe_solo" in restr:
             restr_text += "\n⚠️ Equipe de 1 pessoa."
 
-    # Scope boundaries for execution
+        # ════════════════════════════════════════════════════════════════
+        # TOOL SYSTEM: Try specialized production tool before generic exec
+        # ════════════════════════════════════════════════════════════════
+        try:
+            from app.services.tools.registry import tool_registry
+            from app.services.tools.base import ToolContext, ExecutionMode
+            
+            exec_mode = tool_registry.classify_execution_mode(task_data)
+            
+            if exec_mode == ExecutionMode.PRODUCAO:
+                tool = tool_registry.match_tool(task_data)
+                if tool:
+                    print(f"  🏭 PRODUCTION MODE: {tool.name} matched for '{task_title[:50]}'", file=sys.stderr)
+                    
+                    # Build ToolContext with all available data
+                    tool_ctx = ToolContext(
+                        analysis_id=analysis_id,
+                        pillar_key=pillar_key,
+                        task_id=task_id,
+                        task_data=task_data,
+                        business_profile=brief,
+                        specialist=spec,
+                        research_content=all_research,
+                        previous_results=previous_results or [],
+                        market_data=market_data or {},
+                        cross_pillar_context=cross_pillar,
+                        execution_history=exec_history,
+                        restrictions=restr_text,
+                        all_diagnostics=all_diagnostics or {},
+                        dim_label=dim_cfg.get('label', pillar_key),
+                    )
+                    
+                    # Execute with the matched tool
+                    tool_result = tool_registry.execute_with_tool(tool_ctx, model_provider=model_provider)
+                    
+                    if tool_result and tool_result.success:
+                        result = tool_result.to_execution_dict()
+                        
+                        # Add standard metadata
+                        result["task_id"] = task_id
+                        result["sources"] = sources
+                        
+                        # Save to DB
+                        db.save_execution_result(
+                            analysis_id, pillar_key, task_id, task_title,
+                            status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável produzido"),
+                            business_impact=result.get("impacto_estimado", ""),
+                            result_data=result
+                        )
+                        
+                        print(f"  ✅ PRODUCTION delivered: {result.get('entregavel_titulo', 'OK')} ({tool.name})", file=sys.stderr)
+                        watchdog.stop()
+                        return {"success": True, "execution": result}
+                    else:
+                        print(f"  ⚠️ Tool {tool.name} failed, falling back to generic execution", file=sys.stderr)
+            else:
+                print(f"  📚 RESEARCH MODE: generic execution for '{task_title[:50]}'", file=sys.stderr)
+                        
+        except Exception as tool_err:
+            print(f"  ⚠️ Tool system error (non-fatal, using generic): {tool_err}", file=sys.stderr)
+
+    # Scope boundaries for execution (generic fallback)
         escopo = spec.get("escopo", "")
         nao_fazer = spec.get("nao_fazer", "")
 
@@ -1839,7 +1907,7 @@ Pilar: {dim_cfg.get('label', pillar_key)}
 {escopo}
 🚫 PROIBIDO: {nao_fazer}
 
-═══ CONTEXTO ═══
+═══ CONTEXTO DO NEGÓCIO ═══
 {brief_text}
 
 {cross_pillar}
@@ -1847,7 +1915,8 @@ Pilar: {dim_cfg.get('label', pillar_key)}
 {exec_history}
 {restr_text}
 
-TAREFA A EXECUTAR: {task_title}
+═══ TAREFA ═══
+TAREFA: {task_title}
 DESCRIÇÃO: {task_data.get('descricao', '')}
 ENTREGÁVEL ESPERADO: {entregavel}
 
@@ -1855,43 +1924,24 @@ ENTREGÁVEL ESPERADO: {entregavel}
 
 {all_research}
 
-REGRA DE CASCATA (MANDATÓRIA): É ESTRITAMENTE OBRIGATÓRIO sugar todos os detalhes e variáveis já definidos (ex: Persona, Tom de Voz). INJETE esses dados diretamente no entregável final. Se o seu pilar for o primeiro a definir isso (ex: Público-Alvo), então CRIE AGORA do zero.
+═══ REGRAS ═══
+1. Use os dados coletados como base factual. EXTRAIA e CITE: empresas, tendências, números, dores reais.
+2. Se os dados estiverem fragmentados ou incompletos, use o que há e complemente com expertise. NÃO INVENTE estatísticas.
+3. PROIBIDO comentar sobre qualidade ou formato dos dados. NUNCA escreva "dados corrompidos", "seção incompleta", "não foi possível extrair" etc. Apenas execute a tarefa.
+4. USE resultados das subtarefas anteriores. NÃO contradiga o que já foi definido.
+5. Ultra-específico para {segmento}. PROIBIDO conteúdo genérico.
 
-REGRA ANTI-AMNÉSIA: OBRIGATÓRIO manter CONSISTÊNCIA ABSOLUTA com as subtarefas anteriores listadas acima. Se a subtarefa 1 gerou a persona "João Carlos, 42 anos", você DEVE usar o MESMO João Carlos agora. NÃO crie uma persona nova. NÃO mude a idade ou o cargo. Honre o que já foi construído, apenas detalhando mais a fundo!
-
-COMO {spec['cargo'].upper()}, EXECUTE esta tarefa AGORA.
-PARE DE APENAS RESUMIR OS DADOS DE MERCADO. A pesquisa e os dados de mercado fornecidos são apenas a BASE BÁSICA. Você deve CRIAR INEDITAMENTE o conteúdo final pedido. 
-
-REGRA ANTI-GENÉRICO E "LIVRO DIDÁTICO" (CRÍTICO):
-PROIBIDO dar definições teóricas empresariais ou explicações acadêmicas! 
-NÃO USE frases inúteis como "O cliente passa por Conscientização, Consideração, Decisão e Fidelização...". 
-Seja ultra-específico e prático. Dê EXEMPLOS REAIS do DIA A DIA DESTE NEGÓCIO:
-- Se for Jornada, diga EXATAMENTE o que a pessoa digita no Google e quais sites ela visita.
-- Diga com quem ela conversa pela empresa no WhatsApp para fechar.
-- Se for Persona, cite um problema extremamente específico que tira o sono dela hoje (ex: caixa amassa no frete).
-
-NÃO ESCREVA "A empresa X faz isso". ISSO É CHATO. CRIE O CONTEÚDO REAL, PRONTO PARA USAR!
-Gere o ENTREGÁVEL COMPLETO, aplicável AGORA por profissionais desse negócio.
-Mantenha-se ESTRITAMENTE dentro do escopo do seu pilar.
-
-- Se é um texto/copy: escreva o texto final USANDO dados upstream
-- Se é uma estratégia: detalhe cada ponto com ações concretas
-- Se é uma análise: apresente dados, insights e recomendações
-- Se é um calendário: crie o calendário completo com datas e temas
-- Se é um script: escreva o script palavra por palavra
-- Se é um template: crie o template preenchido
-
-O resultado deve ser PROFISSIONAL, ESPECÍFICO para este negócio, e PRONTO PARA USAR.
+EXECUTE a tarefa AGORA. Produza o ENTREGÁVEL COMPLETO, profissional, específico para {segmento} e pronto para uso.
 
 JSON:
 {{
     "entregavel_titulo": "Título do entregável",
     "entregavel_tipo": "texto|estrategia|analise|calendario|script|template|plano",
-    "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Use um tom conversacional e pessoal (ex: 'pelo o que eu analisei...', 'que legal essa informação...'). Mínimo 4 linhas de texto corrido.",
-    "conteudo": "O ENTREGÁVEL COMPLETO aqui — texto formatado, detalhado e pronto para uso",
-    "como_aplicar": "Instruções de como o usuário deve aplicar este entregável",
-    "proximos_passos": "O que fazer depois que aplicar",
-    "fontes_consultadas": ["urls"],
+    "opiniao": "Seu pensamento analítico sobre os dados e o entregável produzido. Tom conversacional natural. CITE SEMPRE dados concretos da pesquisa (empresas, números, tendências reais encontradas). Mínimo 4 linhas. ⛔ ABSOLUTAMENTE PROIBIDO: NÃO escreva NADA sobre qualidade, formato ou ausência de dados ('corrompidos', 'incompletos', 'seção inválida', 'não foi possível extrair', 'baseio-me em minha expertise', 'dados insuficientes'). Se os dados estão fragmentados, use-os e complemente com análise — sem citar essa limitação.",
+    "conteudo": "O ENTREGÁVEL COMPLETO — baseado nos dados reais pesquisados, detalhado e pronto para uso",
+    "como_aplicar": "Instruções de como aplicar este entregável",
+    "proximos_passos": "Próximos passos após aplicar",
+    "fontes_consultadas": ["urls das fontes reais usadas"],
     "impacto_estimado": "Impacto esperado no negócio"
 }}
 
@@ -1913,8 +1963,26 @@ Retorne APENAS o JSON."""
                 json_mode=True
             )
             
+            # Handle raw_response fallback (when JSON constraint was relaxed by LLM router)
+            if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
+                result["conteudo"] = result["raw_response"][:8000]
+                result.setdefault("entregavel_titulo", "Resultado gerado")
+                result.setdefault("entregavel_tipo", "documento")
+            
             # Validate result has minimum required content
             content = result.get("conteudo", "")
+            # Normalize content early: LLM sometimes returns dict/list instead of string
+            if isinstance(content, dict):
+                import json as _json
+                content = _json.dumps(content, ensure_ascii=False)
+                result["conteudo"] = content
+            elif isinstance(content, list):
+                content = "\n".join(str(i) for i in content)
+                result["conteudo"] = content
+            elif not isinstance(content, str):
+                content = str(content) if content else ""
+                result["conteudo"] = content
+            
             content_len = len(content)
             print(f"  📤 Generated content length: {content_len} chars", file=sys.stderr)
             
@@ -1924,15 +1992,29 @@ Retorne APENAS o JSON."""
                 # Check for cancellation before retry
                 check_cancelled_ultra()
                 
-                # Try with fallback model
+                # Try with fallback model (don't use prefer_small — it's too weak for complex JSON)
                 result = call_llm(
                     provider=model_provider,
                     prompt=prompt,
                     temperature=0.3,
                     json_mode=True,
-                    prefer_small=True
+                    prefer_small=False
                 )
+                # Handle raw_response on retry too
+                if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
+                    result["conteudo"] = result["raw_response"][:8000]
+                    result.setdefault("entregavel_titulo", "Resultado gerado")
                 content = result.get("conteudo", "")
+                if isinstance(content, dict):
+                    import json as _json
+                    content = _json.dumps(content, ensure_ascii=False)
+                    result["conteudo"] = content
+                elif isinstance(content, list):
+                    content = "\n".join(str(i) for i in content)
+                    result["conteudo"] = content
+                elif not isinstance(content, str):
+                    content = str(content) if content else ""
+                    result["conteudo"] = content
                 content_len = len(content)
                 print(f"  📤 Fallback content length: {content_len} chars", file=sys.stderr)
             
@@ -1940,6 +2022,42 @@ Retorne APENAS o JSON."""
                 # Ensure content is string before slicing
                 content_str = str(content) if content is not None else ""
                 print(f"  ⚠️ Content seems short! Preview: {content_str[:200]}", file=sys.stderr)
+
+            # Normalizar campos de texto: o LLM às vezes retorna dicts aninhados
+            # em vez de strings — convertemos tudo pra garantir serialização correta.
+            def _to_str(v):
+                if v is None:
+                    return ""
+                if isinstance(v, str):
+                    return v
+                if isinstance(v, dict):
+                    import json as _json
+                    return _json.dumps(v, ensure_ascii=False)
+                if isinstance(v, list):
+                    return "\n".join(str(i) for i in v)
+                return str(v)
+
+            for _field in ("conteudo", "opiniao", "como_aplicar", "proximos_passos",
+                           "entregavel_titulo", "entregavel_tipo", "impacto_estimado"):
+                if _field in result:
+                    result[_field] = _to_str(result[_field])
+
+            # Normalizar fontes_consultadas: garante lista de strings
+            if "fontes_consultadas" in result:
+                raw_fontes = result["fontes_consultadas"]
+                if isinstance(raw_fontes, list):
+                    result["fontes_consultadas"] = [
+                        f.get("url", f.get("link", str(f))) if isinstance(f, dict) else str(f)
+                        for f in raw_fontes if f
+                    ]
+                elif raw_fontes:
+                    result["fontes_consultadas"] = [str(raw_fontes)]
+                else:
+                    result["fontes_consultadas"] = []
+
+            # Mark as PESQUISA (research/instructional) — PRODUCAO is already set by tool system
+            if "execution_mode" not in result:
+                result["execution_mode"] = "pesquisa"
 
             # Add required metadata
             result["task_id"] = task_id
@@ -2079,6 +2197,63 @@ def expand_task_subtasks(
     if not market_data:
         market_data = db.get_analysis_market_data(analysis_id)
 
+    # Extract segmento with fallback for raw profile data
+    _dna = brief.get("dna", {})
+    if not _dna:
+        # Unwrap nested profile_data: { "profile": { "perfil": {...} } } → { "perfil": {...} }
+        _brief_unwrapped = brief
+        if "profile" in _brief_unwrapped and "perfil" not in _brief_unwrapped:
+            _brief_unwrapped = _brief_unwrapped["profile"]
+        _perfil = _brief_unwrapped.get("perfil", _brief_unwrapped)
+        _dna = {"segmento": _perfil.get("segmento", ""), "nome": _perfil.get("nome", _perfil.get("nome_negocio", ""))}
+    _segmento = _dna.get("segmento", "")
+
+    # ── Load sibling tasks from the pillar plan to avoid overlap ──
+    sibling_tasks_text = ""
+    try:
+        plan = db.get_pillar_plan(analysis_id, pillar_key)
+        if plan and plan.get("plan_data"):
+            plan_data = plan["plan_data"]
+            # plan_data may be nested: { "tarefas": [...] } or { pillar_key: { "tarefas": [...] } }
+            tarefas = plan_data.get("tarefas", [])
+            if not tarefas and isinstance(plan_data, dict):
+                for v in plan_data.values():
+                    if isinstance(v, dict) and "tarefas" in v:
+                        tarefas = v["tarefas"]
+                        break
+                    elif isinstance(v, list):
+                        tarefas = v
+                        break
+            
+            current_id = task_data.get("id", "")
+            siblings = []
+            current_idx = 0
+            for idx, t in enumerate(tarefas, 1):
+                t_id = t.get("id", "")
+                t_titulo = t.get("titulo", "")
+                if t_id == current_id or t_titulo == task_data.get("titulo", ""):
+                    current_idx = idx
+                else:
+                    siblings.append(f"  #{idx}: {t_titulo}")
+            
+            if siblings:
+                sibling_tasks_text = f"""
+═══ OUTRAS TAREFAS DO PILAR (JÁ EXISTEM — NÃO REPITA) ═══
+Esta é a tarefa #{current_idx} de {len(tarefas)} neste pilar.
+As outras tarefas são:
+""" + "\n".join(siblings) + """
+
+⚠️ REGRA ANTI-SOBREPOSIÇÃO (CRÍTICO):
+As tarefas acima serão executadas SEPARADAMENTE. Suas subtarefas NÃO DEVEM:
+- Repetir o escopo das tarefas acima (cada tarefa cuida do SEU tema)
+- Criar personas se outra tarefa já é "Criar personas"
+- Analisar concorrentes se outra tarefa já é "Analisar concorrentes"
+- Pesquisar perfil se outra tarefa já é "Pesquisar perfil"
+FOQUE EXCLUSIVAMENTE no escopo desta tarefa: "{task_data.get('titulo', '')}".
+"""
+    except Exception as e:
+        print(f"  ⚠️ Could not load sibling tasks: {e}", file=sys.stderr)
+
     # Use unified research ONLY — no duplicate fallback searches
     try:
         from app.services.research.unified_research import research_engine
@@ -2087,7 +2262,7 @@ def expand_task_subtasks(
             task_title=task_data.get("titulo", ""),
             task_desc=task_data.get("descricao", ""),
             pillar_key=pillar_key,
-            segmento=brief.get("dna", {}).get("segmento", ""),
+            segmento=_segmento,
             task_context=task_data,
             force_refresh=False
         )
@@ -2138,25 +2313,40 @@ def expand_task_subtasks(
 🚫 PROIBIDO — NÃO FAÇA NADA DISTO:
 {nao_fazer}
 
+{sibling_tasks_text}
+
 TAREFA PRINCIPAL: {task_title}
 DESCRIÇÃO: {task_desc}
-TIPO: {"Executável por IA" if is_ai else "Requer ação do usuário"}
-ENTREGÁVEL: {task_data.get('entregavel_ia', 'N/A')}
+ENTREGÁVEL FINAL: {task_data.get('entregavel_ia', 'N/A')}
 
 {all_research}
 
-Quebre esta tarefa em 3-6 SUBTAREFAS concretas e sequenciais.
-Cada subtarefa deve ser pequena o suficiente para ser completada em uma sessão.
-Para cada subtarefa, classifique se a IA pode executar ou se o usuário precisa fazer.
+═══ QUEBRE ESTA TAREFA EM 3-6 SUBTAREFAS EXECUTÁVEIS ═══
 
-REGRA ANTI-INVASÃO DE ESCOPO (CRÍTICO): PARE DE INVENTAR EXTRAS. Esta tarefa é EXCLUSIVAMENTE sobre: "{task_title}". NÃO INCLUA NUNCA sub-passos referentes a escopos de outras tarefas maiores do mesmo pilar. Exemplo: se a tarefa for ESTRITAMENTE sobre "Criar Documento de Persona", é ESTRITAMENTE PROIBIDO colocar uma subtarefa sobre "Desenvolver Jornada do Cliente" no meio. Mantenha o escopo isolado apenas no entregável desta tarefa específica.
+PRINCÍPIO FUNDAMENTAL — TESTE DE FACTIBILIDADE:
+Antes de incluir qualquer subtarefa, pergunte: "A IA consegue executar isso com dados da web + perfil do negócio?"
+→ SIM → inclua como subtarefa
+→ NÃO → remova. Não existe essa subtarefa.
 
-REGRA DE CASCATA: É OBRIGATÓRIO desenhar as subtarefas usando as variáveis, personas e estratégias já definidas pelos pilares anteriores. NÃO sub-divida tarefas de forma genérica.
+DOIS TIPOS DE SUBTAREFA (use ambos, nesta proporção):
 
-REGRA DO ENTREGÁVEL: Se a tarefa tiver um "ENTREGÁVEL" especificado (como "{task_data.get('entregavel_ia', '')}"), é OBRIGATÓRIO incluir uma subtarefa específica para "Criar {task_data.get('entregavel_ia', 'arquivo entregável')}" como uma das subtarefas finais. Esta subtarefa deve focar exclusivamente na produção do arquivo/documento entregável.
+📚 TIPO PESQUISA (máximo 2 subtarefas):
+- A IA faz busca web real e extrai dados concretos do setor
+- Produz análise/insights baseada no que foi encontrado na internet
+- Exemplos VÁLIDOS: "Pesquisar perfil e comportamento de compradores de {_segmento}", "Analisar concorrentes de {_segmento} com dados reais", "Levantar benchmarks e tendências do mercado de {_segmento}"
+- Exemplos INVÁLIDOS (⛔ PROIBIDO ABSOLUTO): "Realizar pesquisa com clientes" (requer humanos reais), "Coletar respostas do formulário" (impossível — exige ação humana), "Analisar dados coletados" sem dados reais, "Aplicar questionário com participantes", "Aguardar respostas dos clientes", "Enviar pesquisa e coletar feedback", "Tabular respostas recebidas"
+⚠️ REGRA ESPECIAL: Se a tarefa-pai envolve 'entender necessidades/dores dos clientes via pesquisa', a subtarefa PESQUISA deve ser: buscar estudos setoriais, artigos, LinkedIn, fóruns do setor que JÁ revelam essas necessidades — NÃO criar a etapa de aplicação/coleta que exige clientes reais.
 
-REGRA IMPORTANTE: Todas as subtarefas devem estar DENTRO do escopo acima.
-NÃO crie subtarefas que envolvam ações listadas em 🚫 PROIBIDO.
+🏭 TIPO PRODUCAO (mínimo 2 subtarefas, máximo 4):
+- A IA cria um artefato REAL e COMPLETO usando os dados da pesquisa
+- Cada subtarefa produz algo utilizável imediatamente
+- Exemplos: "Criar Persona detalhada de {_segmento}", "Elaborar formulário de pesquisa", "Criar relatório de análise de mercado", "Escrever script de vendas", "Montar plano de ação"
+
+REGRAS OBRIGATÓRIAS:
+1. ANTI-SOBREPOSIÇÃO (PRIORIDADE MÁXIMA): NÃO crie subtarefas que repetem o trabalho das OUTRAS TAREFAS do pilar listadas acima. Cada tarefa tem seu escopo ÚNICO. Se outra tarefa já "Cria Persona", você NÃO cria persona. Se outra já "Pesquisa perfil", você NÃO pesquisa perfil.
+2. CASCATA: Use personas, tom de voz e estratégias já definidos pelos pilares anteriores.
+3. ENTREGÁVEL FINAL: A última subtarefa DEVE criar o artefato final: "{task_data.get('entregavel_ia', 'entregável da tarefa')}".
+4. SEQUÊNCIA LÓGICA: subtarefas PESQUISA primeiro, subtarefas PRODUCAO depois.
 
 JSON OBRIGATÓRIO:
 {{
@@ -2165,16 +2355,37 @@ JSON OBRIGATÓRIO:
     "subtarefas": [
         {{
             "id": "st1",
-            "titulo": "Ação concreta e específica",
-            "descricao": "Detalhes do que fazer",
+            "titulo": "Nome concreto e específico da subtarefa",
+            "descricao": "Exatamente o que será feito, com detalhes do setor",
+            "tipo": "pesquisa",
             "executavel_por_ia": true,
-            "entregavel": "O que será produzido",
-            "tempo_estimado": "30min-1h"
+            "entregavel_ia": "O que a IA vai produzir (ex: análise de perfil de compradores de {_segmento})",
+            "ferramenta": "nome_ferramenta_se_houver",
+            "tempo_estimado": "30min"
+        }},
+        {{
+            "id": "st2",
+            "titulo": "Nome do artefato a ser criado",
+            "descricao": "O que o artefato conterá, usando os dados da pesquisa anterior",
+            "tipo": "producao",
+            "executavel_por_ia": true,
+            "entregavel_ia": "Artefato completo pronto para usar (ex: Formulário de Pesquisa de Satisfação)",
+            "ferramenta": "formulario|documento|planilha|analise|estrategia|conteudo",
+            "tempo_estimado": "1h"
         }}
     ],
-    "ordem_execucao": "Descrição da sequência lógica",
+    "ordem_execucao": "Pesquisa web primeiro → produção de artefatos com base nos dados",
     "resultado_combinado": "O que teremos ao completar todas as subtarefas"
 }}
+
+VALORES VÁLIDOS para o campo "ferramenta":
+- "formulario" → pesquisas, questionários, surveys
+- "documento" → relatórios, personas, planos, guias
+- "planilha" → tabelas, comparativos, métricas, cronogramas
+- "analise" → análises de mercado, SWOT, benchmarks, diagnósticos
+- "estrategia" → planos de ação, estratégias, roadmaps
+- "conteudo" → posts, emails, scripts, copy, calendários
+- "" → (vazio) se não se enquadra em nenhum
 
 Retorne APENAS o JSON."""
 
@@ -2187,6 +2398,17 @@ Retorne APENAS o JSON."""
             json_mode=True
         )
         result["sources"] = sources
+        
+        # Annotate each subtask with its execution mode (pesquisa vs producao)
+        # so the frontend can show appropriate badges and the engine can route correctly
+        try:
+            from app.services.tools.registry import tool_registry
+            for st in result.get("subtarefas", []):
+                mode = tool_registry.classify_execution_mode(st)
+                st["modo_execucao"] = mode.value
+        except Exception:
+            pass  # Non-critical
+        
         return {"success": True, "subtasks": result}
     except Exception as e:
         print(f"  ❌ Subtask expansion error: {e}", file=sys.stderr)
@@ -2290,7 +2512,7 @@ JSON:
 {{
     "entregavel_titulo": "O que a IA produziu",
     "entregavel_tipo": "texto|guia|pesquisa|briefing|plano|template",
-    "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Use um tom conversacional e pessoal (ex: 'pelo o que eu analisei...', 'que legal essa informação...'). Mínimo 4 linhas de texto corrido.",
+    "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Tom conversacional e pessoal. CITE dados concretos encontrados. Mínimo 4 linhas. ⛔ NUNCA comente sobre qualidade dos dados ('corrompidos', 'incompletos', 'não foi possível extrair'). Se incompletos, use-os e complemente — sem mencionar a limitação.",
     "conteudo": "ENTREGÁVEL COMPLETO — o máximo que a IA consegue fazer",
     "passos_restantes_usuario": [
         "Passo 1 que o usuário precisa fazer manualmente",

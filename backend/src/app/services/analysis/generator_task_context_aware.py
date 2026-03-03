@@ -40,8 +40,13 @@ def generate_context_aware_tasks(
     
     try:
         # OTIMIZAÇÃO: Verificar cache primeiro antes de qualquer processamento
+        # Só usa cache se o plano já tiver a lista de entregaveis (planos antigos sem ela são regenerados)
         existing_plan = db.get_pillar_plan(analysis_id, pillar_key)
-        if existing_plan and existing_plan.get("plan_data", {}).get("tarefas"):
+        if (
+            existing_plan
+            and existing_plan.get("plan_data", {}).get("tarefas")
+            and existing_plan.get("plan_data", {}).get("entregaveis")
+        ):
             cached_tasks = existing_plan["plan_data"]["tarefas"]
             print(f"  ✅ Tasks already cached for {pillar_key}: {len(cached_tasks)} tasks", file=sys.stderr)
             return {"success": True, "plan": existing_plan["plan_data"]}
@@ -66,12 +71,25 @@ def generate_context_aware_tasks(
         )
         
         # 4. Estruturar plano
+        # Derivar entregaveis a partir do campo entregavel_ia de cada tarefa
+        entregaveis = [
+            {
+                "id": f"e{i + 1}",
+                "titulo": task.get("entregavel_ia", f"Entregável {i + 1}"),
+                "descricao": task.get("descricao", ""),
+                "ferramenta": task.get("ferramenta", "documento"),
+                "tarefa_origem": task.get("id", f"task_{i + 1}"),
+            }
+            for i, task in enumerate(tasks)
+        ]
+
         plan = {
             "meta": context["meta_pilar"],
             "diagnostico": context["diagnostico"],
             "score": context["score"],
             "status": context["status"],
             "tarefas": tasks,
+            "entregaveis": entregaveis,
             "dependencies": {"ready": True, "blockers": [], "warnings": []},
             "context_sources": context["sources"],
             "generation_method": "context_aware",
@@ -218,7 +236,7 @@ def _generate_pillar_tasks_with_llm(
     result = call_llm(
         provider=model_provider,
         prompt=prompt,
-        temperature=0.4,
+        temperature=0.7,
         json_mode=True
     )
 
@@ -302,16 +320,19 @@ Você está criando um plano de execução CONCRETO para "{negocio['nome']}" —
 {acoes_hint}{research_section}
 ## SUA MISSÃO
 
-Gere EXATAMENTE 5 tarefas para resolver o problema acima.
+Gere EXATAMENTE 5 tarefas ORIGINAIS e ESPECÍFICAS para resolver o problema acima.
 TODAS as 5 tarefas DEVEM ter `executavel_por_ia: true` — a IA vai executar cada uma delas.
 
 ## REGRAS ABSOLUTAS
 
 1. `executavel_por_ia` deve ser SEMPRE `true` para todas as 5 tarefas
 2. `entregavel_ia` deve descrever o DOCUMENTO COMPLETO que a IA vai produzir (ex: "Relatório de análise de personas com perfis detalhados, dores identificadas e recomendações")
-3. As tarefas devem ser SEQUENCIAIS: diagnóstico → pesquisa → estratégia → implementação → monitoramento
+3. As tarefas devem ser DIRETAMENTE derivadas do PROBLEMA ESPECÍFICO acima — NÃO use templates genéricos.
+   Use o dado-chave "{context['dado_chave'][:100]}" e as ações prioritárias do diagnóstico como base concreta.
 4. Use dados específicos do negócio: segmento "{negocio['segmento']}", problema "{context['diagnostico'][:80]}"
 5. NÃO gere tarefas que exijam presença física, ligações ou reuniões
+6. NÃO repita tarefas genéricas como "Auditar situação atual" ou "Monitorar resultados" — seja CRIATIVO e específico ao contexto
+7. ⛔ PROIBIDO tarefas de coleta de dados humanos: "Aplicar pesquisa/questionário com clientes", "Coletar respostas de participantes", "Aguardar feedback de clientes", "Tabular respostas recebidas" — a IA NÃO consegue executar estas tarefas (exigem ação de clientes reais). Substitua sempre por: "Pesquisar [mesmo tema] via dados de mercado, estudos setoriais e fontes online"
 
 ## TIPOS DE ENTREGÁVEIS POSSÍVEIS
 

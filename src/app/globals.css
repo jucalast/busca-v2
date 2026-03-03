@@ -114,3 +114,14 @@
     transform: scale(1.2);
   }
 }
+
+@keyframes voice-ripple {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}

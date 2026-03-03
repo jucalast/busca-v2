@@ -29,9 +29,11 @@ const getTaskIcon = (task: TaskItem, isDone: boolean, aiModel?: string) => {
   const tool = (task.ferramenta || '').toLowerCase();
   let baseIcon = null;
 
-  if (tool.includes('docs') || tool.includes('document')) {
+  if (tool.includes('formulario') || tool.includes('pesquisa_online') || tool.includes('forms') || tool.includes('enquete') || tool.includes('survey')) {
+    baseIcon = <img src="/forms.svg" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Forms" />;
+  } else if (tool.includes('docs') || tool.includes('document')) {
     baseIcon = <img src="/docs.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Docs" />;
-  } else if (tool.includes('sheets') || tool.includes('planilha')) {
+  } else if (tool.includes('sheets') || tool.includes('planilha') || tool.includes('calendario') || tool.includes('cronograma') || tool.includes('matriz')) {
     baseIcon = <img src="/sheets.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Sheets" />;
   } else if (tool.includes('canva')) {
     baseIcon = <img src="/canva.png" className="w-[26px] h-[26px] rounded shrink-0 object-contain" alt="Canva" />;
@@ -77,13 +79,6 @@ export default function TaskCard({
   isSubtaskLoading = false
 }: TaskCardProps) {
   const taskIcon = getTaskIcon(task, isDone, aiModel);
-
-  // Debug para verificar se as props estão chegando
-  console.log('TaskCard Debug:', {
-    taskTitle: task.titulo,
-    currentSubtask,
-    isSubtaskLoading
-  });
 
   return (
     <div className={`group transition-all duration-500 ease-out ${shouldHide ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}>

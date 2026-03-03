@@ -46,6 +46,98 @@ def _is_daily_quota(error_msg: str) -> bool:
     ]
     return any(ind.lower() in error_msg.lower() for ind in daily_indicators)
 
+def _strip_thinking_tags(text: str) -> str:
+    """Remove <think>...</think> blocks and Qwen3 reasoning tokens from LLM output."""
+    import re as _re
+    # Remove <think>...</think> blocks (Qwen3, DeepSeek, etc.)
+    text = _re.sub(r'<think>[\s\S]*?</think>', '', text, flags=_re.IGNORECASE)
+    # Remove triple-brace thinking token runs (Qwen3 without system prompt)
+    text = _re.sub(r'\{{3,}[\x00-\x1F\x7F-\xFF]*\}{0,3}', '', text)
+    return text.strip()
+
+
+def _is_clean_text(text: str, min_printable: float = 0.85) -> bool:
+    """Return True if text has mostly real, readable content.
+    Rejects binary garbage, Unicode replacement chars, and thinking tokens."""
+    if not text or len(text.strip()) < 20:
+        return False
+    sample = text[:2000]
+    # Count genuinely readable characters (exclude U+FFFD replacement chars)
+    replacement_chars = sample.count('\ufffd')
+    if replacement_chars > len(sample) * 0.05:  # More than 5% replacement chars = garbage
+        return False
+    printable = sum(1 for c in sample if (c.isprintable() or c in ('\n', '\r', '\t')) and c != '\ufffd')
+    return (printable / len(sample)) >= min_printable
+
+
+def _try_without_json_constraint(client, msg_payload, model, temperature) -> str | None:
+    """
+    Try a model WITHOUT response_format constraint, then extract JSON from the text.
+    Returns the extracted JSON string, or a wrapped-text JSON, or None if output is garbage.
+    """
+    import re as _re
+    try:
+        completion = client.chat.completions.create(
+            messages=msg_payload,
+            model=model,
+            temperature=temperature,
+            max_tokens=8192,
+        )
+        raw = _strip_thinking_tags(completion.choices[0].message.content or "")
+
+        # Reject garbage output early
+        if not _is_clean_text(raw):
+            print(f"  ⚠️ {model} sem constraint gerou conteúdo ilegível. Pulando.", file=sys.stderr)
+            return None
+
+        # Try to extract valid JSON from the response
+        # Method 1: Find a JSON object
+        json_match = _re.search(r'\{[\s\S]*\}', raw)
+        if json_match:
+            try:
+                candidate = json_match.group(0)
+                json.loads(candidate)
+                print(f"  ✅ JSON extraído de {model} sem constraint", file=sys.stderr)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # Method 2: Strip ```json fences
+        cleaned = raw.strip()
+        if cleaned.startswith('```json'):
+            cleaned = cleaned[7:]
+        if cleaned.startswith('```'):
+            cleaned = cleaned[3:]
+        if cleaned.endswith('```'):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+        try:
+            json.loads(cleaned)
+            print(f"  ✅ JSON extraído de {model} após limpar fences", file=sys.stderr)
+            return cleaned
+        except json.JSONDecodeError:
+            pass
+
+        # Method 3: Wrap clean text as content (last resort)
+        if len(raw.strip()) > 100:
+            print(f"  ⚠️ JSON extraction falhou em {model}, envolvendo texto como conteúdo ({len(raw)} chars)", file=sys.stderr)
+            return json.dumps({
+                "entregavel_titulo": "Resultado gerado",
+                "entregavel_tipo": "documento",
+                "opiniao": "",
+                "conteudo": raw[:6000].strip(),
+                "como_aplicar": "",
+                "proximos_passos": "",
+                "fontes_consultadas": [],
+                "impacto_estimado": ""
+            }, ensure_ascii=False)
+
+        return None
+    except Exception as e:
+        print(f"  ⚠️ {model} sem constraint falhou: {str(e)[:80]}", file=sys.stderr)
+        return None
+
+
 def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 4, json_mode: bool = True, messages: list = None, prefer_small: bool = False):
     """Groq execution engine with aggressive retry logic."""
     client = Groq(api_key=api_key)
@@ -56,7 +148,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "llama-3.3-70b-versatile",
             "meta-llama/llama-4-scout-17b-16e-instruct",
             "meta-llama/llama-4-maverick-17b-128e-instruct",
-            "qwen/qwen3-32b",
+            # qwen3-32b excluded: thinking model emits binary reasoning tokens without response_format
         ]
     else:
         models = [
@@ -64,7 +156,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
             "meta-llama/llama-4-maverick-17b-128e-instruct",
             "llama-3.1-8b-instant",
             "meta-llama/llama-4-scout-17b-16e-instruct",
-            "qwen/qwen3-32b",
+            # qwen3-32b excluded: thinking model emits binary reasoning tokens without response_format
         ]
 
     kwargs = {}
@@ -83,7 +175,8 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     max_tokens=8192,
                     **kwargs,
                 )
-                return completion.choices[0].message.content
+                raw = _strip_thinking_tags(completion.choices[0].message.content or "")
+                return raw
             except Exception as e:
                 error_msg = str(e)
                 is_rate_limit = "429" in error_msg
@@ -96,65 +189,18 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     print(f"  ⚠️ Modelo {model} indisponível. Trocando...", file=sys.stderr)
                     break
 
-                # JSON generation failure → try next model
+                # JSON generation failure → try SAME model without constraint, then next
                 if is_json_fail:
+                    print(f"  ⚠️ Modelo {model} falhou ao gerar JSON. Tentando sem constraint...", file=sys.stderr)
+                    extracted = _try_without_json_constraint(
+                        client, msg_payload, model, temperature
+                    )
+                    if extracted is not None:
+                        return extracted
+                    # This model can't produce usable output — try next
                     if mi < len(models) - 1:
-                        print(f"  ⚠️ Modelo {model} falhou ao gerar JSON. Tentando próximo...", file=sys.stderr)
+                        print(f"  ➡️ Pulando para próximo modelo...", file=sys.stderr)
                         break
-                    if json_mode and attempt < max_retries - 1:
-                        print(f"  ⚠️ Tentando {model} sem JSON mode...", file=sys.stderr)
-                        try:
-                            completion = client.chat.completions.create(
-                                messages=msg_payload,
-                                model=model,
-                                temperature=temperature,
-                                max_tokens=8192,
-                            )
-                            raw = completion.choices[0].message.content
-                            # Try multiple JSON extraction methods
-                            import re as _re
-                            
-                            # Method 1: Look for JSON object with braces
-                            json_match = _re.search(r'\{[\s\S]*\}', raw)
-                            if json_match:
-                                try:
-                                    json_str = json_match.group(0)
-                                    # Try to parse it
-                                    json.loads(json_str)
-                                    return json_str
-                                except json.JSONDecodeError:
-                                    pass
-                            
-                            # Method 2: Look for JSON array
-                            json_match = _re.search(r'\[[\s\S]*\]', raw)
-                            if json_match:
-                                try:
-                                    json_str = json_match.group(0)
-                                    json.loads(json_str)
-                                    return json_str
-                                except json.JSONDecodeError:
-                                    pass
-                            
-                            # Method 3: Try to fix common JSON issues
-                            try:
-                                # Remove common prefixes/suffixes
-                                cleaned = raw.strip()
-                                if cleaned.startswith('```json'):
-                                    cleaned = cleaned[7:]
-                                if cleaned.endswith('```'):
-                                    cleaned = cleaned[:-3]
-                                cleaned = cleaned.strip()
-                                
-                                # Try parsing the cleaned version
-                                json.loads(cleaned)
-                                return cleaned
-                            except json.JSONDecodeError:
-                                pass
-                            
-                            # If all methods fail, return raw text
-                            return raw
-                        except Exception:
-                            pass
                     raise
 
                 # TPD (daily limit) — switch model immediately after 1 retry

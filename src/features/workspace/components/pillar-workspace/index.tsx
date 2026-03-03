@@ -23,40 +23,93 @@ import { safeRender, openInGoogleDocs, exportFullAnalysis, getToolInfo } from '.
 import { useTaskHandlers } from './handlers';
 import { ScoreRing } from './components/ScoreRing';
 import { DepBadge } from './components/DepBadge';
-import { DeliverableCard } from './components/DeliverableCard';
 import { SubtaskList } from './components/SubtaskList';
 import { SourceBadgeList } from './components/SourceBadgeList';
 import { MarkdownContent } from './components/MarkdownContent';
 import { StreamingText } from './components/StreamingText';
 import RateLimitWarning from '@/features/shared/components/rate-limit-warning';
 import TaskCard from '@/features/workspace/components/task-card';
-import TaskActionButtons from '@/features/workspace/components/task-action-buttons';
 import TaskSubtasksDisplay from '@/features/workspace/components/task-subtasks-display';
 import ModelSelector from '@/features/shared/components/model-selector';
 import { SpecialistGrid } from './components/SpecialistGrid';
 
 // Sub-component for auto-scrolling container
+// - Auto-scrolls to bottom when content changes (if user hasn't scrolled up)
+// - Stops auto-scroll when user scrolls up manually
+// - Shows a floating button to jump back to bottom
 function AutoScrollContainer({ children }: { children: React.ReactNode }) {
     const scrollRef = React.useRef<HTMLDivElement>(null);
+    // true = follow new content; false = user scrolled up, stop following
+    const isFollowingRef = React.useRef(true);
+    const [showScrollBtn, setShowScrollBtn] = React.useState(false);
 
+    const scrollToBottom = React.useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        isFollowingRef.current = true;
+        setShowScrollBtn(false);
+    }, []);
+
+    // Detect user-initiated scroll
+    React.useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+
+        const onScroll = () => {
+            const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+            // Consider "at bottom" if within 60px
+            if (distFromBottom < 60) {
+                isFollowingRef.current = true;
+                setShowScrollBtn(false);
+            } else {
+                // User scrolled up
+                isFollowingRef.current = false;
+                setShowScrollBtn(true);
+            }
+        };
+
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => el.removeEventListener('scroll', onScroll);
+    }, []);
+
+    // Auto-scroll when content changes, but only if following
     React.useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
 
         const observer = new MutationObserver(() => {
-            el.scrollTop = el.scrollHeight;
+            if (isFollowingRef.current) {
+                el.scrollTop = el.scrollHeight;
+            }
         });
 
-        observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
+        observer.observe(el, { childList: true, subtree: true, characterData: true });
 
         return () => observer.disconnect();
     }, []);
 
     return (
-        <div ref={scrollRef} className="absolute inset-x-0 top-0 bottom-0 overflow-y-auto pb-48 scrollbar-hide flex flex-col">
-            <div className="mt-auto">
-                {children}
+        <div className="absolute inset-x-0 top-0 bottom-0">
+            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto pb-48 scrollbar-hide flex flex-col">
+                <div className="mt-auto">
+                    {children}
+                </div>
             </div>
+
+            {/* Floating "scroll to bottom" button */}
+            {showScrollBtn && (
+                <div className="absolute bottom-25 left-0 right-0 flex justify-center pointer-events-none z-20">
+                    <button
+                        onClick={scrollToBottom}
+                        className="pointer-events-auto w-7 h-7 flex items-center justify-center rounded-full bg-zinc-800 border border-white/10 text-zinc-400 shadow-lg hover:bg-zinc-700 hover:text-zinc-200 transition-all active:scale-95"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 2.5v7M3 7l3 3 3-3" />
+                        </svg>
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -517,37 +570,37 @@ export default function PillarWorkspace({
             // Hydrate executions (deliverables)
             if (execsRes.success && execsRes.executions) {
                 const savedExecs = execsRes.executions as Record<string, any>;
-                const maxIdxPerTask: Record<string, number> = {};
 
                 for (const [taskId, execData] of Object.entries(savedExecs)) {
-                    const tid = taskId.includes('_') ? taskId : `${key}_${taskId}`;
                     const result = (execData as any).result_data;
-                    if (result) {
-                        // Set deliverable
+                    if (!result) continue;
+
+                    const stMatch = taskId.match(/_st(\d+)$/);
+
+                    if (stMatch) {
+                        // É uma execução de subtarefa: mapeia para o tid do pai com prefixo do pilar
+                        const rawParentTaskId = taskId.replace(/_st\d+$/, '');
+                        const parentTid = `${key}_${rawParentTaskId}`;
+                        const idx = parseInt(stMatch[1], 10) - 1;
+
+                        setAutoExecResults(prev => ({
+                            ...prev,
+                            [parentTid]: { ...(prev[parentTid] || {}), [idx]: result }
+                        }));
+                        setAutoExecStatuses(prev => ({
+                            ...prev,
+                            [parentTid]: { ...(prev[parentTid] || {}), [idx]: 'done' as const }
+                        }));
+                    } else if (!taskId.endsWith('_finalization')) {
+                        // É a execução final (entregável) da tarefa pai
+                        const tid = `${key}_${taskId}`;
                         setTaskDeliverables(prev => ({ ...prev, [tid]: result }));
-                        // Mark as completed
                         setCompletedTasks(prev => {
                             const s = new Set(prev[key] || []);
                             s.add(taskId);
                             s.add(tid);
                             return { ...prev, [key]: s };
                         });
-                        // Set autoExec status to done for this subtask index if it's a subtask execution
-                        const stMatch = taskId.match(/_st(\d+)$/);
-                        if (stMatch) {
-                            const rawParentTid = taskId.replace(/_st\d+$/, '');
-                            const parentTid = rawParentTid.includes('_') ? rawParentTid : `${key}_${rawParentTid}`;
-                            const idx = parseInt(stMatch[1], 10) - 1;
-
-                            setAutoExecResults(prev => ({
-                                ...prev,
-                                [parentTid]: { ...prev[parentTid] || {}, [idx]: result }
-                            }));
-                            setAutoExecStatuses(prev => ({
-                                ...prev,
-                                [parentTid]: { ...prev[parentTid] || {}, [idx]: 'done' }
-                            }));
-                        }
                     }
                 }
 
@@ -828,7 +881,10 @@ export default function PillarWorkspace({
                 if (allResultsObj[i]) allResults.push(allResultsObj[i]);
             }
 
-            const combinedContent = allResults.map((r) =>
+            // Only PRODUCAO artifacts form the deliverable; PESQUISA is research context
+            const producaoResults = allResults.filter(r => r.execution_mode === 'producao');
+            const deliverableResults = producaoResults.length > 0 ? producaoResults : allResults;
+            const combinedContent = deliverableResults.map((r) =>
                 safeRender(r.conteudo) || ''
             ).filter(Boolean).join('\n\n');
 
@@ -858,6 +914,7 @@ export default function PillarWorkspace({
                 entregavel_tipo: 'plano_completo',
                 conteudo: resumo,
                 conteudo_completo: combinedContent,
+                execution_mode: 'producao',
                 como_aplicar: safeRender(allResults[allResults.length - 1]?.como_aplicar || ''),
                 impacto_estimado: safeRender(allResults[allResults.length - 1]?.impacto_estimado || ''),
                 fontes_consultadas: combinedSources,
@@ -1044,7 +1101,7 @@ export default function PillarWorkspace({
                     <div className="flex flex-wrap gap-2">
                         {task.executavel_por_ia ? (
                             <>
-                                <button onClick={() => handleAutoExecute(pillarKey, task)} disabled={!!autoExecuting || isExecuting}
+                                <button onClick={() => { setFocusedTaskId(tid); handleAutoExecute(pillarKey, task); }} disabled={!!autoExecuting || isExecuting}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-all disabled:opacity-50">
                                     <Play className="w-3 h-3" />
                                     {subtasks
@@ -1134,8 +1191,6 @@ export default function PillarWorkspace({
                         )}
                     </div>
                 )}
-
-                {/* Deliverable */}
 
                 {/* Sources from deliverable */}
                 {
@@ -1312,10 +1367,14 @@ export default function PillarWorkspace({
                                             const middleIndex = Math.floor(totalCards / 2);
 
                                             // Detectar ferramenta para este entregável
+                                            // Try to get artifact_type from execution result if task was completed
+                                            const taskOriginId = entregavel.tarefa_origem ? `${selectedPillar}_${entregavel.tarefa_origem}` : null;
+                                            const executedDeliverable = taskOriginId ? taskDeliverables[taskOriginId] : null;
                                             const toolInfo = getToolInfo({
                                                 entregavel_titulo: entregavel.titulo,
                                                 conteudo: entregavel.descricao,
-                                                entregavel_tipo: ''
+                                                entregavel_tipo: entregavel.tipo || '',
+                                                artifact_type: executedDeliverable?.artifact_type || '',
                                             });
 
                                             // Ângulos fixos para arranjo em leque

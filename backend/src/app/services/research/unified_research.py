@@ -229,11 +229,11 @@ class UnifiedResearchEngine:
             
             research_data["sources"].append(url)
             
-            # Scraping do top resultado
-            if i < 1:
+            # Scraping dos top resultados para mais contexto relevante
+            if i < 2:
                 content = scrape_page(url, timeout=3)
                 if content:
-                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"
+                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:2500]}\n\n"
         
         # Salvar cache
         self._set_cache(cache_key, "subtask", research_data)
@@ -445,28 +445,101 @@ class UnifiedResearchEngine:
         pillar_key: str,
         segmento: str
     ) -> str:
-        """Constrói query específica para subtarefa."""
+        """Constrói query de INTELIGÊNCIA SETORIAL para subtarefa.
         
-        # Extrair palavras-chave da tarefa
-        title_words = task_title.lower().split()
-        desc_words = task_desc.lower().split()
+        Objetivo: encontrar DADOS REAIS sobre o setor e compradores,
+        NÃO tutoriais de 'como fazer'.
         
-        # Identificar ação principal
-        action_verbs = ["criar", "desenvolver", "implementar", "definir", "analisar", "pesquisar"]
-        main_action = "implementar"
+        Estratégia:
+        - Strip TODOS os verbos de ação e palavras meta-task
+        - Manter apenas palavras-ASSUNTO (persona, dores, necessidades etc)
+        - Combinar com inteligência do pilar (3 termos de dados reais)
+        """
+        import unicodedata
+        def _norm(text: str) -> str:
+            """Strip accents for comparison: 'relatório' → 'relatorio'"""
+            return ''.join(
+                c for c in unicodedata.normalize('NFD', text.lower())
+                if unicodedata.category(c) != 'Mn'
+            )
         
-        for verb in action_verbs:
-            if verb in title_words or verb in desc_words:
-                main_action = verb
-                break
+        # Stop words (ALL normalized/unaccented for _norm comparison)
+        stop_words = {
+            # Conectivos
+            "o", "a", "os", "as", "de", "do", "da", "dos", "das", "em", "para",
+            "com", "sem", "um", "uma", "que", "por", "no", "na", "nos", "nas",
+            "ao", "pelo", "pela", "se", "e", "ou", "mas", "como", "sua",
+            "seu", "seus", "suas", "este", "esta", "esse", "essa", "isto",
+            "sao", "ser", "ter", "mais", "sobre", "entre", "apos", "ate",
+            # Verbos de ação → buscam tutoriais genéricos
+            "criar", "desenvolver", "implementar", "definir", "analisar",
+            "pesquisar", "coletar", "identificar", "elaborar", "estabelecer",
+            "mapear", "levantar", "realizar", "executar", "gerar", "produzir",
+            "selecionar", "aplicar", "montar", "estruturar", "planejar",
+            "consolidar", "validar", "compilar", "detalhar", "formatar",
+            # Meta-task: sobre o ENTREGÁVEL, não sobre o ASSUNTO do setor
+            "documento", "relatorio", "questionario", "formulario", "ferramenta",
+            "template", "modelo", "plano", "guia", "manual", "lista",
+            "online", "digital", "resultados", "insights", "estrategia",
+            "pesquisa", "fontes", "dados", "escopo", "objetivos",
+            "perguntas", "respostas", "analise", "etapas", "passos",
+            "conteudo", "informacoes", "criterios", "tabela", "estudo",
+            "principais", "melhores", "novos", "novas", "possiveis",
+            "coletados", "existentes", "atuais", "disponiveis", "necessarios",
+        }
         
-        # Identificar assunto principal
-        stop_words = {"o", "a", "os", "as", "de", "do", "da", "em", "para", "com", "um", "uma"}
-        keywords = [w for w in title_words + desc_words if w not in stop_words and len(w) > 2]
-        main_subject = " ".join(keywords[:3]) if keywords else task_title
+        all_words = (task_title + " " + task_desc).lower().split()
+        keywords = [w for w in all_words if _norm(w) not in stop_words and len(w) > 2]
+        # Deduplicate preservando ordem (por forma normalizada)
+        seen = set()
+        unique_kw = []
+        for w in keywords:
+            nw = _norm(w)
+            if nw not in seen:
+                seen.add(nw)
+                unique_kw.append(w)
         
-        # Construir query
-        query = f"{main_action} {main_subject} {segmento} guia passo passo 2025"
+        # Inteligência setorial por pilar — termos que buscam DADOS REAIS
+        pillar_intel = {
+            "publico_alvo": "perfil comprador B2B necessidades comportamento",
+            "branding": "marca posicionamento concorrentes diferenciação mercado",
+            "identidade_visual": "identidade visual design tendências referências",
+            "canais_venda": "canais venda distribuição B2B marketplace",
+            "trafego_organico": "SEO palavras-chave conteúdo tráfego orgânico",
+            "trafego_pago": "anúncios Google Ads mídia paga benchmarks",
+            "processo_vendas": "vendas funil B2B jornada compra industrial",
+        }
+        intel = pillar_intel.get(pillar_key, "")
+        intel_words = intel.split()[:3]  # Top 3 intelligence terms
+        
+        # Build: segmento + subject keywords (sem sobreposição) + intelligence
+        parts = []
+        used_norms = set()
+        
+        if segmento:
+            parts.append(segmento)
+            for sw in segmento.lower().split():
+                used_norms.add(_norm(sw))
+        
+        # Subject keywords que não sobrepõem segmento
+        added = 0
+        for kw in unique_kw:
+            if _norm(kw) not in used_norms and added < 3:
+                parts.append(kw)
+                used_norms.add(_norm(kw))
+                added += 1
+        
+        # Intel terms que não sobrepõem o que já está
+        for iw in intel_words:
+            if _norm(iw) not in used_norms:
+                parts.append(iw)
+                used_norms.add(_norm(iw))
+        
+        query = " ".join(parts)
+        
+        # Se query muito curta (tudo foi stripped), usar segmento + intel completo
+        if len(query.split()) < 4:
+            query = f"{segmento} {intel}"
         
         return query
     

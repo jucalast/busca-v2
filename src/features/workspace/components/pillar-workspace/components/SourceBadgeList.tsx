@@ -8,7 +8,10 @@ export function SourceBadgeList({ sources, maxVisible = 4, animated = false }: {
     const uniqueHostnames = new Set<string>();
     const deduplicatedSources: { src: string, hostname: string, displayUrl: string }[] = [];
 
-    for (const src of sources.filter(Boolean)) {
+    for (const rawSrc of sources.filter(Boolean)) {
+        // Normalize: sources can be strings or objects (e.g. {url, title})
+        const src: string = typeof rawSrc === 'string' ? rawSrc
+            : (rawSrc as any).url || (rawSrc as any).link || String(rawSrc);
         let displayUrl = src;
         let hostname = src;
         try {

@@ -4,8 +4,6 @@ import Link from 'next/link';
 import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain } from 'lucide-react';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
-import ModelSelector from '@/features/shared/components/model-selector';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface Business {
   id: string;
@@ -51,8 +49,6 @@ export default function SidebarLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
-  // Custom context for AI Model selection
-  const { aiModel, setAiModel } = useAuth();
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; businessId: string; businessName: string }>({ isOpen: false, businessId: '', businessName: '' });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -138,34 +134,42 @@ export default function SidebarLayout({
         <div className="flex h-full overflow-hidden relative">
           {/* Sidebar */}
           <aside
-            className={`${sidebarOpen ? 'w-80' : 'w-0'
-              } transition-all duration-300 flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 flex flex-col overflow-hidden relative z-30`}
+            className={`${sidebarOpen ? 'w-72' : 'w-0'
+              } transition-all duration-300 flex-shrink-0 border-r border-white/[0.04] bg-[#0c0c0e] flex flex-col overflow-hidden relative z-30`}
           >
+            {/* Branding header */}
+            <div className="px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/[0.04]">
+              <img src="/logo.png" alt="Logo" className="h-7 w-auto object-contain" />
+            </div>
+
             {/* New Business Button */}
-            <div className="p-4 flex-shrink-0 relative z-20">
+            <div className="p-4 flex-shrink-0">
               <button
                 onClick={onCreateNew}
-                className="w-full flex items-center gap-2 px-4 py-2 bg-[#111113] hover:bg-zinc-800/80 text-white rounded-lg transition-colors border border-white/5"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 bg-white/[0.04] hover:bg-white/[0.07] text-white rounded-xl transition-all duration-200 border border-white/[0.06] hover:border-white/[0.10] group"
               >
-                <Plus className="w-4 h-4 text-zinc-400" />
-                <span className="font-medium">Novo Negócio</span>
+                <Plus className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
+                <span className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">Novo Negócio</span>
               </button>
             </div>
 
             {/* Business List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 border-t border-zinc-800/50">
+            <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-2">
+              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-[0.2em] px-1 mb-1">
+                Negócios
+              </p>
               {loading ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-zinc-600 border-t-transparent mx-auto mb-3"></div>
-                  <p className="text-xs text-zinc-500">Carregando negócios...</p>
+                <div className="text-center py-10">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-zinc-700 border-t-violet-500/60 mx-auto mb-3"></div>
+                  <p className="text-xs text-zinc-600">Carregando negócios...</p>
                 </div>
               ) : businesses.length === 0 ? (
-                <div className="text-center py-12 px-4">
-                  <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center mx-auto mb-4">
-                    <Building2 className="w-8 h-8 text-zinc-600" />
+                <div className="text-center py-10 px-4">
+                  <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mx-auto mb-4">
+                    <Building2 className="w-6 h-6 text-zinc-700" />
                   </div>
-                  <p className="text-sm text-zinc-400 mb-2 font-medium">Nenhum negócio ainda</p>
-                  <p className="text-xs text-zinc-600">Crie seu primeiro negócio para começar</p>
+                  <p className="text-sm text-zinc-400 mb-1 font-medium">Nenhum negócio ainda</p>
+                  <p className="text-xs text-zinc-600 leading-relaxed">Crie seu primeiro negócio para começar a análise</p>
                 </div>
               ) : (
                 businesses.map((business) => {
@@ -198,35 +202,35 @@ export default function SidebarLayout({
                     <div key={business.id} className="relative">
                       <Link
                         href={`/analysis/${business.id}`}
-                        scroll={false} // Evitar o pulo brusco da pagina on click
-                        className={`block p-5 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
-                          ? 'bg-white/[0.06]'
-                          : 'bg-white/[0.02] hover:bg-white/[0.05]'
+                        scroll={false}
+                        className={`block p-4 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
+                          ? 'bg-white/[0.07] border border-white/[0.08]'
+                          : 'bg-white/[0.02] hover:bg-white/[0.05] border border-transparent hover:border-white/[0.05]'
                           }`}
                       >
-                        <div className="flex items-start justify-between mb-2.5">
+                        <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0 pr-2">
-                            <h3 className="text-sm font-semibold text-white truncate mb-1.5">
+                            <h3 className="text-sm font-semibold text-white truncate leading-snug">
                               {business.name}
                             </h3>
-                            <p className="text-xs text-zinc-500 truncate">
+                            <p className="text-[11px] text-zinc-500 truncate mt-0.5">
                               {displaySegment}
                             </p>
                           </div>
                           {business.latest_analysis && (
                             <div
-                              className={`ml-3 px-2.5 py-1.5 rounded-lg ${getScoreBg(
+                              className={`ml-2 px-2 py-1 rounded-lg ${getScoreBg(
                                 business.latest_analysis.score_geral
                               )} flex-shrink-0`}
                             >
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1">
                                 <TrendingUp
-                                  className={`w-3.5 h-3.5 ${getScoreColor(
+                                  className={`w-3 h-3 ${getScoreColor(
                                     business.latest_analysis.score_geral
                                   )}`}
                                 />
                                 <span
-                                  className={`text-sm font-bold ${getScoreColor(
+                                  className={`text-xs font-bold ${getScoreColor(
                                     business.latest_analysis.score_geral
                                   )}`}
                                 >
@@ -236,37 +240,37 @@ export default function SidebarLayout({
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-xs text-zinc-600">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-1 bg-zinc-800/80 rounded-md font-medium">
+                        <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-600">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-1.5 py-0.5 bg-white/[0.04] rounded-md font-medium">
                               {displayModel}
                             </span>
                             <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              <span>{displayLocation}</span>
+                              <MapPin className="w-2.5 h-2.5" />
+                              <span className="truncate max-w-[80px]">{displayLocation}</span>
                             </div>
                           </div>
                           <div className="relative" ref={openMenuId === business.id ? menuRef : null}>
                             <button
                               onClick={(e) => {
-                                e.preventDefault(); // Impede nativo clique link
+                                e.preventDefault();
                                 e.stopPropagation();
                                 setOpenMenuId(openMenuId === business.id ? null : business.id);
                               }}
-                              className="p-1 hover:bg-zinc-800 rounded transition-colors"
+                              className="p-1 hover:bg-white/[0.06] rounded-lg transition-colors"
                             >
-                              <MoreVertical className="w-3.5 h-3.5 text-zinc-500" />
+                              <MoreVertical className="w-3 h-3 text-zinc-600" />
                             </button>
                             {openMenuId === business.id && (
-                              <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-900 rounded-xl overflow-hidden z-50">
+                              <div className="absolute right-0 bottom-full mb-1 w-40 bg-[#111113] border border-white/[0.06] rounded-xl overflow-hidden z-50 shadow-xl shadow-black/50">
                                 <button
                                   onClick={(e) => {
-                                    e.preventDefault(); // Impede nativo clique link
+                                    e.preventDefault();
                                     e.stopPropagation();
                                     setOpenMenuId(null);
                                     handleDeleteBusiness(business.id, business.name, e);
                                   }}
-                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   <span>Excluir negócio</span>
@@ -282,14 +286,15 @@ export default function SidebarLayout({
               )}
             </div>
 
-            {/* Sidebar Footer - Logout */}
-            <div className="p-4 border-t border-zinc-800/50 flex-shrink-0">
+            {/* Sidebar Footer */}
+            <div className="p-4 border-t border-white/[0.04] flex-shrink-0">
+              {/* Logout */}
               <button
                 onClick={onLogout}
-                className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-zinc-800/40 hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-white"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] rounded-xl transition-all text-zinc-500 hover:text-zinc-300 border border-transparent hover:border-white/[0.05]"
               >
-                <LogOut className="w-4 h-4" />
-                <span className="text-sm font-medium">Sair da Conta</span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="text-xs font-medium">Sair da Conta</span>
               </button>
             </div>
           </aside>
@@ -309,13 +314,13 @@ export default function SidebarLayout({
           {/* Toggle Button - Floating between sidebar and content */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className={`absolute top-4 z-20 w-8 h-8 bg-zinc-800/60 hover:bg-zinc-700 rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[19rem]' : 'left-3'
+            className={`absolute top-5 z-20 w-7 h-7 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.06] rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[17rem]' : 'left-3'
               }`}
           >
             {sidebarOpen ? (
-              <X className="w-4 h-4 text-zinc-400" />
+              <X className="w-3.5 h-3.5 text-zinc-500" />
             ) : (
-              <Menu className="w-4 h-4 text-zinc-400" />
+              <Menu className="w-3.5 h-3.5 text-zinc-500" />
             )}
           </button>
 

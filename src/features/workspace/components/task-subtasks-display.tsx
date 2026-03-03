@@ -6,7 +6,48 @@ import { TaskItem } from '@/features/workspace/components/pillar-workspace/types
 import { SourceBadgeList } from '@/features/workspace/components/pillar-workspace/components/SourceBadgeList';
 import { MarkdownContent } from '@/features/workspace/components/pillar-workspace/components/MarkdownContent';
 import { StreamingText } from '@/features/workspace/components/pillar-workspace/components/StreamingText';
-import { cleanMarkdown } from '@/features/workspace/components/pillar-workspace/utils';
+import { cleanMarkdown, exportAsCSV, openInGoogleDocs, openInGoogleSheets, openInGoogleForms } from '@/features/workspace/components/pillar-workspace/utils';
+import { useSession } from 'next-auth/react';
+
+/**
+ * If a string looks like raw JSON (starts with { or [), format it into readable markdown.
+ * Otherwise return as-is.
+ */
+function formatJsonAsReadable(text: string): string {
+    const trimmed = (text || '').trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text;
+    try {
+        const obj = JSON.parse(trimmed);
+        return jsonToMarkdown(obj, 0);
+    } catch {
+        return text;
+    }
+}
+
+function jsonToMarkdown(value: any, depth: number): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(item => {
+            if (typeof item === 'string') return `- ${item}`;
+            if (typeof item === 'object') return jsonToMarkdown(item, depth + 1);
+            return `- ${String(item)}`;
+        }).join('\n');
+    }
+    if (typeof value === 'object') {
+        const heading = depth === 0 ? '###' : depth === 1 ? '####' : '**';
+        const headingEnd = depth <= 1 ? '' : '**';
+        return Object.entries(value).map(([key, val]) => {
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+                return `${heading} ${label}${headingEnd}\n${String(val)}`;
+            }
+            return `${heading} ${label}${headingEnd}\n${jsonToMarkdown(val, depth + 1)}`;
+        }).join('\n\n');
+    }
+    return String(value);
+}
 
 // Sub-component so useState is used at the top level of a real component
 function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, activeIndex = -1, execStatuses = {} }: {
@@ -22,7 +63,7 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
 
     // When not expanded, show the active subtask if it's within range, otherwise show the first one.
     const effectiveIndex = (activeIndex >= 0 && activeIndex < renderList.length) ? activeIndex : 0;
-    const itemsToShow = isExp ? renderList : [renderList[effectiveIndex]];
+    const itemsToShow = isExp ? renderList : (renderList.length > 0 ? [renderList[effectiveIndex]] : []);
 
     return (
         <>
@@ -33,7 +74,7 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                 }
             `}</style>
             <div className="flex flex-col gap-1 w-full">
-                {itemsToShow.map((st: any, arrayIdx: number) => {
+                {itemsToShow.filter(st => st != null).map((st: any, arrayIdx: number) => {
                     const i = isExp ? arrayIdx : effectiveIndex;
                     const status = execStatuses[i] || 'waiting';
 
@@ -134,6 +175,9 @@ export default function TaskSubtasksDisplay({
     const isExpanding = expandingTask === tid;
     const isAutoExec = autoExecuting === tid;
     const deliverable = taskDeliverables?.[tid];
+    const { data: session } = useSession();
+    const [loadingDoc, setLoadingDoc] = React.useState<string | null>(null);
+    const [expandedContent, setExpandedContent] = React.useState<Record<number, boolean>>({});
 
     // Per-task execution state
     const taskExecSubtasks = autoExecSubtasks?.[tid] || [];
@@ -145,23 +189,21 @@ export default function TaskSubtasksDisplay({
 
     const getOpinionText = (result: any, allowFallback = false) => {
         if (!result) return '';
-        // Prioritize opiniao or resumo for the activity feed/thoughts
+        // Prioritize opiniao or resumo for the quick thought/summary line
         let base = result.opiniao || result.resumo || '';
 
-        // If done and still no opinion, use conteudo or stringified result as a safe fallback
-        if (!base && allowFallback) {
-            if (result.conteudo) {
-                base = result.conteudo;
-            } else {
-                // Try to find any meaningful text content if the structure is unexpected
-                const meaningfulKeys = Object.keys(result).filter(k =>
-                    !['sources', 'task_id', 'entregavel_titulo', 'fontes_consultadas', 'entregavel_tipo'].includes(k)
-                );
-                if (meaningfulKeys.length > 0) {
-                    const firstKey = meaningfulKeys[0];
-                    const val = result[firstKey];
-                    base = Array.isArray(val) ? val.join(', ') : String(val);
-                }
+        // conteudo is rendered separately: inline MarkdownContent for PESQUISA, expandable for PRODUCAO
+        // Only fallback to other keys when conteudo isn't available to display
+        if (!base && allowFallback && !result.conteudo) {
+            const meaningfulKeys = Object.keys(result).filter(k =>
+                !['sources', 'task_id', 'entregavel_titulo', 'fontes_consultadas',
+                  'entregavel_tipo', 'execution_mode', 'artifact_type',
+                  'export_formats', 'structured_data', 'conteudo'].includes(k)
+            );
+            if (meaningfulKeys.length > 0) {
+                const firstKey = meaningfulKeys[0];
+                const val = result[firstKey];
+                base = Array.isArray(val) ? val.join(', ') : String(val);
             }
         }
 
@@ -243,9 +285,21 @@ export default function TaskSubtasksDisplay({
                             animation: 'result-block-fade-in 0.5s ease-out forwards',
                             opacity: 0
                         }}>
-                            {/* Subtask title */}
-                            <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
-                                {subtaskTitle}
+                            {/* Subtask title + mode badge */}
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                                    {subtaskTitle}
+                                </div>
+                                {result?.execution_mode === 'producao' && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase rounded-full bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
+                                        🏭 produzido
+                                    </span>
+                                )}
+                                {result?.artifact_type && result.artifact_type !== 'documento' && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-medium tracking-wider uppercase rounded-full bg-blue-500/15 text-blue-400/80 border border-blue-500/20">
+                                        {result.artifact_type}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Sources first */}
@@ -280,7 +334,7 @@ export default function TaskSubtasksDisplay({
                                         {renderOpinionParagraphs(opinionText)}
                                     </div>
                                 )
-                            ) : (
+                            ) : result?.conteudo && status === 'done' ? null : (
                                 <div className="flex items-center gap-0.5 py-2">
                                     {[0, 1, 2].map(i => (
                                         <span
@@ -289,6 +343,87 @@ export default function TaskSubtasksDisplay({
                                             style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
                                         />
                                     ))}
+                                </div>
+                            )}
+
+                            {/* PESQUISA: instructional "como fazer" content shown as AI opinion */}
+                            {result?.execution_mode !== 'producao' && result?.conteudo && status === 'done' && !isStreaming && (
+                                <div className="mt-3 text-[13px] text-zinc-100 leading-relaxed">
+                                    <MarkdownContent content={cleanMarkdown(safeRender(formatJsonAsReadable(result.conteudo)))} />
+                                </div>
+                            )}
+
+                            {/* Expandable full content — for production artifacts */}
+                            {result?.execution_mode === 'producao' && result?.conteudo && status === 'done' && !isStreaming && (
+                                <div className="mt-2">
+                                    <button
+                                        onClick={() => setExpandedContent(prev => ({ ...prev, [index]: !prev[index] }))}
+                                        className="flex items-center gap-1.5 text-[10px] font-medium text-violet-400/80 hover:text-violet-300 transition-colors"
+                                    >
+                                        {expandedContent[index] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        {expandedContent[index] ? 'Recolher conteúdo' : '🏭 Ver conteúdo produzido'}
+                                    </button>
+                                    {expandedContent[index] && (
+                                        <div className="mt-2 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] max-h-[400px] overflow-y-auto">
+                                            <MarkdownContent content={cleanMarkdown(safeRender(result.conteudo))} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Export formats — clickable buttons */}
+                            {result?.export_formats && result.export_formats.length > 0 && status === 'done' && !isStreaming && (
+                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/[0.04]">
+                                    <span className="text-[9px] text-zinc-600 font-medium">Exportar:</span>
+                                    {result.export_formats.map((fmt: string) => {
+                                        const isLoading = loadingDoc === `${tid}_${index}_${fmt}`;
+                                        return (
+                                            <button
+                                                key={fmt}
+                                                disabled={isLoading}
+                                                onClick={() => {
+                                                    if (fmt === 'csv' && result.structured_data) {
+                                                        exportAsCSV(result.structured_data, safeRender(result.entregavel_titulo || 'dados'));
+                                                    } else if (fmt === 'google_sheets' && result.structured_data?.abas?.length > 0) {
+                                                        openInGoogleSheets(
+                                                            result, session,
+                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                            `${tid}_st${index}`
+                                                        );
+                                                    } else if (fmt === 'google_forms' && result.structured_data?.secoes?.length > 0) {
+                                                        openInGoogleForms(
+                                                            result, session,
+                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                            `${tid}_st${index}`
+                                                        );
+                                                    } else if (fmt === 'google_docs' || fmt === 'pdf') {
+                                                        openInGoogleDocs(
+                                                            { ...result, conteudo_completo: result.conteudo },
+                                                            '', session, 
+                                                            (id) => setLoadingDoc(id ? `${tid}_${index}_${fmt}` : null),
+                                                            `${tid}_st${index}`
+                                                        );
+                                                    }
+                                                }}
+                                                className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-medium hover:bg-white/[0.08] hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                {isLoading ? '...' : (
+                                                    <>
+                                                        {fmt === 'google_docs' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain" />}
+                                                        {fmt === 'google_forms' && <img src="/forms.svg" alt="" className="w-3 h-3 object-contain" />}
+                                                        {fmt === 'google_sheets' && <img src="/sheets.png" alt="" className="w-3 h-3 object-contain" />}
+                                                        {fmt === 'csv' && <img src="/sheets.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
+                                                        {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
+                                                        {fmt === 'google_docs' ? 'Google Docs' : 
+                                                         fmt === 'google_forms' ? 'Google Forms' :
+                                                         fmt === 'google_sheets' ? 'Google Sheets' :
+                                                         fmt === 'pdf' ? 'PDF' :
+                                                         fmt === 'csv' ? 'CSV' : fmt}
+                                                    </>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -374,11 +509,18 @@ export default function TaskSubtasksDisplay({
                                                 <span className={`text-[12px] font-medium truncate flex-1 ${status === 'done' ? 'text-zinc-500 line-through decoration-zinc-800' :
                                                     status === 'running' ? 'text-zinc-200' : 'text-zinc-400'
                                                     }`}>
+                                                    {st.modo_execucao === 'producao' && (
+                                                        <span className="inline-flex items-center px-1 py-0 mr-1.5 text-[8px] font-bold tracking-wider uppercase rounded bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
+                                                            produção
+                                                        </span>
+                                                    )}
                                                     {safeRender(st.titulo)}
                                                 </span>
 
                                                 {status === 'running' && (
-                                                    <span className="text-[9px] font-medium text-violet-400 animate-pulse px-2">Executando...</span>
+                                                    <span className="text-[9px] font-medium text-violet-400 animate-pulse px-2">
+                                                        {st.modo_execucao === 'producao' ? '🏭 Produzindo...' : 'Executando...'}
+                                                    </span>
                                                 )}
 
                                                 {status === 'error' && (
@@ -408,7 +550,11 @@ export default function TaskSubtasksDisplay({
 
                                             {status === 'running' && (
                                                 <div className="bg-violet-500/[0.02]">
-                                                    {renderResearchBubbles()}
+                                                    {renderResearchBubbles(
+                                                        st.modo_execucao === 'producao' 
+                                                            ? '🏭 Produzindo artefato...' 
+                                                            : 'Pesquisando fontes...'
+                                                    )}
                                                 </div>
                                             )}
 

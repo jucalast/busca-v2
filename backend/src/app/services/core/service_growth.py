@@ -134,13 +134,29 @@ def do_specialist_execute(data: dict) -> dict:
     )
 
 def do_expand_subtasks(data: dict) -> dict:
-    return expand_task_subtasks(
-        analysis_id=data.get("analysis_id"),
-        pillar_key=data.get("pillar_key"),
-        task_data=data.get("task_data", {}),
+    from app.core import database as db
+
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    task_data = data.get("task_data", {})
+    task_id = task_data.get("id", "")
+
+    result = expand_task_subtasks(
+        analysis_id=analysis_id,
+        pillar_key=pillar_key,
+        task_data=task_data,
         brief=data.get("profile", {}),
         model_provider=data.get("aiModel", "groq")
     )
+
+    # Persiste as subtarefas no banco imediatamente para que o background
+    # executor as encontre sem precisar regerar (garantindo consistência com a UI).
+    # IMPORTANTE: salva SOMENTE o objeto de subtarefas (não envolve num dict extra),
+    # pois get_subtasks já devolve {task_id: <valor salvo>}.
+    if result.get("success") and result.get("subtasks") and task_id:
+        db.save_subtasks(analysis_id, pillar_key, task_id, result["subtasks"])
+
+    return result
 
 def do_execute_all_subtasks(data: dict, background_tasks) -> dict:
     """Trigger background execution of all subtasks."""
@@ -177,6 +193,14 @@ def do_execute_all_subtasks(data: dict, background_tasks) -> dict:
 def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile, model_provider):
     """The actual sequential execution loop running in background."""
     from app.core import database as db
+    
+    # Convert raw profile to proper brief if needed (ensures dna.segmento is always present)
+    if profile and "dna" not in profile:
+        try:
+            profile = generate_business_brief(profile)
+            print(f"  📋 Generated business brief from raw profile (segmento: {profile.get('dna', {}).get('segmento', '?')})", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ Failed to generate brief from profile: {e}", file=sys.stderr)
     
     # Track as an actively running background task
     task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
@@ -265,13 +289,25 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # Step 3: Create finalization subtask and execute it
         check_cancelled_aggressive()
 
-        # Prepare combined content from all subtasks
-        combined_content = ""
+        # Separate PESQUISA (research context) from PRODUCAO (real deliverables)
+        pesquisa_content = ""
+        producao_content = ""
         for i, r in enumerate(results):
             if r and isinstance(r, dict):
                 titulo = subtasks_list[i].get('titulo', f'Subtarefa {i+1}')
                 conteudo = r.get('conteudo', '')
-                combined_content += f"## {i+1}. {titulo}\n\n{conteudo}\n\n---\n\n"
+                section = f"## {i+1}. {titulo}\n\n{conteudo}\n\n---\n\n"
+                if r.get('execution_mode') == 'producao':
+                    producao_content += section
+                else:
+                    pesquisa_content += section
+
+        # Combined for finalization context; deliverable focuses on production artifacts
+        combined_content = ""
+        if producao_content:
+            combined_content += "# ARTEFATOS PRODUZIDOS\n\n" + producao_content
+        if pesquisa_content:
+            combined_content += "\n# CONTEXTO DE PESQUISA\n\n" + pesquisa_content
 
         # Create finalization subtask
         finalization_task = {
@@ -346,7 +382,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             "entregavel_titulo": task_data.get("entregavel_ia", task_data.get("titulo")),
             "entregavel_tipo": "plano_completo",
             "conteudo": final_content,
-            "conteudo_completo": combined_content,
+            "conteudo_completo": producao_content or combined_content,
+            "execution_mode": "producao",
             "fontes_consultadas": list(set(combined_sources)),
             "parts": results
         }
