@@ -1,5 +1,39 @@
 import { signIn } from 'next-auth/react';
 
+// ────────────────────────────────────────────────────────────────────────────
+// PENDING DOC ACTION — persisted across OAuth redirect
+// ────────────────────────────────────────────────────────────────────────────
+const PENDING_DOC_KEY = 'pendingDocAction';
+
+export interface PendingDocAction {
+    type: 'google_docs' | 'google_sheets' | 'google_forms' | 'csv';
+    tid: string;
+    idx: number;
+    result: any;
+    title: string;
+    fmt: string;
+}
+
+export function savePendingDocAction(action: PendingDocAction) {
+    try {
+        sessionStorage.setItem(PENDING_DOC_KEY, JSON.stringify(action));
+    } catch { /* ignore quota errors */ }
+}
+
+export function getPendingDocAction(): PendingDocAction | null {
+    try {
+        const raw = sessionStorage.getItem(PENDING_DOC_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw) as PendingDocAction;
+    } catch {
+        return null;
+    }
+}
+
+export function clearPendingDocAction() {
+    try { sessionStorage.removeItem(PENDING_DOC_KEY); } catch { /* ignore */ }
+}
+
 export function safeRender(value: any): string {
     if (value == null) return '';
     if (typeof value === 'string') return value;
@@ -64,7 +98,7 @@ export function getToolInfo(deliverable: any): { icon: string; name: string; col
 }
 
 export async function openInGoogleDocs(deliverable: any, pillarLabel: string, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
-    if (!session || !session.accessToken) {
+    if (!session || !session.accessToken || session.error === 'RefreshAccessTokenError') {
         await signIn('google');
         return;
     }
@@ -123,7 +157,7 @@ export async function openInGoogleDocs(deliverable: any, pillarLabel: string, se
 }
 
 export async function exportFullAnalysis(session: any, setLoadingFull: (loading: boolean) => void, analysisData: any, businessName: string) {
-    if (!session || !session.accessToken) {
+    if (!session || !session.accessToken || session.error === 'RefreshAccessTokenError') {
         await signIn('google');
         return;
     }
@@ -171,7 +205,7 @@ export async function exportFullAnalysis(session: any, setLoadingFull: (loading:
 // ════════════════════════════════════════════════════════════════
 
 export async function openInGoogleSheets(result: any, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
-    if (!session || !session.accessToken) {
+    if (!session || !session.accessToken || session.error === 'RefreshAccessTokenError') {
         await signIn('google');
         return;
     }
@@ -223,7 +257,7 @@ export async function openInGoogleSheets(result: any, session: any, setLoadingDo
 // ════════════════════════════════════════════════════════════════
 
 export async function openInGoogleForms(result: any, session: any, setLoadingDoc: (id: string | null) => void, fallbackId?: string) {
-    if (!session || !session.accessToken) {
+    if (!session || !session.accessToken || session.error === 'RefreshAccessTokenError') {
         await signIn('google');
         return;
     }

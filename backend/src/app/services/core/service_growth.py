@@ -53,6 +53,78 @@ _PROFILE_CRITICAL_SOURCES = {
 }
 
 
+# ═══════════════════════════════════════════════════════════════════
+# MELHORIA: Função de deduplicação de conteúdo entre subtarefas
+# ═══════════════════════════════════════════════════════════════════
+
+def deduplicate_subtask_results(results: list, subtasks_list: list) -> str:
+    """
+    Remove conteúdo duplicado entre subtarefas.
+    Identifica parágrafos idênticos ou muito similares e mantém apenas a primeira ocorrência.
+    Retorna o conteúdo combinado sem duplicações.
+    """
+    import re
+    from difflib import SequenceMatcher
+    
+    seen_paragraphs = []  # Lista de (texto_normalizado, subtask_index)
+    deduplicated_content = ""
+    
+    def normalize_text(text: str) -> str:
+        """Normaliza texto para comparação."""
+        # Remove espaços extras, números, e caracteres especiais
+        text = re.sub(r'\s+', ' ', text.strip().lower())
+        text = re.sub(r'[0-9]+', '', text)  # Remove números
+        text = re.sub(r'[^\w\s]', '', text)  # Remove pontuação
+        return text
+    
+    def is_duplicate(para: str, threshold: float = 0.85) -> bool:
+        """Verifica se parágrafo é duplicado (similaridade > threshold)."""
+        para_norm = normalize_text(para)
+        if len(para_norm) < 50:  # Ignora parágrafos muito curtos
+            return False
+        for seen_norm, _ in seen_paragraphs:
+            if SequenceMatcher(None, para_norm, seen_norm).ratio() > threshold:
+                return True
+        return False
+    
+    for i, r in enumerate(results):
+        if not r or not isinstance(r, dict):
+            continue
+        
+        titulo = subtasks_list[i].get('titulo', f'Subtarefa {i+1}') if i < len(subtasks_list) else f'Subtarefa {i+1}'
+        conteudo = r.get('conteudo', '')
+        
+        if not conteudo:
+            continue
+        
+        # Divide em parágrafos (seções ## ou blocos de texto)
+        paragraphs = re.split(r'\n\n+', conteudo)
+        filtered_paragraphs = []
+        
+        for para in paragraphs:
+            para_stripped = para.strip()
+            if not para_stripped:
+                continue
+            
+            # Mantém headers sempre
+            if para_stripped.startswith('#'):
+                filtered_paragraphs.append(para)
+                continue
+            
+            # Verifica duplicação
+            if not is_duplicate(para_stripped):
+                filtered_paragraphs.append(para)
+                seen_paragraphs.append((normalize_text(para_stripped), i))
+        
+        # Reconstrói conteúdo filtrado
+        filtered_content = '\n\n'.join(filtered_paragraphs)
+        if filtered_content.strip():
+            section = f"## {i+1}. {titulo}\n\n{filtered_content}\n\n---\n\n"
+            deduplicated_content += section
+    
+    return deduplicated_content
+
+
 def do_profile(data: dict) -> dict:
     onboarding = data.get("onboardingData", {})
     
@@ -296,6 +368,11 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # Step 3: Create finalization subtask and execute it
         check_cancelled_aggressive()
 
+        # ═══ MELHORIA: Usar deduplicação antes de combinar conteúdo ═══
+        # Aplica deduplicação para remover parágrafos repetidos entre subtarefas
+        deduplicated_content = deduplicate_subtask_results(results, subtasks_list)
+        print(f"  🧹 Deduplicação aplicada: conteúdo processado", file=sys.stderr)
+
         # Separate PESQUISA (research context) from PRODUCAO (real deliverables)
         pesquisa_content = ""
         producao_content = ""
@@ -303,13 +380,9 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         accumulated_research = ""
         for i, r in enumerate(results):
             if r and isinstance(r, dict):
-                titulo = subtasks_list[i].get('titulo', f'Subtarefa {i+1}')
-                conteudo = r.get('conteudo', '')
-                section = f"## {i+1}. {titulo}\n\n{conteudo}\n\n---\n\n"
+                # Já foi processado pela deduplicação, apenas coleta research
                 if r.get('execution_mode') == 'producao':
-                    producao_content += section
-                else:
-                    pesquisa_content += section
+                    producao_content = deduplicated_content  # Usa conteúdo deduplicado
                 # Accumulate research context from subtasks
                 research_ctx = r.get('_research_context', '')
                 if research_ctx and research_ctx not in accumulated_research:
@@ -317,10 +390,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
 
         # Combined for finalization context; deliverable focuses on production artifacts
         combined_content = ""
-        if producao_content:
-            combined_content += "# ARTEFATOS PRODUZIDOS\n\n" + producao_content
-        if pesquisa_content:
-            combined_content += "\n# CONTEXTO DE PESQUISA\n\n" + pesquisa_content
+        if deduplicated_content:
+            combined_content = "# ARTEFATOS PRODUZIDOS (DEDUPLICADOS)\n\n" + deduplicated_content
 
         # Build rich description for finalization using original task info
         task_titulo = task_data.get('titulo', 'Tarefa principal')
@@ -576,13 +647,30 @@ def do_analyze(data: dict):
                 if not isinstance(raw_profile, dict):
                     return raw_profile or {}
                 profile_copy = dict(raw_profile)
+                # Case 1: payload is { profile: { perfil: {...}, ... } }
                 nested_profile = profile_copy.get("profile")
                 if isinstance(nested_profile, dict):
                     if isinstance(nested_profile.get("perfil"), dict):
-                        profile_copy.update(nested_profile["perfil"])
+                        for key, value in nested_profile["perfil"].items():
+                            if key not in profile_copy:
+                                profile_copy[key] = value
                     if isinstance(nested_profile.get("_chat_context"), dict):
-                        profile_copy.update(nested_profile["_chat_context"])
+                        for key, value in nested_profile["_chat_context"].items():
+                            if key not in profile_copy:
+                                profile_copy[key] = value
                     for key, value in nested_profile.items():
+                        if key not in profile_copy:
+                            profile_copy[key] = value
+                # Case 2: payload is already { perfil: {...}, restricoes_criticas: {...}, ... }
+                direct_perfil = profile_copy.get("perfil")
+                if isinstance(direct_perfil, dict):
+                    for key, value in direct_perfil.items():
+                        if key not in profile_copy:
+                            profile_copy[key] = value
+                # Case 3: _chat_context directly in payload
+                direct_ctx = profile_copy.get("_chat_context")
+                if isinstance(direct_ctx, dict):
+                    for key, value in direct_ctx.items():
                         if key not in profile_copy:
                             profile_copy[key] = value
                 return profile_copy
@@ -597,9 +685,6 @@ def do_analyze(data: dict):
             
             # Send initial thought
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando análise completa do negócio...'})}\n\n"
-            
-            # Log de teste para console
-            print("🚀 ANÁLISE INICIADA - BUSINESS ID:", business_id, file=sys.stdout)
             
             # Send progress updates
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Pesquisando presença digital do negócio...'})}\n\n"
@@ -647,7 +732,7 @@ def do_analyze(data: dict):
             # Profile summary (otimizado)
             nome = profile.get('nome_negocio', profile.get('nome', 'N/A'))
             site = profile.get('site', profile.get('site_url', 'N/A'))
-            log_info(f"📋 Perfil: {nome} | Site: {site}")
+            log_info(f"📋 Perfil: {nome} | Site: {site} | Business ID: {business_id or '(novo)'}")
             
             # Garantir que temos um nome válido para salvar
             if not nome or nome == 'N/A':

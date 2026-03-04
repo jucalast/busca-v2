@@ -24,7 +24,7 @@ export function LoadingErrorState({
     const meta = PILLAR_META[selectedPillar];
 
     return (
-        <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+        <div className="h-full bg-[#09090b] flex items-center justify-center">
             <div className="text-center max-w-md px-6">
                 {error ? (
                     <>

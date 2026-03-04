@@ -1672,7 +1672,18 @@ ENTREGÁVEIS OBRIGATÓRIOS deste pilar (suas tarefas DEVEM produzir estes):
 {all_research}
 
 COMO {spec['cargo'].upper()}, crie TAREFAS FOCADAS EM CRIAR E PRODUZIR OS ENTREGÁVEIS OBRIGATÓRIOS acima.
-PARE de criar tarefas de "Pesquisar", "Coletar dados", "Analisar", "Identificar". A IA já fez a pesquisa e os dados de mercado já estão disponíveis! Suas tarefas devem ser exclusivas de AÇÃO PRÁTICA E CRIAÇÃO (ex: "Criar o Documento de Persona detalhado com dores e desejos", "Descrever o Mapa da Jornada do cliente B2B", "Escrever o Script de Vendas").
+
+⛔ PROIBIÇÃO ABSOLUTA DE TAREFAS DE PESQUISA ⛔
+NÃO CRIE tarefas cujo título ou descrição contenha:
+- "Pesquisar", "Identificar", "Mapear", "Coletar dados", "Analisar mercado", "Levantar informações", "Explorar", "Investigar"
+A IA JÁ FEZ TODA A PESQUISA. Os dados estão nos contextos acima (DADOS DE MERCADO, PESQUISA COMPLEMENTAR).
+TODAS as suas tarefas devem ser de CRIAÇÃO e PRODUÇÃO de entregáveis concretos:
+✅ "Criar documento de Persona B2B detalhado"
+✅ "Escrever Script de Vendas para indústrias"
+✅ "Descrever Mapa de Jornada de Compra"
+❌ NÃO: "Pesquisar perfil do cliente ideal"
+❌ NÃO: "Identificar dores do público"
+❌ NÃO: "Mapear concorrentes" (já está nos dados!)
 
 REGRA DE CASCATA: É OBRIGATÓRIO (CRÍTICO) usar os dados fornecidos. Se a Persona, Tom de Voz ou Posicionamento já foram definidos pelos pilares anteriores (upstream), USE esses dados exatos e NÃO INVENTE NADA NOVO que concorra. No entanto, se o seu pilar é o responsável por CRIAR esse dado pela primeira vez (ex: Publico-Alvo criando a Persona), então VOCÊ DEVE INVENTAR E CRIAR o documento profundamente do zero usando a inteligência da pesquisa!
 
@@ -2057,6 +2068,29 @@ def agent_execute_task(
         escopo = spec.get("escopo", "")
         nao_fazer = spec.get("nao_fazer", "")
 
+        # ═══ MELHORIA: Contexto ESPECÍFICO da empresa (dados reais) ═══
+        empresa_context = ""
+        if dna:
+            empresa_context = f"""
+═══ DADOS ESPECÍFICOS DA EMPRESA (USE OBRIGATORIAMENTE) ═══
+Empresa: {dna.get('nome', 'N/A')}
+Segmento: {dna.get('segmento', 'N/A')}
+Modelo de Negócio: {dna.get('modelo', 'N/A')}
+Localização: {dna.get('localizacao', 'N/A')}
+Clientes atuais: {dna.get('tipo_cliente', dna.get('cliente_ideal', 'N/A'))}
+Concorrentes DIRETOS (mesmos clientes, mesmo produto): {dna.get('concorrentes', 'N/A')}
+Fornecedores (matéria-prima/insumos - NÃO são concorrentes): {dna.get('fornecedores', 'N/A')}
+Diferencial declarado: {dna.get('diferencial', 'N/A')}
+Ticket Médio: {dna.get('ticket_medio', 'N/A')}
+Dificuldade principal: {dna.get('dificuldade_principal', 'N/A')}
+Objeção mais comum dos clientes: {dna.get('maior_objecao', 'não informada')}
+Capacidade produtiva: {dna.get('capacidade_produtiva', 'N/A')}
+Região de atendimento: {dna.get('regiao_atendimento', 'N/A')}
+
+⚠️ CRÍTICO: A persona e análise DEVEM referenciar estes dados reais.
+NÃO invente nomes de empresas genéricos. USE os concorrentes e fornecedores acima.
+"""
+
         prompt = f"""{spec['persona']}
 
 Cargo: {spec['cargo']}
@@ -2065,6 +2099,8 @@ Pilar: {dim_cfg.get('label', pillar_key)}
 ═══ SEU ESCOPO ═══
 {escopo}
 🚫 PROIBIDO: {nao_fazer}
+
+{empresa_context}
 
 ═══ CONTEXTO DO NEGÓCIO ═══
 {brief_text}
@@ -2497,6 +2533,21 @@ ENTREGÁVEL FINAL: {task_data.get('entregavel_ia', 'N/A')}
 {all_research}
 
 ═══ QUEBRE ESTA TAREFA EM 3-6 SUBTAREFAS EXECUTÁVEIS ═══
+
+⛔ REGRA CRÍTICA DE DIFERENCIAÇÃO — CADA SUBTAREFA PRODUZ ENTREGÁVEL ÚNICO:
+Cada subtarefa DEVE produzir um documento/artefato DIFERENTE. NÃO repita conteúdo entre subtarefas!
+
+📋 DISTRIBUIÇÃO OBRIGATÓRIA DE CONTEÚDO:
+- Subtarefa 1 (PESQUISA): Coleta APENAS dados brutos (números, estatísticas, nomes de empresas, fontes)
+- Subtarefa 2 (ANÁLISE): INTERPRETAÇÃO dos dados (tendências, padrões, insights) — NÃO repita os dados brutos
+- Subtarefa 3 (PERSONA/PERFIL): Documento de persona COMPLETO (nome fictício, cargo, dores, desejos, jornada)
+- Subtarefa 4 (RECOMENDAÇÕES): APENAS ações práticas e estratégicas — NÃO repita análises ou personas
+- Subtarefa FINAL: Consolidação em documento profissional ÚNICO integrando tudo
+
+⚠️ VALIDAÇÃO ANTI-REPETIÇÃO:
+Antes de criar cada subtarefa, pergunte: "Isso já foi coberto por outra subtarefa?"
+→ SIM → Remova ou reformule com escopo DIFERENTE
+→ NÃO → Inclua
 
 PRINCÍPIO FUNDAMENTAL — TESTE DE FACTIBILIDADE:
 Antes de incluir qualquer subtarefa, pergunte: "A IA consegue executar isso com dados da web + perfil do negócio?"

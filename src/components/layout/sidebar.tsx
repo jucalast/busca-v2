@@ -326,9 +326,9 @@ export default function SidebarLayout({
           </button>
 
           {/* Main Content Area */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             {/* Content */}
-            <main className="flex-1">
+            <main className="flex-1 overflow-hidden h-full">
               {error && (
                 <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
                   {error}

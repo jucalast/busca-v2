@@ -86,6 +86,79 @@ PUBLICO_ALVO_SCHEMA = {
 }
 
 
+# ═══════════════════════════════════════════════════════════════════
+# MELHORIA: Schema específico para negócios B2B
+# ═══════════════════════════════════════════════════════════════════
+
+PUBLICO_ALVO_SCHEMA_B2B = {
+    "segmentos_mapeados": [
+        {
+            "segmento_industrial": "Nome do segmento industrial específico",
+            "volume_estimado_mercado": "Estimativa de volume do mercado",
+            "cargo_decisor_primario": "Cargo do decisor principal (ex: Gerente de Compras)",
+            "cargo_influenciador": "Cargo do influenciador técnico (ex: Engenheiro de Produção)",
+            "cargo_aprovador_final": "Cargo do aprovador final (ex: Diretor Industrial)",
+            "dores_operacionais": [
+                "Dor específica 1 relacionada a operações",
+                "Dor específica 2 relacionada a custos",
+                "Dor específica 3 relacionada a qualidade"
+            ],
+            "gatilhos_de_compra": [
+                "Evento que dispara necessidade de compra",
+                "Sazonalidade ou ciclo de demanda",
+                "Mudança regulatória ou de mercado"
+            ],
+            "criterios_de_homologacao": [
+                "Capacidade produtiva mínima",
+                "Certificações exigidas",
+                "Prazo de entrega esperado",
+                "Condições comerciais exigidas"
+            ],
+            "ciclo_venda_mapeado": {
+                "etapas": ["Prospecção", "Qualificação técnica", "Amostra/Teste", "Negociação comercial", "Fechamento"],
+                "tempo_medio_total": "60-90 dias",
+                "gargalos_identificados": ["Amostragem lenta", "Aprovação de crédito"]
+            },
+            "objecoes_mais_comuns": [
+                "Objeção 1 e como contornar",
+                "Objeção 2 e como contornar"
+            ],
+            "concorrentes_neste_segmento": [
+                "Concorrente A (ponto forte: X, fraco: Y)",
+                "Concorrente B (ponto forte: X, fraco: Y)"
+            ]
+        }
+    ],
+    "perfil_geral_mercado": {
+        "descricao": "Descrição detalhada do mercado B2B atendido",
+        "ticket_medio_tipico": "Faixa de ticket médio (ex: R$ 15.000 - R$ 50.000)",
+        "ciclo_compra_medio": "Tempo médio do ciclo de compra",
+        "concentracao_geografica": ["Região 1", "Região 2"],
+        "sazonalidade": "Meses de pico e baixa demanda",
+        "tendencias_mercado": ["Tendência 1", "Tendência 2"]
+    },
+    "matriz_decisores": {
+        "decisor_economico": "Quem aprova o orçamento",
+        "decisor_tecnico": "Quem avalia especificações",
+        "usuario_final": "Quem efetivamente usa o produto",
+        "influenciadores_internos": ["Departamento 1", "Departamento 2"],
+        "bloqueadores_potenciais": ["Quem pode vetar a compra e por quê"]
+    },
+    "insights_comportamento_b2b": [
+        "Insight sobre processo decisório B2B",
+        "Insight sobre relacionamento com fornecedores",
+        "Insight sobre sensibilidade a preço vs qualidade"
+    ]
+}
+
+
+def get_schema_by_model(business_model: str) -> dict:
+    """Retorna o schema apropriado baseado no modelo de negócio."""
+    if business_model and business_model.lower() in ['b2b', 'industria', 'industrial', 'corporativo']:
+        return PUBLICO_ALVO_SCHEMA_B2B
+    return PUBLICO_ALVO_SCHEMA
+
+
 def validate_publico_alvo_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate publico alvo data against schema."""
     from ..base_schema import SchemaValidator

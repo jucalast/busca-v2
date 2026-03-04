@@ -25,7 +25,6 @@ import { SpecialistGrid } from './components/SpecialistGrid';
 import { LoadingErrorState } from './components/LoadingErrorState';
 import { PillarHeader } from './components/PillarHeader';
 import { TaskProgressBar } from './components/TaskProgressBar';
-import { DocumentsTab } from './components/DocumentsTab';
 import { FocusedTaskView } from './components/FocusedTaskView';
 import { TasksList } from './components/TasksList';
 import { DepBadge } from './components/DepBadge';
@@ -288,25 +287,25 @@ export default function PillarWorkspace({
         }
 
         return (
-            <div className="h-screen bg-[#09090b] flex">
-                {/* Left Column - Header and Sources */}
+            <div className="h-full bg-[#09090b] flex">
+                {/* Left Column - Header and Documents */}
                 <PillarHeader
                     selectedPillar={selectedPillar}
                     plan={plan}
                     specialists={specialists}
                     dims={dims}
                     allSources={allSources}
-                    entregaveis={planEntregaveis}
-                    entregaveisOrder={entregaveisOrder}
-                    done={done}
-                    taskDeliverables={taskDeliverables}
                     session={session}
                     businessId={businessId}
                     setLoadingDoc={setLoadingDoc}
                     setError={setError}
                     handleRedoPillar={handleRedoPillar}
-                    handleReorderEntregaveis={handleReorderEntregaveis}
                     onBack={onBack}
+                    docsForDropdown={docsForDropdown}
+                    visibleTasks={visibleTasks}
+                    openFolders={openFolders}
+                    setOpenFolders={setOpenFolders}
+                    loadingDoc={loadingDoc}
                 />
 
                 {/* Right Column - Tasks */}
@@ -318,53 +317,37 @@ export default function PillarWorkspace({
                         setActiveRightTab={setActiveRightTab}
                         focusedTaskId={focusedTaskId}
                         setFocusedTaskId={setFocusedTaskId}
-                        docsCount={docsForDropdown.length}
+                        docsCount={0}
                     />
 
-                    <div className="px-6">
-                        {/* Dependencies */}
-                        {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
-                            <div className={`mb-4 p-3 rounded-lg ${deps.blockers?.length > 0
-                                ? 'bg-red-500/[0.04]' : 'bg-amber-500/[0.04]'}`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Link2 className="w-4 h-4 text-amber-400" />
-                                    <span className="text-xs font-semibold text-amber-400">Dependências</span>
+                    {/* === TASKS === */}
+                    {<>
+                        <div className="px-6">
+                            {/* Dependencies */}
+                            {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
+                                <div className={`mb-4 p-3 rounded-lg ${deps.blockers?.length > 0
+                                    ? 'bg-red-500/[0.04]' : 'bg-amber-500/[0.04]'}`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Link2 className="w-4 h-4 text-amber-400" />
+                                        <span className="text-xs font-semibold text-amber-400">Dependências</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {(deps.blockers || []).map((b: any) => <DepBadge key={b.pillar} dep={b} />)}
+                                        {(deps.warnings || []).map((w: any) => <DepBadge key={w.pillar} dep={w} />)}
+                                    </div>
                                 </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {(deps.blockers || []).map((b: any) => <DepBadge key={b.pillar} dep={b} />)}
-                                    {(deps.warnings || []).map((w: any) => <DepBadge key={w.pillar} dep={w} />)}
+                            )}
+
+                            {error && (
+                                <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
+                                    {error}
+                                    <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
-                        {error && (
-                            <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
-                                {error}
-                                <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Tasks List Area */}
-                    <div className="flex-1 px-3 pb-28 overflow-visible flex flex-col relative">
-                        {/* === DOCUMENTS TAB === */}
-                        {activeRightTab === 'docs' && (
-                            <div className="absolute inset-0 flex flex-col overflow-hidden">
-                                <DocumentsTab
-                                    docsForDropdown={docsForDropdown}
-                                    visibleTasks={visibleTasks}
-                                    selectedPillar={selectedPillar}
-                                    openFolders={openFolders}
-                                    setOpenFolders={setOpenFolders}
-                                    session={session}
-                                    loadingDoc={loadingDoc}
-                                    setLoadingDoc={setLoadingDoc}
-                                />
-                            </div>
-                        )}
-
-                        {/* === TASKS TAB === */}
-                        {activeRightTab === 'tasks' && <>
+                        {/* Tasks List Area */}
+                        <div className="flex-1 px-3 pb-28 overflow-visible flex flex-col relative">
                             {/* Focused Task View */}
                             {focusedTaskId && (
                                 <FocusedTaskView
@@ -416,8 +399,8 @@ export default function PillarWorkspace({
                                     setExpandedTaskIds={setExpandedTaskIds}
                                 />
                             )}
-                        </>}
-                    </div>
+                        </div>
+                    </>}
                 </div>
             </div>
         );

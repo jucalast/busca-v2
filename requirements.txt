@@ -6,6 +6,7 @@ groq
 openai
 google-genai
 langgraph
+langgraph-checkpoint-sqlite
 chromadb
 pydantic
 trafilatura

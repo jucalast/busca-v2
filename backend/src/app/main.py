@@ -17,6 +17,9 @@ logging.getLogger('httpx').setLevel(logging.ERROR)
 logging.getLogger('primp').setLevel(logging.ERROR)
 logging.getLogger('ddgs').setLevel(logging.ERROR)
 logging.getLogger('groq._base_client').setLevel(logging.ERROR)
+logging.getLogger('trafilatura').setLevel(logging.CRITICAL)
+logging.getLogger('trafilatura.core').setLevel(logging.CRITICAL)
+logging.getLogger('trafilatura.downloads').setLevel(logging.CRITICAL)
 
 app = FastAPI(title="Busca V2 Backend API", version="1.0.0")
 

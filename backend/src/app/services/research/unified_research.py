@@ -268,13 +268,16 @@ class UnifiedResearchEngine:
         """
         Pesquisa de subtarefas (micro level).
         Usado na expansão e execução de subtarefas.
+        
+        IMPORTANTE: Cada subtask_index gera queries DIFERENTES para evitar
+        repetição de conteúdo entre subtarefas.
         """
+        # Cache key DEVE incluir subtask_index para pesquisas diferenciadas
         cache_key = self._generate_cache_key("subtask", {
-            "task_title": task_title,
-            "task_desc": task_desc[:100],  # Limitar para cache
+            "task_title": task_title[:50],  # Limitar para cache mais eficiente
             "pillar_key": pillar_key,
             "segmento": segmento,
-            "subtask_index": subtask_index
+            "subtask_index": subtask_index  # CRÍTICO: diferenciar cache por subtarefa
         })
         
         # Verificar cache

@@ -60,7 +60,7 @@ export function SpecialistGrid({
     setError
 }: SpecialistGridProps) {
     return (
-        <div className="min-h-screen bg-[#09090b]">
+        <div className="min-h-full bg-[#09090b]">
             <div className="max-w-6xl mx-auto px-6 py-12">
                 <div className="flex flex-col gap-8 lg:flex-row">
                     {/* Left column: business info + actions */}
