@@ -98,15 +98,23 @@ export default function GrowthHub({ data, userProfile, onSelectDimension, onRedo
     return (
         <div className="min-h-screen bg-[#09090b] flex items-start justify-center">
             <div className="w-full max-w-4xl px-6 py-16">
-
-                {/* Business Identity */}
-                <div className="text-center mb-14">
-                    <h1 className="text-3xl font-bold text-white tracking-tight">
-                        {userProfile.name}
-                    </h1>
-                    <p className="text-zinc-500 mt-1.5 text-sm tracking-wide">
-                        {userProfile.segment}
-                    </p>
+                {/* Linha fixa igual ao sidebar */}
+                <div className="flex items-center justify-between border-b border-white/[0.04] mb-14" style={{ height: 56 }}>
+                    <div>
+                        <h1 className="text-3xl font-bold text-white tracking-tight">
+                            {userProfile.name}
+                        </h1>
+                        <p className="text-zinc-500 mt-1.5 text-sm tracking-wide">
+                            {userProfile.segment}
+                        </p>
+                    </div>
+                    <button
+                        onClick={onRedo}
+                        className="flex items-center gap-2 p-2 rounded-lg text-zinc-500 hover:bg-zinc-800/10 transition-all"
+                        title="Refazer Análise"
+                    >
+                        <RotateCcw className="w-4 h-4 text-zinc-500" />
+                    </button>
                 </div>
 
                 {/* Score Ring */}

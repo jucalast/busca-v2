@@ -72,6 +72,7 @@ class ToolContext:
     restrictions: str = ""
     all_diagnostics: dict = field(default_factory=dict)
     dim_label: str = ""                     # Pillar display label
+    completed_docs_context: str = ""        # Already-produced deliverables from previous tasks
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -196,6 +197,8 @@ class ToolPlugin(ABC):
             # Finalization tasks get more research context to produce richer documents
             max_research = 24000 if is_finalization else 10000
             parts.append(f"\n═══ DADOS COLETADOS ═══\n{ctx.research_content[:max_research]}")
+        if ctx.completed_docs_context:
+            parts.append(f"\n{ctx.completed_docs_context}")
         
         return "\n".join(parts)
     
@@ -290,6 +293,7 @@ REGRAS ANTI-GENÉRICO (CRÍTICO):
 - OBRIGATÓRIO usar dados ESPECÍFICOS do negócio em análise
 - OBRIGATÓRIO incluir nomes, números, datas e detalhes concretos
 - OBRIGATÓRIO que o resultado seja UTILIZÁVEL IMEDIATAMENTE
+- PROIBIDO INVENTAR CONCORRENTES: Use EXCLUSIVAMENTE os concorrentes listados nos dados da empresa. Se não há concorrentes listados, NÃO crie tabela comparativa inventada.
 - CADEIA PRODUTIVA (PRIORIDADE MÁXIMA): Se há dados de CADEIA PRODUTIVA ou FORNECEDORES no contexto:
   * Empresas listadas como FORNECEDORES são quem vende insumos/matéria-prima para o negócio → NUNCA listar como concorrentes
   * CONCORRENTES são APENAS empresas que vendem o MESMO produto final para os MESMOS clientes
@@ -304,4 +308,9 @@ Se dados upstream existem, USE-OS. Se não existem, CRIE-OS do zero.
 REGRA ANTI-AMNÉSIA: CONSISTÊNCIA ABSOLUTA com subtarefas anteriores.
 Se persona "João Carlos, 42 anos" já foi criada, USE a mesma persona.
 NÃO crie novos dados que contradizem o que já existe.
+
+REGRA ANTI-REPETIÇÃO: Se subtarefas anteriores já produziram seções
+(ex: "Etapas da Jornada", "Critérios de Seleção", "Análise de Concorrentes"),
+NÃO recrie essas mesmas seções. Produza conteúdo NOVO e COMPLEMENTAR.
+Se precisar referenciar algo anterior, escreva "conforme mapeado anteriormente" em 1 linha.
 """

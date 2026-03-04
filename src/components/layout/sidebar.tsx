@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Plus, TrendingUp, LogOut, Menu, X, MapPin, Trash2, MoreVertical, Brain } from 'lucide-react';
+import { Building2, Plus, TrendingUp, LogOut, MapPin, Trash2, MoreVertical } from 'lucide-react';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
 import { HotzoneMapButton } from './HotzoneMapButton';
+import UserAvatar from '@/components/ui/UserAvatar';
 
 interface Business {
   id: string;
@@ -47,7 +48,9 @@ export default function SidebarLayout({
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const isExpanded = isHovered || isPinned;
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; businessId: string; businessName: string }>({ isOpen: false, businessId: '', businessName: '' });
@@ -129,239 +132,207 @@ export default function SidebarLayout({
   };
 
   return (
-    <div className="relative h-screen bg-[#09090b] overflow-hidden">
-      {/* Bottom Area - Sidebar + Main Content */}
-      <div className="absolute inset-x-0 top-0 bottom-0">
-        <div className="flex h-full overflow-hidden relative">
-          {/* Sidebar */}
-          <aside
-            className={`${sidebarOpen ? 'w-72' : 'w-0'
-              } transition-all duration-300 flex-shrink-0 border-r border-white/[0.04] bg-[#0c0c0e] flex flex-col overflow-hidden relative z-30`}
-          >
-            {/* Branding header */}
-            <div className="px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/[0.04]">
-              <img src="/logo.png" alt="Logo" className="h-7 w-auto object-contain" />
-            </div>
+    <div className="relative h-screen overflow-hidden" style={{ background: 'lab(5 0 0)' }}>
+      <div className="absolute inset-0 flex">
 
-            {/* New Business Button */}
-            <div className="p-4 flex-shrink-0">
-              <button
-                onClick={onCreateNew}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 bg-white/[0.04] hover:bg-white/[0.07] text-white rounded-xl transition-all duration-200 border border-white/[0.06] hover:border-white/[0.10] group"
+        {/* ── LEFT SIDEBAR — hover to expand ──────────────────────────── */}
+        <aside
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className="flex-shrink-0 flex flex-col overflow-hidden relative z-30 transition-all duration-300 ease-in-out border-r border-white/[0.04]"
+          style={{
+            width: isExpanded ? 256 : 52,
+            background: 'lab(5 0 0)',
+          }}
+        >
+          {/* Logo */}
+          <div className="flex-shrink-0 flex items-center justify-center border-b border-white/[0.04]" style={{ height: 56, position: 'relative' }}>
+            <img src="/logo_icon.png" alt="Logo" className="object-contain" style={{ width: 24, height: 24, position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
+          </div>
+
+          {/* New Business */}
+          <div className="flex-shrink-0 px-2 py-3">
+            <button
+              onClick={onCreateNew}
+              title="Novo Negócio"
+              className="w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] overflow-hidden"
+              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+            >
+              <Plus className="w-4 h-4 flex-shrink-0" />
+              <span
+                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
+                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
               >
-                <Plus className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
-                <span className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">Novo Negócio</span>
-              </button>
-            </div>
+                Novo Negócio
+              </span>
+            </button>
+          </div>
 
-            {/* Business List */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-2">
-              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-[0.2em] px-1 mb-1">
+          {/* Businesses section toggle */}
+          <div className="flex-shrink-0 px-2 pb-1">
+            <button
+              onClick={() => setIsPinned(!isPinned)}
+              title="Negócios"
+              className={`w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 overflow-hidden ${isPinned ? 'text-zinc-200 bg-white/[0.07]' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06]'
+                }`}
+              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+            >
+              <Building2 className="w-4 h-4 flex-shrink-0" />
+              <span
+                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
+                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
+              >
                 Negócios
-              </p>
-              {loading ? (
-                <div className="text-center py-10">
-                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-zinc-700 border-t-violet-500/60 mx-auto mb-3"></div>
-                  <p className="text-xs text-zinc-600">Carregando negócios...</p>
+              </span>
+            </button>
+          </div>
+
+          {/* Business List */}
+          <div className="flex-1 overflow-y-auto pb-4 flex flex-col gap-0.5 px-2" style={{ scrollbarWidth: 'none' }}>
+            {isExpanded && (
+              loading ? (
+                <div className="flex justify-center py-6">
+                  <div className="w-5 h-5 rounded-full border-2 border-zinc-700 border-t-violet-500/60 animate-spin" />
                 </div>
               ) : businesses.length === 0 ? (
-                <div className="text-center py-10 px-4">
-                  <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mx-auto mb-4">
-                    <Building2 className="w-6 h-6 text-zinc-700" />
-                  </div>
-                  <p className="text-sm text-zinc-400 mb-1 font-medium">Nenhum negócio ainda</p>
-                  <p className="text-xs text-zinc-600 leading-relaxed">Crie seu primeiro negócio para começar a análise</p>
+                <div className="flex items-center gap-2 px-2 py-3">
+                  <p className="text-[11px] text-zinc-600">Nenhum negócio cadastrado</p>
                 </div>
               ) : (
                 businesses.map((business) => {
                   const profileRoot = business.profile_data?.profile || business.profile_data || {};
                   const perfil = profileRoot.perfil || profileRoot || {};
-                  const displaySegment =
-                    business.segment ||
-                    perfil.segmento ||
-                    perfil.segmento_principal ||
-                    perfil.industria ||
-                    profileRoot.segmento ||
-                    '—';
-                  const displayModel =
-                    business.model ||
-                    perfil.modelo_negocio ||
-                    perfil.modelo ||
-                    profileRoot.modelo_negocio ||
-                    profileRoot.modelo ||
-                    '—';
-                  const displayLocation =
-                    business.location ||
-                    perfil.localizacao ||
-                    perfil.cidade ||
-                    perfil.estado ||
-                    profileRoot.localizacao ||
-                    profileRoot.cidade ||
-                    profileRoot.estado ||
-                    '—';
+                  const displaySegment = business.segment || perfil.segmento || perfil.segmento_principal || perfil.industria || profileRoot.segmento || '—';
+                  const isActive = currentBusinessId === business.id;
+
                   return (
-                    <div key={business.id} className="relative">
+                    <div key={business.id} className="relative group">
                       <Link
                         href={`/analysis/${business.id}`}
                         scroll={false}
-                        className={`block p-4 rounded-2xl transition-all duration-200 ${currentBusinessId === business.id
-                          ? 'bg-white/[0.07] border border-white/[0.08]'
-                          : 'bg-white/[0.02] hover:bg-white/[0.05] border border-transparent hover:border-white/[0.05]'
-                          }`}
+                        title={business.name}
+                        className={`flex items-center gap-2.5 rounded-lg transition-all duration-200 overflow-hidden ${isActive ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]'}`}
+                        style={{ height: 36, paddingLeft: 8, paddingRight: 32 }}
                       >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1 min-w-0 pr-2">
-                            <h3 className="text-sm font-semibold text-white truncate leading-snug">
-                              {business.name}
-                            </h3>
-                            <p className="text-[11px] text-zinc-500 truncate mt-0.5">
-                              {displaySegment}
-                            </p>
+                        <div
+                          className="flex-shrink-0 flex items-center justify-center rounded-md"
+                          style={{ width: 24, height: 24, background: 'rgba(255,255,255,0.05)', minWidth: 24 }}
+                        >
+                          <Building2 className="w-3 h-3 text-zinc-500" />
+                        </div>
+                        <div className="flex-1 min-w-0 flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-medium text-zinc-300 truncate leading-none">{business.name}</p>
+                            <p className="text-[10px] text-zinc-600 truncate mt-0.5">{displaySegment}</p>
                           </div>
                           {business.latest_analysis && (
-                            <div
-                              className={`ml-2 px-2 py-1 rounded-lg ${getScoreBg(
-                                business.latest_analysis.score_geral
-                              )} flex-shrink-0`}
-                            >
-                              <div className="flex items-center gap-1">
-                                <TrendingUp
-                                  className={`w-3 h-3 ${getScoreColor(
-                                    business.latest_analysis.score_geral
-                                  )}`}
-                                />
-                                <span
-                                  className={`text-xs font-bold ${getScoreColor(
-                                    business.latest_analysis.score_geral
-                                  )}`}
-                                >
-                                  {business.latest_analysis.score_geral}
-                                </span>
-                              </div>
-                            </div>
+                            <span className={`text-[10px] font-bold ml-2 flex-shrink-0 ${getScoreColor(business.latest_analysis.score_geral)}`}>
+                              {business.latest_analysis.score_geral}
+                            </span>
                           )}
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-600">
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-1.5 py-0.5 bg-white/[0.04] rounded-md font-medium">
-                              {displayModel}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-2.5 h-2.5" />
-                              <span className="truncate max-w-[80px]">{displayLocation}</span>
-                            </div>
-                          </div>
-                          <div className="relative" ref={openMenuId === business.id ? menuRef : null}>
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setOpenMenuId(openMenuId === business.id ? null : business.id);
-                              }}
-                              className="p-1 hover:bg-white/[0.06] rounded-lg transition-colors"
-                            >
-                              <MoreVertical className="w-3 h-3 text-zinc-600" />
-                            </button>
-                            {openMenuId === business.id && (
-                              <div className="absolute right-0 bottom-full mb-1 w-40 bg-[#111113] border border-white/[0.06] rounded-xl overflow-hidden z-50 shadow-xl shadow-black/50">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setOpenMenuId(null);
-                                    handleDeleteBusiness(business.id, business.name, e);
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Excluir negócio</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </Link>
+                      <div className="absolute right-1 top-0 bottom-0 flex items-center" ref={openMenuId === business.id ? menuRef : null}>
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(openMenuId === business.id ? null : business.id); }}
+                          className={`p-1 hover:bg-white/[0.06] rounded-md transition-colors ${openMenuId === business.id ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                        >
+                          <MoreVertical className="w-3 h-3 text-zinc-600" />
+                        </button>
+                        {openMenuId === business.id && (
+                          <div
+                            className="absolute right-0 bottom-full mb-1 w-40 bg-[#111113] border border-white/[0.06] rounded-xl overflow-hidden z-50 shadow-xl shadow-black/50"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(null); handleDeleteBusiness(business.id, business.name, e); }}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Excluir negócio</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })
-              )}
-            </div>
-
-            {/* Sidebar Footer */}
-            <div className="p-4 border-t border-white/[0.04] flex-shrink-0">
-              {/* Logout */}
-              <button
-                onClick={onLogout}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] rounded-xl transition-all text-zinc-500 hover:text-zinc-300 border border-transparent hover:border-white/[0.05]"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="text-xs font-medium">Sair da Conta</span>
-              </button>
-            </div>
-          </aside>
-
-          {/* Confirm Delete Dialog */}
-          <ConfirmDialog
-            isOpen={deleteDialog.isOpen}
-            title="Excluir negócio"
-            message={`Tem certeza que deseja excluir "${deleteDialog.businessName}"? Esta ação não pode ser desfeita e todos os dados serão perdidos permanentemente.`}
-            confirmText="Excluir"
-            cancelText="Cancelar"
-            onConfirm={confirmDelete}
-            onCancel={() => setDeleteDialog({ isOpen: false, businessId: '', businessName: '' })}
-            isDangerous
-          />
-
-          {/* Toggle Button - Floating between sidebar and content */}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className={`absolute top-5 z-20 w-7 h-7 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.06] rounded-lg flex items-center justify-center transition-all duration-300 ${sidebarOpen ? 'left-[17rem]' : 'left-3'
-              }`}
-          >
-            {sidebarOpen ? (
-              <X className="w-3.5 h-3.5 text-zinc-500" />
-            ) : (
-              <Menu className="w-3.5 h-3.5 text-zinc-500" />
+              )
             )}
-          </button>
-
-          {/* Main Content Area */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {/* Content */}
-            <main className="flex-1 overflow-hidden h-full">
-              {error && (
-                <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
-                  {error}
-                </div>
-              )}
-              {children}
-            </main>
           </div>
 
-          {/* Right Sidebar - Business Mind Map */}
-          {rightSidebar && (
-            <>
-              {/* Backdrop overlay */}
-              {rightSidebarOpen && (
-                <div
-                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
-                  onClick={() => setRightSidebarOpen(false)}
-                />
-              )}
-              {/* Hotzone para mostrar o botão */}
-              <HotzoneMapButton
-                rightSidebarOpen={rightSidebarOpen}
-                setRightSidebarOpen={setRightSidebarOpen}
-              />
-              {/* Sidebar panel */}
-              <aside
-                className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'}`}
+          {/* Footer — logout */}
+          <div className="flex-shrink-0 px-2 py-3 border-t border-white/[0.04]">
+            <button
+              onClick={onLogout}
+              title="Sair"
+              className="w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.05] overflow-hidden"
+              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+            >
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              <span
+                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
+                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
               >
-                {rightSidebar}
-              </aside>
-            </>
-          )}
+                Sair da Conta
+              </span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Confirm Delete Dialog */}
+        <ConfirmDialog
+          isOpen={deleteDialog.isOpen}
+          title="Excluir negócio"
+          message={`Tem certeza que deseja excluir "${deleteDialog.businessName}"? Esta ação não pode ser desfeita e todos os dados serão perdidos permanentemente.`}
+          confirmText="Excluir"
+          cancelText="Cancelar"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteDialog({ isOpen: false, businessId: '', businessName: '' })}
+          isDangerous
+        />
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Top Header Bar */}
+          <header
+            className="flex-shrink-0 flex items-center justify-end border-b border-white/[0.04] px-4 z-[60]"
+            style={{ height: 56 }}
+          >
+            <UserAvatar />
+          </header>
+
+          {/* Content */}
+          <main className="flex-1 overflow-hidden" style={{ height: 'calc(100% - 56px)' }}>
+            {error && (
+              <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
+                {error}
+              </div>
+            )}
+            {children}
+          </main>
         </div>
+
+        {/* Right Sidebar - Business Mind Map */}
+        {rightSidebar && (
+          <>
+            {rightSidebarOpen && (
+              <div
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
+                onClick={() => setRightSidebarOpen(false)}
+              />
+            )}
+            <HotzoneMapButton
+              rightSidebarOpen={rightSidebarOpen}
+              setRightSidebarOpen={setRightSidebarOpen}
+            />
+            <aside
+              className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'}`}
+            >
+              {rightSidebar}
+            </aside>
+          </>
+        )}
       </div>
     </div>
   );

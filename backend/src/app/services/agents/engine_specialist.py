@@ -51,9 +51,9 @@ _SPECIALISTS_BY_MODEL = {
                 "Persona de Comprador B2B (cargo, dores, KPIs, processo decisório, objeções)",
                 "Mapa de Jornada de Compra B2B (identificação → pesquisa → amostra → negociação → contrato)",
                 "Matriz de Critérios de Fornecedor (preço, qualidade, prazo, certificações, relacionamento)",
-                "Análise de Objeções B2B ('fornecedor homologado', 'guerra de preços', 'risco de mudança')"
+                "Análise de Objeções B2B (mapeamento das objeções típicas: 'fornecedor homologado', 'guerra de preços', 'risco de mudança')"
             ],
-            "nao_fazer": "NÃO crie personas de consumidor final B2C, NÃO pense em compras impulsivas. Foque em compradores corporativos.",
+            "nao_fazer": "NÃO crie personas de consumidor final B2C, NÃO pense em compras impulsivas. Foque em compradores corporativos. PROIBIDO ABSOLUTO: NÃO crie estratégias de marketing, NÃO sugira campanhas de e-mail marketing, SEO, Google Ads, LinkedIn Ads, conteúdo ou redes sociais (isso é escopo dos pilares Tráfego Orgânico e Tráfego Pago). NÃO crie posicionamento de marca ou proposta de valor (isso é escopo do pilar Branding). NÃO crie scripts de vendas ou metodologia de conversão (isso é escopo do pilar Processo de Vendas). NÃO mapeie canais de venda ou distribuição (isso é escopo do pilar Canais de Venda). NÃO crie identidade visual (isso é escopo do pilar Identidade Visual). Seu ÚNICO trabalho é MAPEAR: quem compra, por que compra, como decide, quais dores tem e quais critérios usa.",
         },
         "branding": {
             "cargo": "Estrategista de Posicionamento B2B",
@@ -66,7 +66,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Mensagem para Decision Makers (redução de custo, agilidade, qualidade)",
                 "Análise Competitiva (pontos fortes vs concorrentes em preço, qualidade, atendimento)"
             ],
-            "nao_fazer": "NÃO crie slogans emocionais de varejo, NÃO foque em impulso. Posicionamento racional e técnico.",
+            "nao_fazer": "NÃO crie slogans emocionais de varejo, NÃO foque em impulso. Posicionamento racional e técnico. PROIBIDO: NÃO mapeie personas/público-alvo (pilar Público-Alvo). NÃO crie estratégias de marketing digital, SEO, campanhas ou anúncios (pilares Tráfego). NÃO crie scripts de vendas (pilar Processo de Vendas). NÃO defina paleta visual ou identidade gráfica (pilar Identidade Visual).",
         },
         "identidade_visual": {
             "cargo": "Diretor de Comunicação Visual Corporativa",
@@ -79,7 +79,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Padrões para Materiais (catálogos, fichas técnicas, apresentações)",
                 "Regras de Comunicação Visual (credibilidade, o que evitar)"
             ],
-            "nao_fazer": "NÃO crie arte para Instagram, NÃO foque em tendências visuais de varejo. Comunicação profissional.",
+            "nao_fazer": "NÃO crie arte para Instagram, NÃO foque em tendências visuais de varejo. Comunicação profissional. PROIBIDO: NÃO mapeie personas (pilar Público-Alvo). NÃO crie posicionamento de marca (pilar Branding). NÃO crie estratégias de marketing, campanhas ou anúncios (pilares Tráfego). NÃO crie scripts de vendas (pilar Processo de Vendas).",
         },
         "canais_venda": {
             "cargo": "Diretor de Canais Comerciais B2B",
@@ -91,7 +91,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Plano de Expansão Comercial (representantes, regiões, comissão)",
                 "Estratégia de Parcerias (integradores, acordos, co-marketing)"
             ],
-            "nao_fazer": "NÃO foque em Instagram/TikTok para vendas. Canais corporativos e relacionamento.",
+            "nao_fazer": "NÃO foque em Instagram/TikTok para vendas. Canais corporativos e relacionamento. PROIBIDO: NÃO mapeie personas (pilar Público-Alvo). NÃO crie posicionamento de marca (pilar Branding). NÃO crie conteúdo SEO ou campanhas digitais (pilares Tráfego). NÃO crie scripts de vendas (pilar Processo de Vendas).",
         },
         "trafego_organico": {
             "cargo": "Estrategista de Presença Digital B2B",
@@ -103,7 +103,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Estratégia de SEO B2B (palavras-chave técnicas, long-tail, SEO local)",
                 "Calendário de LinkedIn (posts para decision makers, cases de sucesso)"
             ],
-            "nao_fazer": "NÃO crie posts de lifestyle, NÃO foque em viralidade. Conteúdo técnico para gerar leads.",
+            "nao_fazer": "NÃO crie posts de lifestyle, NÃO foque em viralidade. Conteúdo técnico para gerar leads. PROIBIDO: NÃO mapeie personas (pilar Público-Alvo). NÃO crie posicionamento de marca (pilar Branding). NÃO mapeie canais de venda (pilar Canais de Venda). NÃO crie scripts de vendas (pilar Processo de Vendas). NÃO crie campanhas pagas (pilar Tráfego Pago).",
         },
         "trafego_pago": {
             "cargo": "Gerente de Prospecção B2B Paga",
@@ -115,7 +115,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Estratégia de Google Ads B2B (palavras industriais, landing pages, formulários)",
                 "Orçamento de Prospecção (investimento → leads → reuniões → oportunidades)"
             ],
-            "nao_fazer": "NÃO anuncie para consumidor final, NÃO use criativos de varejo. Prospecção B2B.",
+            "nao_fazer": "NÃO anuncie para consumidor final, NÃO use criativos de varejo. Prospecção B2B. PROIBIDO: NÃO mapeie personas (pilar Público-Alvo). NÃO crie posicionamento de marca (pilar Branding). NÃO mapeie canais de venda (pilar Canais de Venda). NÃO crie conteúdo orgânico ou SEO (pilar Tráfego Orgânico). NÃO crie scripts de vendas (pilar Processo de Vendas).",
         },
         "processo_vendas": {
             "cargo": "Diretor de Vendas Consultivas B2B",
@@ -127,7 +127,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Scripts de Negociação B2B (objeções corporativas, guerra de preços, especificações)",
                 "Plano de Expansão de Contas (upsell, cross-sell, renovação)"
             ],
-            "nao_fazer": "NÃO use vendas B2C, NÃO foque em impulso. Vendas consultivas com relacionamento.",
+            "nao_fazer": "NÃO use vendas B2C, NÃO foque em impulso. Vendas consultivas com relacionamento. PROIBIDO: NÃO mapeie personas (pilar Público-Alvo). NÃO crie posicionamento de marca (pilar Branding). NÃO mapeie canais de venda (pilar Canais de Venda). NÃO crie conteúdo orgânico ou SEO (pilar Tráfego Orgânico). NÃO crie campanhas pagas (pilar Tráfego Pago).",
         },
     },
 
@@ -144,7 +144,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Gatilhos e Objeções (o que faz comprar, o que faz desistir, objeções mais comuns)",
                 "Análise de Influências (redes sociais, indicações, reviews, preço vs valor percebido)"
             ],
-            "nao_fazer": "NÃO crie personas corporativas/B2B. Foque no consumidor final, decisão emocional + racional.",
+            "nao_fazer": "NÃO crie personas corporativas/B2B. Foque no consumidor final, decisão emocional + racional. PROIBIDO: NÃO crie estratégias de marketing, campanhas de e-mail, SEO, Google Ads, Meta Ads (pilares Tráfego). NÃO crie posicionamento de marca ou proposta de valor (pilar Branding). NÃO crie scripts de vendas ou funil de conversão (pilar Processo de Vendas). NÃO mapeie canais de venda (pilar Canais de Venda). NÃO crie identidade visual (pilar Identidade Visual). Seu ÚNICO trabalho é MAPEAR: quem compra, por que compra, como decide, quais dores tem.",
         },
         "branding": {
             "cargo": "Estrategista de Marca e Posicionamento",
@@ -235,7 +235,7 @@ _SPECIALISTS_BY_MODEL = {
                 "Gatilhos de Decisão e Objeções (preço vs valor, confiança, 'faço sozinho')",
                 "Análise de Influências (indicações, portfólio, presença online, autoridade)"
             ],
-            "nao_fazer": "NÃO crie personas de compra impulsiva. Foque no cliente que busca solução especializada.",
+            "nao_fazer": "NÃO crie personas de compra impulsiva. Foque no cliente que busca solução especializada. PROIBIDO: NÃO crie estratégias de marketing, campanhas digitais, SEO, anúncios (pilares Tráfego). NÃO crie posicionamento de marca (pilar Branding). NÃO crie scripts de vendas (pilar Processo de Vendas). NÃO mapeie canais de venda (pilar Canais de Venda). NÃO crie identidade visual (pilar Identidade Visual). Seu ÚNICO trabalho é MAPEAR: quem contrata, por que contrata, como decide, quais dores tem.",
         },
         "branding": {
             "cargo": "Estrategista de Autoridade e Posicionamento",
@@ -1007,6 +1007,16 @@ def generate_pillar_plan(
 Seu cargo: {spec['cargo']}
 Pilar: {dim_cfg.get('label', pillar_key)}
 
+⛔ FRONTEIRAS ENTRE PILARES — Crie ações APENAS dentro do SEU escopo:
+- Público-Alvo: mapeamento de quem compra, personas, jornada, dores, critérios
+- Branding: posicionamento de marca, proposta de valor, diferenciação
+- Identidade Visual: cores, tipografia, logo, templates visuais
+- Canais de Venda: onde vender, canais de distribuição
+- Tráfego Orgânico: SEO, conteúdo, redes sociais
+- Tráfego Pago: anúncios pagos, Google/Meta/LinkedIn Ads
+- Processo de Vendas: funil de vendas, scripts, fechamento
+NÃO proponha ações que pertencem a OUTRO pilar. Cada pilar faz o MELHOR da SUA função.
+
 {brief_text}
 
 {diag_text}
@@ -1651,6 +1661,16 @@ Pilar: {dim_cfg.get('label', pillar_key)}
 ═══ SEU ESCOPO (ESTRITAMENTE LIMITADO) ═══
 {escopo}
 
+⛔ FRONTEIRAS ENTRE PILARES — Crie tarefas APENAS dentro do SEU escopo:
+- Público-Alvo: mapeamento de quem compra, personas, jornada, dores, critérios
+- Branding: posicionamento de marca, proposta de valor, diferenciação
+- Identidade Visual: cores, tipografia, logo, templates visuais
+- Canais de Venda: onde vender, canais de distribuição
+- Tráfego Orgânico: SEO, conteúdo, redes sociais
+- Tráfego Pago: anúncios pagos, Google/Meta/LinkedIn Ads
+- Processo de Vendas: funil de vendas, scripts, fechamento
+NÃO proponha tarefas que pertencem a OUTRO pilar. Cada pilar faz o MELHOR da SUA função.
+
 ENTREGÁVEIS OBRIGATÓRIOS deste pilar (suas tarefas DEVEM produzir estes):
 {entregaveis_text}
 
@@ -1807,11 +1827,11 @@ def _format_previous_results(previous_results: list = None, max_chars_per_item: 
     if not previous_results:
         return ""
     
-    text = "═══ RESULTADOS EXATOS DAS SUBTAREFAS ANTERIORES ═══\n"
-    text += "É OBRIGATÓRIO (CRÍTICO) manter exatamente os mesmos dados descritos abaixo (mesmo nome de persona, mesma idade, mesmos canais). NÃO re-invente coisas que já descrevemos!\n\n"
+    text = "═══ RESULTADOS DAS SUBTAREFAS ANTERIORES (USE COMO BASE) ═══\n"
+    text += "OBRIGATÓRIO: Use os mesmos dados, nomes, números descritos abaixo. NÃO re-invente.\n\n"
     
-    # Collect titles for anti-repetition summary
     covered_topics = []
+    covered_sections = []  # Track specific sections to block
     
     for i, pr in enumerate(previous_results):
         if not pr or not isinstance(pr, dict):
@@ -1821,25 +1841,33 @@ def _format_previous_results(previous_results: list = None, max_chars_per_item: 
         conteudo = pr.get("conteudo", "")
         mode = pr.get("execution_mode", "pesquisa")
         mode_label = "🏭 PRODUZIDO" if mode == "producao" else "📚 PESQUISA"
-        # Truncate long content to avoid token overflow
         if isinstance(conteudo, dict):
             import json
             conteudo = json.dumps(conteudo, ensure_ascii=False)
-        if isinstance(conteudo, str) and len(conteudo) > max_chars_per_item:
-            conteudo = conteudo[:max_chars_per_item] + "..."
+        if isinstance(conteudo, str):
+            # Extract section headers from previous content to block repetition
+            import re
+            sections = re.findall(r'^#{1,3}\s+(.+)$', conteudo, re.MULTILINE)
+            covered_sections.extend(sections[:10])
+            if len(conteudo) > max_chars_per_item:
+                conteudo = conteudo[:max_chars_per_item] + "..."
         text += f"── Subtarefa {i+1} [{mode_label}]: {titulo} ──\n{conteudo}\n\n"
     
-    # Add strong anti-repetition block
     if covered_topics:
-        text += "\n⛔ REGRA ANTI-REPETIÇÃO (OBRIGATÓRIO):\n"
-        text += "As subtarefas anteriores JÁ cobriram os seguintes temas:\n"
+        text += "\n⛔⛔⛔ PROIBIÇÃO ABSOLUTA DE REPETIÇÃO ⛔⛔⛔\n"
+        text += "O conteúdo acima JÁ FOI entregue ao cliente. Se você repetir, o cliente recebe documentos IDÊNTICOS (lixo).\n\n"
+        text += "Temas JÁ COBERTOS (NÃO repita):\n"
         for t in covered_topics:
-            text += f"  - {t}\n"
-        text += "Você DEVE:\n"
-        text += "  1. NÃO repetir análises, dados ou conclusões já apresentadas acima\n"
-        text += "  2. REFERENCIAR os resultados anteriores quando relevante (ex: 'conforme identificado na subtarefa 1...')\n"
-        text += "  3. COMPLEMENTAR com informações NOVAS e DIFERENTES\n"
-        text += "  4. Se precisar citar algo já dito, faça uma referência breve — não copie parágrafos\n"
+            text += f"  ❌ {t}\n"
+        if covered_sections:
+            text += "\nSeções JÁ ESCRITAS (NÃO recrie essas seções):\n"
+            for s in covered_sections[:15]:
+                text += f"  ❌ {s}\n"
+        text += "\nVocê DEVE produzir conteúdo 100% DIFERENTE:\n"
+        text += "  ✅ Seções com títulos DIFERENTES dos listados acima\n"
+        text += "  ✅ Análises e dados NOVOS que complementem (não repitam)\n"
+        text += "  ✅ Se precisar referenciar algo anterior, cite em 1 linha: 'conforme subtarefa X'\n"
+        text += "  ❌ PROIBIDO: copiar mesma estrutura, mesmas listas, mesmas tabelas das subtarefas anteriores\n"
         text += "═══════════════════════════════════════════════════\n\n"
     
     return text
@@ -2000,6 +2028,50 @@ def agent_execute_task(
         if "equipe_solo" in restr:
             restr_text += "\n⚠️ Equipe de 1 pessoa."
 
+        # ═══ Load deliverables already produced in this pillar to avoid repetition ═══
+        completed_docs_text = ""
+        try:
+            parent_task = task_id.split("_st")[0] if "_st" in task_id else task_id
+            parts = []
+
+            # SOURCE 1: Subtasks already expanded from OTHER parent tasks
+            all_pillar_subtasks = db.get_subtasks(analysis_id, pillar_key)
+            if all_pillar_subtasks:
+                other_subtask_titles = []
+                for other_tid, other_data in all_pillar_subtasks.items():
+                    if other_tid == parent_task:
+                        continue
+                    subs = other_data.get("subtarefas", []) if isinstance(other_data, dict) else []
+                    for s in subs:
+                        t = s.get("titulo", "")
+                        if t:
+                            other_subtask_titles.append(f"  • {t}")
+                if other_subtask_titles:
+                    parts.append("Subtarefas de OUTRAS tarefas do pilar:\n" + "\n".join(other_subtask_titles[:10]))
+
+            # SOURCE 2: Documents already executed
+            full_execs = db.get_full_executions(analysis_id, pillar_key)
+            if full_execs:
+                docs = []
+                for exec_tid, exec_data in full_execs.items():
+                    if exec_tid.startswith(parent_task):
+                        continue
+                    rd = exec_data.get("result_data", {})
+                    if not rd:
+                        continue
+                    titulo = rd.get("entregavel_titulo", "")
+                    conteudo = rd.get("conteudo", "")
+                    if titulo or conteudo:
+                        snippet = conteudo[:200] + "..." if len(conteudo) > 200 else conteudo
+                        docs.append(f"  • {titulo}: {snippet}")
+                if docs:
+                    parts.append("Documentos já produzidos:\n" + "\n".join(docs[:8]))
+
+            if parts:
+                completed_docs_text = "\n═══ DOCUMENTOS E SUBTAREFAS JÁ EXISTENTES (NÃO REPITA) ═══\n" + "\n\n".join(parts) + "\n⚠️ NÃO reproduza o conteúdo acima. Produza conteúdo NOVO e DIFERENTE.\n"
+        except Exception:
+            pass
+
         # ════════════════════════════════════════════════════════════════
         # TOOL SYSTEM: Try specialized production tool before generic exec
         # ════════════════════════════════════════════════════════════════
@@ -2030,6 +2102,7 @@ def agent_execute_task(
                         restrictions=restr_text,
                         all_diagnostics=all_diagnostics or {},
                         dim_label=dim_cfg.get('label', pillar_key),
+                        completed_docs_context=completed_docs_text,
                     )
                     
                     # Execute with the matched tool
@@ -2100,7 +2173,18 @@ Pilar: {dim_cfg.get('label', pillar_key)}
 {escopo}
 🚫 PROIBIDO: {nao_fazer}
 
+⛔ FRONTEIRAS ENTRE PILARES — NÃO invada escopo de outros pilares:
+- Público-Alvo: mapeamento de quem compra, personas, jornada, dores, critérios
+- Branding: posicionamento de marca, proposta de valor, diferenciação
+- Identidade Visual: cores, tipografia, logo, templates visuais
+- Canais de Venda: onde vender, canais de distribuição
+- Tráfego Orgânico: SEO, conteúdo, redes sociais
+- Tráfego Pago: anúncios pagos, Google/Meta/LinkedIn Ads
+- Processo de Vendas: funil de vendas, scripts, fechamento
+
 {empresa_context}
+
+{completed_docs_text}
 
 ═══ CONTEXTO DO NEGÓCIO ═══
 {brief_text}
@@ -2120,13 +2204,16 @@ ENTREGÁVEL ESPERADO: {entregavel}
 {all_research}
 
 ═══ REGRAS ═══
-1. Use os dados coletados como base factual. EXTRAIA e CITE: empresas, tendências, números, dores reais.
-2. Se os dados estiverem fragmentados ou incompletos, use o que há e complemente com expertise. NÃO INVENTE estatísticas.
-3. PROIBIDO comentar sobre qualidade ou formato dos dados. NUNCA escreva "dados corrompidos", "seção incompleta", "não foi possível extrair" etc. Apenas execute a tarefa.
-4. USE resultados das subtarefas anteriores. NÃO contradiga o que já foi definido.
-5. Ultra-específico para {segmento}. PROIBIDO conteúdo genérico.
-6. Se houver informação de CADEIA PRODUTIVA no contexto, RESPEITE: NÃO confunda FORNECEDORES de matéria-prima com CONCORRENTES. Fornecedores são quem vende insumos para o negócio. Concorrentes são empresas que vendem o MESMO tipo de produto/serviço para os MESMOS clientes.
-7. O campo "conteudo" DEVE conter o ENTREGÁVEL COMPLETO com MÍNIMO 800 palavras. Inclua: análise detalhada, dados extraídos da pesquisa, recomendações práticas, exemplos concretos do setor. INCORPORE os dados da pesquisa NO CORPO do texto — não apenas mencione que existem, ESCREVA-OS.
+1. Use os dados coletados como base factual. EXTRAIA e CITE: empresas reais, tendências reais, números reais, dores reais das FONTES pesquisadas.
+2. NÃO INVENTE dados. Se os dados estiverem fragmentados, use o que há e complemente com expertise do setor — mas NÃO fabrique nomes de empresas, estatísticas ou tabelas inventadas.
+3. PROIBIDO comentar sobre qualidade ou formato dos dados. NUNCA escreva "dados corrompidos", "seção incompleta", "não foi possível extrair" etc.
+4. USE resultados das subtarefas anteriores como REFERÊNCIA. NÃO contradiga e NÃO repita o que já foi definido. Se a subtarefa anterior já listou etapas, critérios, concorrentes — REFERENCIE ('conforme mapeado na etapa anterior'), não re-escreva.
+5. Ultra-específico para {segmento}. PROIBIDO conteúdo genérico que serve para qualquer setor.
+6. CADEIA PRODUTIVA: NÃO confunda FORNECEDORES de matéria-prima com CONCORRENTES. Use APENAS os concorrentes listados nos DADOS DA EMPRESA acima.
+7. O campo "conteudo" DEVE conter o ENTREGÁVEL COMPLETO com MÍNIMO 800 palavras. INCORPORE dados da pesquisa NO CORPO do texto.
+8. PROIBIDO INVENTAR CONCORRENTES. Use EXCLUSIVAMENTE os concorrentes listados em "DADOS ESPECÍFICOS DA EMPRESA" acima. Se não há concorrentes listados, NÃO crie tabela comparativa inventada.
+9. CADA subtarefa produz conteúdo ÚNICO. Se a anterior já fez "Etapas da Jornada" ou "Critérios de Seleção" ou "Análise de Concorrentes", você NÃO recria essas seções. Produza seções NOVAS.
+10. "proximos_passos" devem estar DENTRO do escopo deste pilar ({dim_cfg.get('label', pillar_key)}). NÃO recomende ações de outros pilares (marketing digital, conteúdo de valor, LinkedIn, anúncios).
 
 EXECUTE a tarefa AGORA. Produza o ENTREGÁVEL COMPLETO, profissional, específico para {segmento} e pronto para uso.
 O "conteudo" deve ser um documento EXTENSO e DETALHADO em markdown com seções (##), dados reais, e recomendações acionáveis.
@@ -2138,8 +2225,8 @@ JSON:
     "opiniao": "Seu pensamento analítico sobre os dados e o entregável produzido. Tom conversacional natural. CITE SEMPRE dados concretos da pesquisa (empresas, números, tendências reais encontradas). Mínimo 4 linhas. ⛔ ABSOLUTAMENTE PROIBIDO: NÃO escreva NADA sobre qualidade, formato ou ausência de dados ('corrompidos', 'incompletos', 'seção inválida', 'não foi possível extrair', 'baseio-me em minha expertise', 'dados insuficientes'). Se os dados estão fragmentados, use-os e complemente com análise — sem citar essa limitação.",
     "conteudo": "O ENTREGÁVEL COMPLETO em markdown (##seções). MÍNIMO 800 palavras. INCORPORE todos os dados da pesquisa: nomes de empresas, números, tendências, análises. Documento profissional pronto para uso.",
     "como_aplicar": "Instruções de como aplicar este entregável",
-    "proximos_passos": "Próximos passos após aplicar",
-    "fontes_consultadas": ["urls das fontes reais usadas"],
+    "proximos_passos": "Próximos passos DENTRO DO ESCOPO deste pilar ({dim_cfg.get('label', pillar_key)}). NÃO recomende ações de outros pilares.",
+    "fontes_consultadas": ["urls das fontes reais usadas — SOMENTE URLs que aparecem na pesquisa acima"],
     "impacto_estimado": "Impacto esperado no negócio"
 }}
 
@@ -2464,6 +2551,69 @@ FOQUE EXCLUSIVAMENTE no escopo desta tarefa: "{task_data.get('titulo', '')}".
     except Exception as e:
         print(f"  ⚠️ Could not load sibling tasks: {e}", file=sys.stderr)
 
+    # ── Load ALREADY COMPLETED deliverables from previous tasks to avoid duplication ──
+    completed_deliverables_text = ""
+    try:
+        # SOURCE 1: Subtasks already EXPANDED (saved but not yet executed) from OTHER tasks
+        all_pillar_subtasks = db.get_subtasks(analysis_id, pillar_key)  # all tasks in this pillar
+        current_task_id = task_data.get("id", "")
+        existing_subtask_titles = []
+        if all_pillar_subtasks:
+            for other_task_id, other_data in all_pillar_subtasks.items():
+                if other_task_id == current_task_id:
+                    continue
+                subs = other_data.get("subtarefas", []) if isinstance(other_data, dict) else []
+                for s in subs:
+                    titulo = s.get("titulo", "")
+                    entregavel = s.get("entregavel_ia", "")
+                    if titulo:
+                        existing_subtask_titles.append(f"  • {titulo} → entregável: {entregavel}")
+
+        # SOURCE 2: Deliverables already EXECUTED (produced documents)
+        full_execs = db.get_full_executions(analysis_id, pillar_key)
+        executed_deliverables = []
+        if full_execs:
+            for exec_task_id, exec_data in full_execs.items():
+                if exec_task_id.startswith(current_task_id):
+                    continue
+                rd = exec_data.get("result_data", {})
+                if not rd:
+                    continue
+                titulo = rd.get("entregavel_titulo", rd.get("titulo", ""))
+                tipo = rd.get("entregavel_tipo", "")
+                conteudo = rd.get("conteudo", "")
+                if titulo or conteudo:
+                    summary = conteudo[:300] + "..." if len(conteudo) > 300 else conteudo
+                    executed_deliverables.append(f"  • [{tipo}] {titulo}\n    Resumo: {summary}")
+
+        # Build the anti-duplication context
+        parts = []
+        if existing_subtask_titles:
+            parts.append(f"""═══ SUBTAREFAS JÁ GERADAS EM OUTRAS TAREFAS DESTE PILAR ═══
+As seguintes subtarefas JÁ FORAM CRIADAS para outras tarefas deste pilar:
+""" + "\n".join(existing_subtask_titles[:15]))
+
+        if executed_deliverables:
+            parts.append(f"""═══ DOCUMENTOS JÁ PRODUZIDOS NESTE PILAR ═══
+""" + "\n".join(executed_deliverables[:10]))
+
+        if parts:
+            completed_deliverables_text = "\n".join(parts) + """
+
+⛔ REGRA ANTI-DUPLICAÇÃO (PRIORIDADE MÁXIMA):
+As subtarefas e documentos acima JÁ EXISTEM. Suas novas subtarefas NÃO DEVEM:
+- Criar persona se já existe "Criar Persona" acima
+- Pesquisar perfil/comportamento se já existe pesquisa similar acima
+- Analisar concorrentes se já existe análise acima
+- Produzir relatório com o mesmo tema de um documento/subtarefa acima
+- Coletar dados que outra subtarefa já coleta ou coletou
+CADA subtarefa que você criar deve ser DIFERENTE de TODAS listadas acima.
+Se o tema já foi coberto → NÃO CRIE. Foque no que FALTA ser feito.
+"""
+            print(f"  📋 Anti-duplication: {len(existing_subtask_titles)} existing subtasks + {len(executed_deliverables)} executed deliverables loaded", file=sys.stderr)
+    except Exception as e:
+        print(f"  ⚠️ Could not load previous deliverables: {e}", file=sys.stderr)
+
     # Use unified research ONLY — no duplicate fallback searches
     try:
         from app.services.research.unified_research import research_engine
@@ -2524,7 +2674,20 @@ FOQUE EXCLUSIVAMENTE no escopo desta tarefa: "{task_data.get('titulo', '')}".
 🚫 PROIBIDO — NÃO FAÇA NADA DISTO:
 {nao_fazer}
 
+⛔ FRONTEIRAS ENTRE PILARES (CRÍTICO — RESPEITE):
+Cada pilar do sistema tem responsabilidade EXCLUSIVA. NÃO invada o escopo de outros pilares:
+- Público-Alvo: APENAS mapeamento de quem compra, personas, jornada de compra, dores, critérios de seleção
+- Branding: APENAS posicionamento de marca, proposta de valor, diferenciação, análise competitiva
+- Identidade Visual: APENAS cores, tipografia, logo, templates visuais
+- Canais de Venda: APENAS onde vender e como chegar ao cliente (canais de distribuição)
+- Tráfego Orgânico: APENAS SEO, conteúdo, redes sociais, Google Meu Negócio
+- Tráfego Pago: APENAS anúncios pagos, Google Ads, Meta Ads, LinkedIn Ads
+- Processo de Vendas: APENAS funil de vendas, scripts, contorno de objeções, fechamento
+Se uma subtarefa cair no escopo de OUTRO pilar listado acima, REMOVA-A. Cada pilar faz o MELHOR da SUA função.
+
 {sibling_tasks_text}
+
+{completed_deliverables_text}
 
 TAREFA PRINCIPAL: {task_title}
 DESCRIÇÃO: {task_desc}
@@ -2538,11 +2701,11 @@ ENTREGÁVEL FINAL: {task_data.get('entregavel_ia', 'N/A')}
 Cada subtarefa DEVE produzir um documento/artefato DIFERENTE. NÃO repita conteúdo entre subtarefas!
 
 📋 DISTRIBUIÇÃO OBRIGATÓRIA DE CONTEÚDO:
-- Subtarefa 1 (PESQUISA): Coleta APENAS dados brutos (números, estatísticas, nomes de empresas, fontes)
+- Subtarefa 1 (PESQUISA): Coleta APENAS dados brutos (números, estatísticas, nomes de empresas, fontes) DENTRO do escopo deste pilar
 - Subtarefa 2 (ANÁLISE): INTERPRETAÇÃO dos dados (tendências, padrões, insights) — NÃO repita os dados brutos
-- Subtarefa 3 (PERSONA/PERFIL): Documento de persona COMPLETO (nome fictício, cargo, dores, desejos, jornada)
-- Subtarefa 4 (RECOMENDAÇÕES): APENAS ações práticas e estratégicas — NÃO repita análises ou personas
-- Subtarefa FINAL: Consolidação em documento profissional ÚNICO integrando tudo
+- Subtarefa 3 (ARTEFATO PRINCIPAL): Documento central do pilar (ex: persona para Público-Alvo, guia visual para Identidade Visual, plano de SEO para Tráfego Orgânico) — crie o artefato que é responsabilidade DESTE pilar
+- Subtarefa 4 (APROFUNDAMENTO): Artefato COMPLEMENTAR dentro do MESMO escopo — NÃO crie recomendações que pertencem a OUTROS pilares
+- Subtarefa FINAL: Consolidação em documento profissional ÚNICO integrando tudo — SEM adicionar estratégias de outros pilares
 
 ⚠️ VALIDAÇÃO ANTI-REPETIÇÃO:
 Antes de criar cada subtarefa, pergunte: "Isso já foi coberto por outra subtarefa?"
@@ -2566,13 +2729,14 @@ DOIS TIPOS DE SUBTAREFA (use ambos, nesta proporção):
 🏭 TIPO PRODUCAO (mínimo 2 subtarefas, máximo 4):
 - A IA cria um artefato REAL e COMPLETO usando os dados da pesquisa
 - Cada subtarefa produz algo utilizável imediatamente
-- Exemplos: "Criar Persona detalhada de {_segmento}", "Elaborar formulário de pesquisa", "Criar relatório de análise de mercado", "Escrever script de vendas", "Montar plano de ação"
+- ⚠️ Exemplos devem ser DENTRO DO ESCOPO DO SEU PILAR: "Criar Persona detalhada de {_segmento}" (se Público-Alvo), "Elaborar guia de identidade visual" (se Identidade Visual), "Criar plano de SEO" (se Tráfego Orgânico), "Elaborar relatório de análise de mercado do setor"
 
 REGRAS OBRIGATÓRIAS:
-1. ANTI-SOBREPOSIÇÃO (PRIORIDADE MÁXIMA): NÃO crie subtarefas que repetem o trabalho das OUTRAS TAREFAS do pilar listadas acima. Cada tarefa tem seu escopo ÚNICO. Se outra tarefa já "Cria Persona", você NÃO cria persona. Se outra já "Pesquisa perfil", você NÃO pesquisa perfil.
-2. CASCATA: Use personas, tom de voz e estratégias já definidos pelos pilares anteriores.
+1. ANTI-DUPLICAÇÃO ENTRE TAREFAS (PRIORIDADE ABSOLUTA): Leia com atenção as seções "SUBTAREFAS JÁ GERADAS" e "OUTRAS TAREFAS DO PILAR" acima. Se uma subtarefa similar JÁ EXISTE em outra tarefa (ex: "Criar Persona", "Pesquisar perfil", "Analisar concorrentes"), você NÃO DEVE criar outra igual. Persona se cria UMA VEZ no pilar inteiro — se já existe, use-a como referência. Sua tarefa deve COMPLEMENTAR o que já foi feito, não repetir.
+2. CASCATA: Use personas, tom de voz e estratégias já definidos pelos pilares anteriores — NÃO os recrie.
 3. ENTREGÁVEL FINAL: A última subtarefa DEVE criar o artefato final: "{task_data.get('entregavel_ia', 'entregável da tarefa')}".
 4. SEQUÊNCIA LÓGICA: subtarefas PESQUISA primeiro, subtarefas PRODUCAO depois.
+5. ESCOPO DO PILAR (CRÍTICO): TODAS as subtarefas devem estar DENTRO do escopo deste pilar ({dim_cfg.get('label', pillar_key)}). NÃO crie subtarefas que pertencem a outros pilares (marketing, vendas, branding, visual, etc. — veja as fronteiras acima).
 
 JSON OBRIGATÓRIO:
 {{

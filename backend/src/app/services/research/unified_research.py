@@ -246,11 +246,18 @@ class UnifiedResearchEngine:
         # Salvar ferramentas usadas nos dados da pesquisa
         research_data["intelligence_tools_used"] = tools_used
         
-        # Salvar cache
-        self._set_cache(cache_key, "task", research_data)
-        
-        # Salvar no banco
-        self._save_research_to_db("task", cache_key, research_data)
+        # Só cachear se obteve resultados úteis (evita cache de resultados vazios)
+        has_useful_data = (
+            len(research_data["sources"]) > 0
+            or research_data.get("intelligence_trends")
+            or research_data.get("intelligence_news")
+            or len(research_data.get("content", "")) > 100
+        )
+        if has_useful_data:
+            self._set_cache(cache_key, "task", research_data)
+            self._save_research_to_db("task", cache_key, research_data)
+        else:
+            print(f"  ⚠️ Task research returned empty — NOT caching to avoid stale empty cache", file=sys.stderr)
         
         print(f"  ✅ Task research completed: {len(research_data['results'])} sources", file=sys.stderr)
         return research_data
@@ -725,11 +732,27 @@ class UnifiedResearchEngine:
     def _get_cache(self, cache_key: str, research_type: str) -> Optional[Dict[str, Any]]:
         """Obtém dados do cache (memória + banco)."""
         
+        def _is_useful(data: dict) -> bool:
+            """Verifica se o dado cacheado tem conteúdo útil (não é resultado vazio)."""
+            if not data:
+                return False
+            return (
+                len(data.get("sources", [])) > 0
+                or data.get("intelligence_trends")
+                or data.get("intelligence_news")
+                or len(data.get("content", "")) > 100
+            )
+
         # Verificar cache em memória primeiro
         if cache_key in self.cache:
             cached_data = self.cache[cache_key]
             if self._is_cache_valid(cached_data, research_type):
-                return cached_data["data"]
+                data = cached_data["data"]
+                if _is_useful(data):
+                    return data
+                else:
+                    # Cache vazio — descartar e forçar nova busca
+                    del self.cache[cache_key]
             else:
                 # Remover cache expirado
                 del self.cache[cache_key]
@@ -738,9 +761,12 @@ class UnifiedResearchEngine:
         try:
             db_cache = db.get_research_cache(cache_key)
             if db_cache and self._is_cache_valid(db_cache, research_type):
-                # Restaurar para cache em memória
-                self.cache[cache_key] = db_cache
-                return db_cache["data"]
+                data = db_cache["data"]
+                if _is_useful(data):
+                    # Restaurar para cache em memória
+                    self.cache[cache_key] = db_cache
+                    return data
+                # Cache vazio no banco — não usar
         except:
             pass
         

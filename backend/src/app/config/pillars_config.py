@@ -23,7 +23,7 @@ class PillarConfig:
             "ordem": 1,
             "upstream": [],
             "scope": "MAPEAMENTO PURO - Quem é o alvo e o que ele sofre?",
-            "forbidden": ["scripts", "vendas", "diferencial", "proposta_valor"],
+            "forbidden": ["scripts", "vendas", "diferencial", "proposta_valor", "estratégia_marketing", "SEO", "email_marketing", "anúncios", "tráfego", "campanha", "conteúdo_digital", "identidade_visual", "posicionamento", "canais_venda"],
             "output_schema": PUBLICO_ALVO_SCHEMA,
             "search_queries_template": [
                 "{segmento} perfil cliente ideal quem compra",

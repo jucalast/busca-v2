@@ -120,17 +120,20 @@ export const useTaskHandlers = (
                     if (statusRes.success && statusRes.progress) {
                         const { status, current_step, total_steps, result_data, error_message, subtask_results } = statusRes.progress;
 
-                        // Only update step if actually running or completed
-                        if (status === 'running' || status === 'done' || status === 'completed' || status === 'error') {
+                        // Status finais possíveis
+                        const finalStatuses = ['done', 'completed', 'finalization', 'finalized', 'success'];
+
+                        // Only update step if actually running ou finalizado
+                        if (status === 'running' || finalStatuses.includes(status) || status === 'error') {
                             setAutoExecStep(current_step);
                             setAutoExecTotal(total_steps);
                         }
 
-                        // Update statuses for the list
+                        // Atualiza status das subtarefas
                         if (subtasks) {
                             const newStatuses: Record<number, any> = {};
                             for (let i = 0; i < subtasks.length; i++) {
-                                if (status === 'done' || status === 'completed') newStatuses[i] = 'done';
+                                if (finalStatuses.includes(status)) newStatuses[i] = 'done';
                                 else if (i + 1 < current_step) newStatuses[i] = 'done';
                                 else if (i + 1 === current_step && status === 'running') newStatuses[i] = 'running';
                                 else if (i + 1 === current_step && status === 'error') newStatuses[i] = 'error';
@@ -139,7 +142,7 @@ export const useTaskHandlers = (
                             setAutoExecStatuses(prev => ({ ...prev, [tid]: newStatuses }));
                         }
 
-                        // Update intermediate results
+                        // Atualiza resultados intermediários
                         if (subtask_results) {
                             const resultsMap: Record<number, any> = {};
                             subtask_results.forEach((res: any) => {
@@ -152,7 +155,7 @@ export const useTaskHandlers = (
                             setAutoExecResults(prev => ({ ...prev, [tid]: resultsMap }));
                         }
 
-                        if (status === 'done') {
+                        if (finalStatuses.includes(status)) {
                             if (result_data) {
                                 setTaskDeliverables(prev => ({ ...prev, [tid]: result_data }));
                                 setCompletedTasks(prev => {

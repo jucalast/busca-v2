@@ -199,7 +199,7 @@ def _generate_pillar_tasks_with_llm(
         research_data = None
         research_error = None
         
-        def research_worker():
+        def research_worker(force_refresh: bool = False):
             nonlocal research_data, research_error
             try:
                 research_data = research_engine.search_tasks(
@@ -211,24 +211,37 @@ def _generate_pillar_tasks_with_llm(
                         "meta_pilar": context["meta_pilar"]
                     },
                     segmento=context["negocio"]["segmento"],
-                    force_refresh=False  # Usar cache quando possível
+                    force_refresh=force_refresh
                 )
             except Exception as e:
                 research_error = e
         
-        # Executar pesquisa em thread com timeout de 5s
-        thread = threading.Thread(target=research_worker, daemon=True)
+        # Executar pesquisa em thread com timeout de 15s
+        thread = threading.Thread(target=lambda: research_worker(False), daemon=True)
         thread.start()
-        thread.join(timeout=5)
+        thread.join(timeout=15)
         
         if thread.is_alive():
             print(f"  ⚠️ Research timeout for {pillar_key}, using context only", file=sys.stderr)
         elif research_error:
             print(f"  ⚠️ Unified research failed for {pillar_key}: {research_error}, using context only", file=sys.stderr)
         elif research_data:
-            research_content = research_data.get("content", "")
             research_sources = research_data.get("sources", [])
+            research_content = research_data.get("content", "")
             print(f"  📦 Unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
+            
+            # Se 0 sources do cache, forçar nova busca
+            if len(research_sources) == 0 and not research_data.get("intelligence_trends") and not research_data.get("intelligence_news"):
+                print(f"  🔄 Cache empty for {pillar_key}, retrying with force_refresh...", file=sys.stderr)
+                research_data = None
+                research_error = None
+                retry_thread = threading.Thread(target=lambda: research_worker(True), daemon=True)
+                retry_thread.start()
+                retry_thread.join(timeout=20)
+                if research_data:
+                    research_sources = research_data.get("sources", [])
+                    research_content = research_data.get("content", "")
+                    print(f"  ✅ Retry research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
         
     except Exception as e:
         print(f"  ⚠️ Research system error for {pillar_key}: {e}, using context only", file=sys.stderr)
@@ -313,9 +326,48 @@ def _build_context_aware_prompt(
     if context.get("cadeia_produtiva"):
         cadeia_hint = f"\n### CADEIA PRODUTIVA (RESPEITE):\n{context['cadeia_produtiva']}\n"
 
+    # Escopo e proibições do especialista
+    escopo = specialist.get("escopo", "")
+    nao_fazer = specialist.get("nao_fazer", "")
+
+    # Mapa de responsabilidades para fronteiras entre pilares
+    pillar_label = {
+        "publico_alvo": "Público-Alvo",
+        "branding": "Branding",
+        "identidade_visual": "Identidade Visual",
+        "canais_venda": "Canais de Venda",
+        "trafego_organico": "Tráfego Orgânico",
+        "trafego_pago": "Tráfego Pago",
+        "processo_vendas": "Processo de Vendas"
+    }.get(pillar_key, pillar_key)
+
     prompt = f"""{specialist['persona']}
 
 Você está criando um plano de execução CONCRETO para "{negocio['nome']}" — {negocio['segmento']}{loc_str}.
+
+## SEU ESCOPO EXCLUSIVO (PILAR: {pillar_label})
+{escopo}
+
+## 🚫 PROIBIDO — NÃO FAÇA NADA DISTO:
+{nao_fazer}
+
+## ⛔ FRONTEIRAS ENTRE PILARES (CRÍTICO — RESPEITE):
+Cada pilar do sistema tem responsabilidade EXCLUSIVA. Suas tarefas devem estar 100% dentro do escopo de "{pillar_label}".
+NÃO crie tarefas que pertencem a outros pilares:
+- Público-Alvo: APENAS mapeamento de quem compra, personas, jornada de compra, dores, critérios de seleção
+- Branding: APENAS posicionamento de marca, proposta de valor, diferenciação, análise competitiva de marca
+- Identidade Visual: APENAS cores, tipografia, logo, templates visuais
+- Canais de Venda: APENAS onde vender e como chegar ao cliente (canais de distribuição, estratégia de conexão)
+- Tráfego Orgânico: APENAS SEO, conteúdo digital, redes sociais, blog, Google Meu Negócio
+- Tráfego Pago: APENAS anúncios pagos, Google Ads, Meta Ads, LinkedIn Ads
+- Processo de Vendas: APENAS funil de vendas, scripts, contorno de objeções, fechamento, CRM
+
+⚠️ EXEMPLOS DE VIOLAÇÃO (NÃO FAÇA):
+- Público-Alvo criando "Conteúdo de valor" → pertence a Tráfego Orgânico
+- Público-Alvo criando "Estratégia de conexão com clientes" → pertence a Canais de Venda
+- Público-Alvo criando "Estratégia de marketing digital" → pertence a Tráfego Orgânico/Pago
+- Branding criando "Analisar personas" → pertence a Público-Alvo
+Se uma tarefa cair FORA do escopo de "{pillar_label}", SUBSTITUA por outra que esteja DENTRO do escopo.
 
 ## DIAGNÓSTICO DO PILAR
 
@@ -341,6 +393,8 @@ TODAS as 5 tarefas DEVEM ter `executavel_por_ia: true` — a IA vai executar cad
 5. NÃO gere tarefas que exijam presença física, ligações ou reuniões
 6. NÃO repita tarefas genéricas como "Auditar situação atual" ou "Monitorar resultados" — seja CRIATIVO e específico ao contexto
 7. ⛔ PROIBIDO tarefas de coleta de dados humanos: "Aplicar pesquisa/questionário com clientes", "Coletar respostas de participantes", "Aguardar feedback de clientes", "Tabular respostas recebidas" — a IA NÃO consegue executar estas tarefas (exigem ação de clientes reais). Substitua sempre por: "Pesquisar [mesmo tema] via dados de mercado, estudos setoriais e fontes online"
+8. ⛔ ESCOPO DO PILAR: TODAS as 5 tarefas DEVEM estar dentro do escopo de "{pillar_label}". NÃO crie tarefas de criação de conteúdo (Tráfego Orgânico), estratégia de conexão/canais (Canais de Venda), anúncios (Tráfego Pago), funil de vendas (Processo de Vendas), branding (Branding) ou identidade visual (Identidade Visual) — a menos que este seja o pilar responsável.
+9. ⛔ ANTI-DUPLICAÇÃO: Cada tarefa deve ter escopo DISTINTO. NÃO crie 2 tarefas que pesquisam o mesmo tema. NÃO crie 2 tarefas que produzem documentos similares. Antes de cada tarefa, pergunte: "A tarefa anterior já cobre isso?"
 
 ## TIPOS DE ENTREGÁVEIS POSSÍVEIS
 
