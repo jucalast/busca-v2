@@ -26,20 +26,27 @@ export function TaskProgressBar({
 
     return (
         <>
-            {/* Full-width progress bar */}
-            <div className="w-full h-[2px] bg-zinc-800 shrink-0">
+            {/* Progress bar */}
+            <div className="w-full h-[2px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
                 <div
-                    className="h-full bg-violet-600 transition-all duration-700 ease-out"
-                    style={{ width: `${(completedCount / totalTasks) * 100}%` }}
+                    className="h-full transition-all duration-700 ease-out"
+                    style={{
+                        width: `${(completedCount / totalTasks) * 100}%`,
+                        backgroundColor: 'var(--color-accent)',
+                    }}
                 />
             </div>
-            {/* Top Bar: Task Progress & Tab Switch */}
+
+            {/* Top Bar */}
             <div className="flex flex-col px-6 pt-5 pb-3 gap-2">
                 <div className="flex items-center justify-between">
                     {focusedTaskId && (
                         <button
                             onClick={() => setFocusedTaskId(null)}
-                            className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm"
+                            className="flex items-center gap-2 text-sm transition-colors duration-150"
+                            style={{ color: 'var(--color-text-muted)' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                         >
                             <ArrowLeft className="w-4 h-4" /> Voltar
                         </button>
@@ -47,36 +54,41 @@ export function TaskProgressBar({
 
                     {docsCount > 0 && (
                         <div
-                            className="flex items-center rounded-xl p-1 gap-1 z-10"
+                            className="flex items-center rounded-lg p-1 gap-1 z-10"
                             style={{
-                                background: 'rgba(9,9,11,0.90)',
+                                backgroundColor: 'var(--color-surface-1)',
                                 backdropFilter: 'blur(8px)',
-                                border: '1px solid rgba(255,255,255,0.05)',
-                                boxShadow: '0 6px 32px 0 rgba(0,0,0,0.30)',
-                                overflow: 'hidden',
+                                border: '1px solid var(--color-border)',
+                                boxShadow: 'var(--shadow-sm)',
                             }}
                         >
                             <button
                                 onClick={() => { setActiveRightTab('tasks'); setFocusedTaskId(null); }}
-                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-all duration-200 cursor-pointer ${
-                                    activeRightTab === 'tasks'
-                                        ? 'bg-white/[0.08] text-zinc-200 shadow-sm'
-                                        : 'text-zinc-500 hover:text-zinc-400'
-                                }`}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-all duration-150 cursor-pointer"
+                                style={{
+                                    backgroundColor: activeRightTab === 'tasks' ? 'var(--color-surface-active)' : 'transparent',
+                                    color: activeRightTab === 'tasks' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                                }}
                             >
                                 Tarefas
                             </button>
                             <button
                                 onClick={() => { setActiveRightTab('docs'); setFocusedTaskId(null); }}
-                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-all duration-200 cursor-pointer ${
-                                    activeRightTab === 'docs'
-                                        ? 'bg-white/[0.08] text-zinc-200 shadow-sm'
-                                        : 'text-zinc-500 hover:text-zinc-400'
-                                }`}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-all duration-150 cursor-pointer"
+                                style={{
+                                    backgroundColor: activeRightTab === 'docs' ? 'var(--color-surface-active)' : 'transparent',
+                                    color: activeRightTab === 'docs' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                                }}
                             >
                                 <FileText className="w-3 h-3" />
                                 <span>Documentos</span>
-                                <span className="min-w-[16px] text-center text-[9px] bg-zinc-800 text-zinc-400 rounded-full px-1 py-0.5 font-medium">
+                                <span
+                                    className="min-w-[16px] text-center text-[9px] rounded-full px-1 py-0.5 font-medium"
+                                    style={{
+                                        backgroundColor: 'var(--color-surface-2)',
+                                        color: 'var(--color-text-tertiary)',
+                                    }}
+                                >
                                     {docsCount}
                                 </span>
                             </button>

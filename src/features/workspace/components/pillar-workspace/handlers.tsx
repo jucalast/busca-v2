@@ -120,6 +120,8 @@ export const useTaskHandlers = (
                     if (statusRes.success && statusRes.progress) {
                         const { status, current_step, total_steps, result_data, error_message, subtask_results } = statusRes.progress;
 
+                        console.log('🔍 Polling status:', { status, current_step, total_steps, taskId: task.id, tid });
+
                         // Status finais possíveis
                         const finalStatuses = ['done', 'completed', 'finalization', 'finalized', 'success'];
 
@@ -156,6 +158,7 @@ export const useTaskHandlers = (
                         }
 
                         if (finalStatuses.includes(status)) {
+                            console.log('✅ Final status detected:', { status, hasResultData: !!result_data, taskId: task.id });
                             if (result_data) {
                                 setTaskDeliverables(prev => ({ ...prev, [tid]: result_data }));
                                 setCompletedTasks(prev => {
@@ -168,6 +171,7 @@ export const useTaskHandlers = (
                             setAutoExecuting(null);
                             return true; // Stop polling
                         } else if (status === 'error' || status === 'cancelled') {
+                            console.log('❌ Error/cancelled status:', { status, error_message, taskId: task.id });
                             if (status === 'error') setError(error_message || 'Erro na execução');
                             setAutoExecuting(null);
                             return true; // Stop polling
@@ -183,19 +187,29 @@ export const useTaskHandlers = (
 
                 // If it was stopped, abortControllersRef.current[tid] will be undefined
                 if (!abortControllersRef.current[tid]) {
+                    console.log('🛑 Polling stopped: abort controller cleared', { tid });
                     return true;
                 }
 
+                console.log('🔄 Continuing polling...', { tid });
                 return false;
             };
 
             // Start first poll and then interval
+            console.log('🚀 Starting polling for task:', { taskId: task.id, tid });
             const finished = await poll();
+            console.log('📊 First poll result:', { finished, tid });
             if (!finished) {
+                console.log('⏰ Setting up interval polling...');
                 const interval = setInterval(async () => {
                     const done = await poll();
-                    if (done) clearInterval(interval);
+                    if (done) {
+                        console.log('✅ Polling interval cleared');
+                        clearInterval(interval);
+                    }
                 }, 3000);
+            } else {
+                console.log('✅ Polling finished after first check');
             }
 
         } catch (err: any) {

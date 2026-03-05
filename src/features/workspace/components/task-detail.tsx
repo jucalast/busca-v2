@@ -89,11 +89,11 @@ export default function TaskDetail({
     // Loading state
     if (isLoading || !detail) {
         return (
-            <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg)' }}>
                 <div className="text-center">
-                    <Loader2 className="w-8 h-8 text-zinc-500 animate-spin mx-auto mb-4" />
-                    <p className="text-zinc-400 text-sm">Pesquisando especialistas e gerando checklist...</p>
-                    <p className="text-zinc-600 text-xs mt-2">Buscando dados reais na internet</p>
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: 'var(--color-text-muted)' }} />
+                    <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Pesquisando especialistas e gerando checklist...</p>
+                    <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Buscando dados reais na internet</p>
                 </div>
             </div>
         );
@@ -104,13 +104,16 @@ export default function TaskDetail({
     const progress = subtarefas.length > 0 ? (completedCount / subtarefas.length) * 100 : 0;
 
     return (
-        <div className="min-h-screen bg-[#09090b]">
+        <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
             <div className="max-w-3xl mx-auto px-6 py-8">
 
                 {/* Back */}
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm mb-6"
+                    className="flex items-center gap-2 transition-colors text-sm mb-6"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
                 >
                     <ArrowLeft className="w-4 h-4" />
                     Voltar ao plano
@@ -118,26 +121,26 @@ export default function TaskDetail({
 
                 {/* Header */}
                 <div className="mb-6">
-                    <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-[0.15em] mb-1">{phaseTitle}</p>
-                    <h1 className="text-xl font-bold text-white leading-tight">{detail.titulo || taskTitle}</h1>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.15em] mb-1" style={{ color: 'var(--color-text-muted)' }}>{phaseTitle}</p>
+                    <h1 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>{detail.titulo || taskTitle}</h1>
                     {detail.descricao && (
-                        <p className="text-zinc-400 text-sm mt-2 leading-relaxed">{detail.descricao}</p>
+                        <p className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>{detail.descricao}</p>
                     )}
                 </div>
 
                 {/* Progress Bar */}
-                <div className="mb-6 p-4 rounded-xl bg-[#111113]">
+                <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface-1)' }}>
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-zinc-500">Progresso</span>
-                        <span className="text-xs font-mono text-zinc-400">{completedCount}/{subtarefas.length}</span>
+                        <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Progresso</span>
+                        <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>{completedCount}/{subtarefas.length}</span>
                     </div>
-                    <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-surface-hover)' }}>
                         <div
-                            className="h-full rounded-full transition-all duration-500 bg-emerald-500"
-                            style={{ width: `${progress}%` }}
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${progress}%`, backgroundColor: 'var(--color-success)' }}
                         />
                     </div>
-                    <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-600">
+                    <div className="flex items-center gap-4 mt-2 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                         {detail.tempo_total_estimado && (
                             <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
@@ -149,12 +152,12 @@ export default function TaskDetail({
 
                 {/* Expert Tip */}
                 {detail.dica_principal && (
-                    <div className="mb-6 p-4 rounded-xl bg-amber-500/5">
+                    <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: 'var(--color-warning-muted)' }}>
                         <div className="flex items-start gap-2.5">
-                            <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                            <Lightbulb className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--color-warning)' }} />
                             <div>
-                                <p className="text-[10px] font-semibold text-amber-500/80 uppercase tracking-wide mb-1">Dica do especialista</p>
-                                <p className="text-sm text-zinc-300 leading-relaxed">{detail.dica_principal}</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--color-warning)' }}>Dica do especialista</p>
+                                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>{detail.dica_principal}</p>
                             </div>
                         </div>
                     </div>
@@ -162,7 +165,7 @@ export default function TaskDetail({
 
                 {/* Sub-tasks Checklist */}
                 <section className="mb-6">
-                    <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-3">
+                    <h2 className="text-xs font-semibold uppercase tracking-[0.2em] mb-3" style={{ color: 'var(--color-text-muted)' }}>
                         Checklist de execução
                     </h2>
                     <div className="space-y-2">
@@ -172,39 +175,40 @@ export default function TaskDetail({
                                 <button
                                     key={st.id}
                                     onClick={() => onToggleSubtask(st.id)}
-                                    className={`w-full flex items-start gap-3 p-4 rounded-xl transition-all text-left ${isDone
-                                        ? 'bg-emerald-500/5'
-                                        : 'bg-[#111113] hover:bg-white/[0.03]'
-                                        }`}
+                                    className={`w-full flex items-start gap-3 p-4 rounded-xl transition-all text-left`}
+                                    style={{
+                                        backgroundColor: isDone ? 'var(--color-success-muted)' : 'var(--color-surface-1)',
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!isDone) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!isDone) e.currentTarget.style.backgroundColor = 'var(--color-surface-1)';
+                                    }}
                                 >
                                     {isDone
-                                        ? <Check className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-                                        : <Circle className="w-4 h-4 text-zinc-700 mt-0.5 flex-shrink-0" />
+                                        ? <Check className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                                        : <Circle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
                                     }
                                     <div className="flex-1 min-w-0">
-                                        <p className={`text-sm font-medium ${isDone ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
+                                        <p className="text-sm font-medium" style={{ color: isDone ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>
                                             {st.titulo}
                                         </p>
                                         {st.descricao && (
-                                            <p className="text-zinc-600 text-xs mt-1 leading-relaxed">{st.descricao}</p>
+                                            <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>{st.descricao}</p>
                                         )}
                                         <div className="flex items-center gap-3 mt-2">
                                             {st.tempo_estimado && (
-                                                <span className="text-[10px] text-zinc-600 flex items-center gap-0.5">
+                                                <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                                     <Clock className="w-2.5 h-2.5" /> {st.tempo_estimado}
                                                 </span>
                                             )}
                                             {st.ferramenta && (
-                                                <span className="text-[10px] text-zinc-600 flex items-center gap-0.5">
+                                                <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                                     <Wrench className="w-2.5 h-2.5" /> {st.ferramenta}
                                                 </span>
                                             )}
                                         </div>
-                                        {st.dica_especialista && !isDone && (
-                                            <p className="text-[11px] text-zinc-500 mt-2 pl-0 border-l-2 border-amber-500/20 leading-relaxed italic">
-                                                &nbsp;{st.dica_especialista}
-                                            </p>
-                                        )}
                                     </div>
                                 </button>
                             );
@@ -217,7 +221,10 @@ export default function TaskDetail({
                     <section className="mb-6">
                         <button
                             onClick={() => setShowTools(!showTools)}
-                            className="flex items-center gap-2 text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-3 hover:text-zinc-400 transition-colors"
+                            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] mb-3 transition-colors"
+                            style={{ color: 'var(--color-text-muted)' }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-muted)'}
                         >
                             <Wrench className="w-3.5 h-3.5" />
                             Ferramentas necessárias ({detail.ferramentas_necessarias.length})
@@ -226,21 +233,23 @@ export default function TaskDetail({
                         {showTools && (
                             <div className="space-y-2">
                                 {detail.ferramentas_necessarias.map((tool, i) => (
-                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-[#111113]">
-                                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                                            <Wrench className="w-3.5 h-3.5 text-blue-400" />
+                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ backgroundColor: 'var(--color-surface-1)' }}>
+                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-accent-muted)' }}>
+                                            <Wrench className="w-3.5 h-3.5" style={{ color: 'var(--color-accent)' }} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <p className="text-sm font-medium text-zinc-200">{tool.nome}</p>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400">
+                                                <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{tool.nome}</p>
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ backgroundColor: 'var(--color-success-muted)', color: 'var(--color-success)' }}>
                                                     {tool.custo}
                                                 </span>
                                             </div>
-                                            <p className="text-zinc-500 text-xs mt-0.5">{tool.para_que}</p>
+                                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>{tool.para_que}</p>
                                             {tool.url && (
                                                 <a href={tool.url} target="_blank" rel="noopener noreferrer"
-                                                    className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-1">
+                                                    className="text-[10px] flex items-center gap-1 mt-1 transition-colors"
+                                                    style={{ color: 'var(--color-accent)' }}
+                                                >
                                                     <ExternalLink className="w-2.5 h-2.5" /> {tool.url}
                                                 </a>
                                             )}
@@ -255,7 +264,7 @@ export default function TaskDetail({
                 {/* Sources */}
                 {(detail.sources?.length ?? 0) > 0 && (
                     <section className="mb-6">
-                        <h2 className="flex items-center gap-2 text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-3">
+                        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] mb-3" style={{ color: 'var(--color-text-muted)' }}>
                             <ExternalLink className="w-3.5 h-3.5" />
                             Fontes consultadas
                         </h2>
@@ -265,7 +274,9 @@ export default function TaskDetail({
                                 try { display = new URL(url).hostname; } catch { }
                                 return (
                                     <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 transition-colors">
+                                        className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg transition-colors"
+                                        style={{ backgroundColor: 'var(--color-surface-hover)', color: 'var(--color-text-secondary)' }}
+                                    >
                                         <ExternalLink className="w-2.5 h-2.5" />
                                         {display}
                                     </a>
@@ -277,9 +288,9 @@ export default function TaskDetail({
 
                 {/* Expected Result */}
                 {detail.resultado_esperado && (
-                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/5">
-                        <p className="text-[10px] font-semibold text-emerald-500/80 uppercase tracking-wide mb-1">Resultado esperado</p>
-                        <p className="text-sm text-zinc-300 leading-relaxed">{detail.resultado_esperado}</p>
+                    <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: 'var(--color-success-muted)' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--color-success)' }}>Resultado esperado</p>
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>{detail.resultado_esperado}</p>
                     </div>
                 )}
 
@@ -287,7 +298,8 @@ export default function TaskDetail({
                 <section>
                     <button
                         onClick={() => { setShowChat(!showChat); }}
-                        className="flex items-center gap-2 w-full text-left text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-3 hover:text-zinc-400 transition-colors"
+                        className="flex items-center gap-2 w-full text-left text-xs font-semibold uppercase tracking-[0.2em] mb-3 transition-colors"
+                        style={{ color: 'var(--color-text-muted)' }}
                     >
                         <MessageCircle className="w-3.5 h-3.5" />
                         Pedir ajuda ({chatHistory.length > 0 ? `${chatHistory.length} msgs` : 'Chat da tarefa'})
@@ -295,15 +307,15 @@ export default function TaskDetail({
                     </button>
 
                     {showChat && (
-                        <div className="rounded-2xl bg-[#111113] overflow-hidden">
+                        <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--color-surface-1)' }}>
                             {/* Messages */}
                             <div className="max-h-[400px] overflow-y-auto p-5 space-y-4">
                                 {/* Welcome */}
                                 <div className="flex gap-3">
-                                    <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-                                        <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-accent-muted)' }}>
+                                        <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--color-accent)' }} />
                                     </div>
-                                    <p className="text-zinc-500 text-sm leading-relaxed">
+                                    <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
                                         Sou seu assistente para esta tarefa. Posso ajudar com dúvidas específicas,
                                         sugerir alternativas ou explicar qualquer passo do checklist.
                                     </p>
@@ -312,19 +324,18 @@ export default function TaskDetail({
                                 {chatHistory.map((msg, i) => (
                                     <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                                         {msg.role === 'assistant' ? (
-                                            <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-                                                <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                                            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-accent-muted)' }}>
+                                                <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--color-accent)' }} />
                                             </div>
                                         ) : (
-                                            <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                                                <span className="text-zinc-400 text-xs font-medium">V</span>
+                                            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-surface-hover)' }}>
+                                                <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>V</span>
                                             </div>
                                         )}
                                         <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : ''}`}>
-                                            <div className={`inline-block text-left max-w-full ${msg.role === 'user'
-                                                ? 'bg-white/[0.06] rounded-2xl rounded-tr-md px-4 py-2.5'
-                                                : ''}`}>
-                                                <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                            <div className={`inline-block text-left max-w-full ${msg.role === 'user' ? 'rounded-2xl rounded-tr-md px-4 py-2.5' : ''}`}
+                                                style={msg.role === 'user' ? { backgroundColor: 'var(--color-surface-hover)' } : {}}>
+                                                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-primary)' }}>
                                                     {msg.content}
                                                 </p>
                                             </div>
@@ -335,7 +346,9 @@ export default function TaskDetail({
                                                         try { host = new URL(url).hostname; } catch { }
                                                         return (
                                                             <a key={si} href={url} target="_blank" rel="noopener noreferrer"
-                                                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-zinc-800/40 text-zinc-600 hover:text-zinc-400 transition-colors">
+                                                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-colors"
+                                                                style={{ backgroundColor: 'var(--color-surface-hover)', color: 'var(--color-text-secondary)' }}
+                                                            >
                                                                 <ExternalLink className="w-2.5 h-2.5" /> {host}
                                                             </a>
                                                         );
@@ -348,10 +361,10 @@ export default function TaskDetail({
 
                                 {chatLoading && (
                                     <div className="flex gap-3">
-                                        <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-                                            <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-accent-muted)' }}>
+                                            <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--color-accent)' }} />
                                         </div>
-                                        <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                                        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
                                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                             Pesquisando e analisando...
                                         </div>
@@ -361,7 +374,7 @@ export default function TaskDetail({
                             </div>
 
                             {/* Input */}
-                            <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800/40">
+                            <form onSubmit={handleSubmit} className="p-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
                                 <div className="flex gap-2">
                                     <input
                                         ref={inputRef}
@@ -370,12 +383,14 @@ export default function TaskDetail({
                                         onChange={(e) => setInputValue(e.target.value)}
                                         placeholder="Pergunte sobre esta tarefa..."
                                         disabled={chatLoading}
-                                        className="flex-1 bg-zinc-800/40 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none transition-all disabled:opacity-50"
+                                        className="flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-all disabled:opacity-50"
+                                        style={{ backgroundColor: 'var(--color-surface-hover)', color: 'var(--color-text-primary)' }}
                                     />
                                     <button
                                         type="submit"
                                         disabled={chatLoading || !inputValue.trim()}
-                                        className="px-4 py-2.5 rounded-xl text-sm font-medium bg-violet-500/20 text-violet-400 transition-all disabled:opacity-30"
+                                        className="px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-30"
+                                        style={{ backgroundColor: 'var(--color-accent-muted)', color: 'var(--color-accent)' }}
                                     >
                                         <Send className="w-4 h-4" />
                                     </button>

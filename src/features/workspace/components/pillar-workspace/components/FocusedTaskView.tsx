@@ -102,8 +102,15 @@ export function FocusedTaskView({
                         </AutoScrollContainer>
                     </div>
 
-                    <div className="absolute bottom-6 left-4 right-4 max-w-4xl mx-auto flex flex-col gap-3 p-3 bg-[#09090b]/90 backdrop-blur-md border border-white/[0.05] shadow-2xl rounded-xl overflow-hidden z-50">
-                        {/* Subtasks Execution Area outside lighter div */}
+                    <div
+                        className="absolute bottom-6 left-4 right-4 max-w-4xl mx-auto flex flex-col gap-3 p-3 backdrop-blur-md rounded-xl overflow-hidden z-50"
+                        style={{
+                            backgroundColor: 'rgba(9,9,11,0.92)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-xl)',
+                        }}
+                    >
+                        {/* Subtasks Execution Area */}
                         <div className="w-full">
                             <TaskSubtasksDisplay
                                 key={`lines_${subtasksUpdateKey}`}
@@ -128,27 +135,35 @@ export function FocusedTaskView({
                             />
                         </div>
 
-                        {/* Lighter Inner Card for Task Details */}
-                        <div className="w-full rounded-xl bg-white/[0.06] p-3 flex flex-col gap-2">
+                        {/* Task Details Card */}
+                        <div
+                            className="w-full rounded-xl p-3 flex flex-col gap-2"
+                            style={{
+                                backgroundColor: 'var(--color-surface-active)',
+                                border: '1px solid var(--color-border)',
+                            }}
+                        >
                             <div className="flex flex-col gap-2 flex-1 min-w-0 w-full mb-1">
                                 <div className="flex items-start gap-2 w-full text-left">
-                                    <span className="text-[13px] font-medium text-white leading-snug">
+                                    <span className="text-[13px] font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
                                         {task.titulo}
                                     </span>
-                                    {isDone && <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                                    {isDone && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-accent)' }} />}
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2 text-left text-[11px] text-zinc-500">
-                                    <span className="font-mono text-zinc-400">#{taskIndex + 1}</span>
+                                <div className="flex flex-wrap items-center gap-2 text-left text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                    <span className="font-mono" style={{ color: 'var(--color-text-tertiary)' }}>#{taskIndex + 1}</span>
                                     <span>{isAI ? 'Inteligência Artificial' : 'Ações Manuais'}</span>
                                     {task.prioridade && (
                                         <>
-                                            <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                                            <span className={`${task.prioridade === 'critica'
-                                                ? 'text-red-400'
-                                                : task.prioridade === 'alta'
-                                                    ? 'text-amber-400'
-                                                    : 'text-zinc-400'}`}>
+                                            <span className="w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--color-border-strong)' }} />
+                                            <span style={{
+                                                color: task.prioridade === 'critica'
+                                                    ? 'var(--color-destructive)'
+                                                    : task.prioridade === 'alta'
+                                                        ? 'var(--color-warning)'
+                                                        : 'var(--color-text-tertiary)'
+                                            }}>
                                                 {task.prioridade}
                                             </span>
                                         </>
@@ -157,9 +172,8 @@ export function FocusedTaskView({
                             </div>
 
                             {/* AI Selector and Action Buttons */}
-                            <div className="w-full border-t border-white/[0.05] pt-3">
+                            <div className="w-full pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
                                 <div className="flex items-center justify-between w-full">
-                                    {/* Left Side - AI Model Selector */}
                                     <div className="flex items-center gap-2">
                                         {isAI && (
                                             <ModelSelector
@@ -169,7 +183,6 @@ export function FocusedTaskView({
                                         )}
                                     </div>
 
-                                    {/* Right Side - Action Buttons */}
                                     <div className="flex items-center gap-1">
                                         {isAI ? (
                                             <AIActionButtons
@@ -191,13 +204,16 @@ export function FocusedTaskView({
                                             <button
                                                 onClick={() => handleAITryUserTask(selectedPillar, task)}
                                                 disabled={!!autoExecuting || executingTask === tid}
-                                                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                                className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50"
+                                                style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
+                                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                                                 title={executingTask === tid ? 'Tentando...' : 'Delegar para IA'}
                                             >
                                                 {executingTask === tid ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
-                                                    <Wand2 className="w-3.5 h-3.5 text-zinc-400" />
+                                                    <Wand2 className="w-3.5 h-3.5" />
                                                 )}
                                             </button>
                                         )}
@@ -212,7 +228,7 @@ export function FocusedTaskView({
     );
 }
 
-// ─── AI Action Buttons (internal sub-component) ───
+// ─── AI Action Buttons ───
 
 interface AIActionButtonsProps {
     tid: string;
@@ -231,22 +247,14 @@ interface AIActionButtonsProps {
 }
 
 function AIActionButtons({
-    tid,
-    task,
-    isDone,
-    selectedPillar,
-    taskSubtasks,
-    taskDeliverables,
-    autoExecuting,
-    expandingTask,
-    handleExpandSubtasks,
-    handleAutoExecute,
-    handleRedoTask,
-    handleRedoSubtasks,
-    handleStopExecution,
+    tid, task, isDone, selectedPillar, taskSubtasks, taskDeliverables,
+    autoExecuting, expandingTask, handleExpandSubtasks, handleAutoExecute,
+    handleRedoTask, handleRedoSubtasks, handleStopExecution,
 }: AIActionButtonsProps) {
     const isGenerating = autoExecuting === tid && !taskSubtasks[tid];
     const isExecutingAuto = autoExecuting === tid && !!taskSubtasks[tid];
+
+    const btnBase = "flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50";
 
     return (
         <>
@@ -254,30 +262,38 @@ function AIActionButtons({
                 <button
                     onClick={() => handleExpandSubtasks(selectedPillar, task)}
                     disabled={autoExecuting === tid}
-                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                    className={btnBase}
+                    style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                     title={isGenerating ? 'Gerando...' : 'Gerar subtarefas'}
                 >
-                    {isGenerating ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
-                    ) : (
-                        <ListTree className="w-3.5 h-3.5 text-zinc-400" />
-                    )}
+                    {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ListTree className="w-3.5 h-3.5" />}
                 </button>
             )}
             {taskSubtasks[tid] && !isDone && !taskDeliverables[tid] && (
                 <button
                     onClick={() => handleRedoSubtasks(selectedPillar, tid, task)}
                     disabled={autoExecuting === tid}
-                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                    className={btnBase}
+                    style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                     title="Refazer subtarefas"
                 >
-                    <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
+                    <RefreshCw className="w-3.5 h-3.5" />
                 </button>
             )}
             {(isExecutingAuto || isGenerating) ? (
                 <button
                     onClick={() => handleStopExecution(tid)}
-                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-all duration-200 cursor-pointer text-red-400"
+                    className={btnBase}
+                    style={{
+                        backgroundColor: 'var(--color-destructive-muted)',
+                        color: 'var(--color-destructive)',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.15)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-destructive-muted)')}
                     title="Parar execução"
                 >
                     <Square className="w-3.5 h-3.5 fill-current" />
@@ -286,28 +302,30 @@ function AIActionButtons({
             ) : (isDone || taskDeliverables[tid]) ? (
                 <button
                     onClick={() => handleRedoTask(selectedPillar, tid, task)}
-                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                    className={btnBase}
+                    style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                     title="Refazer tarefa inteira"
                 >
-                    <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="text-[11px] text-zinc-400 font-medium">Refazer Tarefa</span>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span className="text-[11px] font-medium">Refazer Tarefa</span>
                 </button>
             ) : (
                 <button
                     onClick={() => handleAutoExecute(selectedPillar, task)}
                     disabled={!!autoExecuting || expandingTask === tid}
-                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                    className={btnBase}
+                    style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                     title={taskSubtasks[tid]
                         ? `Executar ${(taskSubtasks[tid].subtarefas || []).length} subtarefas com IA`
                         : 'Executar com IA'}
                 >
-                    {isExecutingAuto ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
-                    ) : (
-                        <Play className="w-3.5 h-3.5 text-zinc-400" />
-                    )}
+                    {isExecutingAuto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                     {taskSubtasks[tid] && (
-                        <span className="text-[11px] text-zinc-400 font-medium">
+                        <span className="text-[11px] font-medium">
                             {(taskSubtasks[tid].subtarefas || []).length} Tasks
                         </span>
                     )}

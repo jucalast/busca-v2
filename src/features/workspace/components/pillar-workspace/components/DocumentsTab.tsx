@@ -86,9 +86,9 @@ function fmtColor(fmt: string) {
 let _folderSvgCounter = 0;
 function FolderSVG({ width = 260, height = 215, toolIcons }: { width?: number; height?: number; toolIcons?: string[] }) {
     const uid = React.useRef(`fs${++_folderSvgCounter}`).current;
-    const fg  = `${uid}-fg`;
-    const ps  = `${uid}-ps`;
-    const fs  = `${uid}-fs`;
+    const fg = `${uid}-fg`;
+    const ps = `${uid}-ps`;
+    const fs = `${uid}-fs`;
     // Up to 3 unique tool icons
     const icons = toolIcons?.slice(0, 3) ?? [];
     return (
@@ -172,10 +172,10 @@ function EmptyState() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, flex: 1 }}>
             <FolderSVG width={220} height={180} />
             <div style={{ textAlign: 'center' }}>
-                <p className="text-sm font-medium text-zinc-500" style={{ marginBottom: 4 }}>
+                <p className="text-sm font-medium" style={{ marginBottom: 4, color: 'var(--color-text-muted)' }}>
                     Nenhuma pasta selecionada
                 </p>
-                <p className="text-[11px] text-zinc-600">
+                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                     Execute uma tarefa para gerar documentos
                 </p>
             </div>
@@ -206,17 +206,17 @@ function TaskFolderCard({
     return (
         <div
             onClick={onClick}
-            className="cursor-pointer group flex flex-col items-center justify-between rounded-lg transition-all duration-300 ease-out bg-transparent hover:bg-white/[0.04]"
+            className="cursor-pointer group flex flex-col items-center justify-between rounded-lg transition-all duration-150 ease-out"
             style={{ userSelect: 'none', height: 130, width: '100%', padding: '10px 8px 8px' }}
         >
             <FolderSVG width={72} height={60} toolIcons={toolIcons} />
             <div style={{ width: '100%', textAlign: 'center' }}>
-                <p className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-300 transition-colors" title={group.taskTitle} style={{
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2,
+                <p className="text-[11px] font-medium transition-colors" title={group.taskTitle} style={{
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2, color: 'var(--color-text-tertiary)',
                 }}>
                     {group.taskTitle}
                 </p>
-                <span className="text-[10px] text-zinc-600 font-medium">
+                <span className="text-[10px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
                     {group.docs.length} {group.docs.length === 1 ? 'doc' : 'docs'}
                 </span>
             </div>
@@ -315,7 +315,7 @@ export function DocumentsTab({
         };
         // Small delay so the page/session is fully settled
         setTimeout(() => handleDocOpen(doc, pending.fmt), 300);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session]);
 
     const docsByTask = useMemo(() => {
@@ -379,7 +379,7 @@ export function DocumentsTab({
                 {/* Tree */}
                 <div className="flex-1 overflow-y-auto px-3 py-4" style={{ scrollbarWidth: 'none' }}>
                     {filteredGroups.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-12 text-zinc-600">
+                        <div className="flex flex-col items-center justify-center py-12" style={{ color: 'var(--color-text-muted)' }}>
                             <span className="text-[13px]">Nenhum resultado</span>
                         </div>
                     )}
@@ -390,17 +390,18 @@ export function DocumentsTab({
                                 {/* Root node */}
                                 <div
                                     onClick={() => setSelectedTid(isActive ? null : group.tid)}
-                                    className={`cursor-pointer group flex items-center gap-2.5 px-3 py-3 rounded-lg transition-all duration-300 ease-out ${isActive ? 'bg-zinc-800' : 'hover:bg-white/[0.04]'}`}
-                                    style={{ marginBottom: 2 }}
+                                    className="cursor-pointer group flex items-center gap-2.5 px-3 py-3 rounded-lg transition-all duration-150 ease-out"
+                                    style={{ backgroundColor: isActive ? 'var(--color-surface-active)' : 'transparent', marginBottom: 2 }}
                                 >
                                     <div className="flex items-center justify-center w-4.5 h-4.5 shrink-0">
                                         {isActive ? <FolderFilled /> : <FolderOutline />}
                                     </div>
-                                    <span className={`flex-1 text-[12px] font-medium truncate ${isActive ? 'text-white' : 'text-zinc-400'}`}
+                                    <span className="flex-1 text-[12px] font-medium truncate"
+                                        style={{ color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}
                                         title={group.taskTitle}>
                                         {group.taskTitle}
                                     </span>
-                                    <span className={`text-[11px] font-medium shrink-0 ${isActive ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                                    <span className="text-[11px] font-medium shrink-0" style={{ color: isActive ? 'var(--color-text-secondary)' : 'var(--color-text-muted)' }}>
                                         {group.docs.length}
                                     </span>
                                 </div>
@@ -420,11 +421,11 @@ export function DocumentsTab({
                                                     <div style={{ position: 'absolute', top: 15, left: -12, width: 12, height: 1, background: '#27272a' }} />
                                                     <div
                                                         onClick={(e) => { e.stopPropagation(); handleDocOpen(doc, primaryFmt); }}
-                                                    className="cursor-pointer group flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-zinc-500 hover:bg-white/[0.04] group-hover:text-zinc-300 transition-all duration-300 ease-out"
-                                                    style={{ marginBottom: 2 }}
-                                                >
-                                                    <img src={fmtIcon(primaryFmt)} alt="" className="w-4 h-4 object-contain shrink-0" />
-                                                    <span className="flex-1 text-[12px] truncate" title={doc.title}>
+                                                        className="cursor-pointer group flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-zinc-500 hover:bg-white/[0.04] group-hover:text-zinc-300 transition-all duration-300 ease-out"
+                                                        style={{ marginBottom: 2 }}
+                                                    >
+                                                        <img src={fmtIcon(primaryFmt)} alt="" className="w-4 h-4 object-contain shrink-0" />
+                                                        <span className="flex-1 text-[12px] truncate" title={doc.title}>
                                                             {doc.title}
                                                         </span>
                                                     </div>
@@ -441,25 +442,25 @@ export function DocumentsTab({
 
             {/* ── MAIN PANEL ──────────────────────────────────────────────── */}
             {/* vertical divider */}
-            <div className="shrink-0 w-px bg-zinc-800/60" />
+            <div className="shrink-0 w-px" style={{ backgroundColor: 'var(--color-border)' }} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '10px 10px 10px 10px' }}>
                 {selectedGroup ? (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderRadius: 12, overflow: 'hidden', background: 'rgba(9,9,11,0.90)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 6px 32px 0 rgba(0,0,0,0.30)' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderRadius: 12, overflow: 'hidden', background: 'var(--color-surface-1)', backdropFilter: 'blur(8px)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)' }}>
                         {/* Folder header */}
                         <div className="shrink-0 flex items-center gap-3" style={{ padding: '14px 20px 12px' }}>
-                            <div className="flex items-center justify-center w-8 h-8 rounded bg-zinc-800 shrink-0 text-zinc-400">
+                            <div className="flex items-center justify-center w-8 h-8 rounded shrink-0" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-tertiary)' }}>
                                 <FolderFilled />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-white truncate">{selectedGroup.taskTitle}</p>
-                                <p className="text-[11px] text-zinc-600">
+                                <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{selectedGroup.taskTitle}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                     {selectedGroup.docs.length} {selectedGroup.docs.length === 1 ? 'documento' : 'documentos'}
                                 </p>
                             </div>
                             <button
                                 onClick={() => setSelectedTid(null)}
-                                className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors px-2 py-1 rounded-lg hover:bg-white/[0.04]"
-                                style={{ background: 'none', border: 'none' }}
+                                className="text-xs cursor-pointer transition-colors duration-150 px-2 py-1 rounded-lg"
+                                style={{ color: 'var(--color-text-muted)', background: 'none', border: 'none' }}
                             >
                                 ← Voltar
                             </button>
@@ -481,7 +482,7 @@ export function DocumentsTab({
                     </div>
                 ) : filteredGroups.length > 0 ? (
                     /* Grid of folder cards — one per task */
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderRadius: 12, overflow: 'hidden', background: 'rgba(9,9,11,0.90)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 6px 32px 0 rgba(0,0,0,0.30)' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderRadius: 12, overflow: 'hidden', background: 'var(--color-surface-1)', backdropFilter: 'blur(8px)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)' }}>
                         <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '10px 14px 14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 4, alignContent: 'start' }}>
                             {filteredGroups.map((group) => (
                                 <TaskFolderCard

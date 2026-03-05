@@ -18,7 +18,6 @@ interface SearchSource {
 interface Message {
     role: 'user' | 'assistant';
     content: string;
-    /** full text to stream into; undefined once streaming is done */
     streamTarget?: string;
     searching?: boolean;
     searchQuery?: string;
@@ -60,37 +59,44 @@ const FIELD_LABELS: Record<string, string> = {
     maior_objecao: 'Objeção',
 };
 
-// ─── Typing dots (uses dot-pulse from globals.css) ─────────────────────────
 const TypingDots: React.FC = () => (
     <span className="inline-flex items-center gap-[3px]">
         {[0, 1, 2].map(i => (
             <span
                 key={i}
-                className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-500"
-                style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{
+                    backgroundColor: 'var(--color-text-muted)',
+                    animation: 'dot-pulse 1.2s ease-in-out infinite',
+                    animationDelay: `${i * 0.2}s`,
+                }}
             />
         ))}
     </span>
 );
 
-// ─── Shimmer loading row ──────────────────────────────────────────────────
 const ShimmerRow: React.FC<{ label?: string }> = ({ label = 'Pensando...' }) => (
     <div className="flex gap-3">
         <img src="/logo_icon.png" alt="Agent" className="w-7 h-7 object-contain flex-shrink-0 mt-0.5" />
         <div className="flex-1 py-1">
-            <div className="relative overflow-hidden rounded-lg flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.04]">
+            <div
+                className="relative overflow-hidden rounded-lg flex items-center gap-3 px-3 py-2"
+                style={{
+                    backgroundColor: 'var(--color-surface-hover)',
+                    border: '1px solid var(--color-border)',
+                }}
+            >
                 <div
                     className="absolute inset-0 pointer-events-none"
-                    style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)', animation: 'shimmer-slide 1.6s ease-in-out infinite' }}
+                    style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)', animation: 'shimmer-slide 1.6s ease-in-out infinite' }}
                 />
                 <TypingDots />
-                <span className="text-xs text-zinc-600 relative">{label}</span>
+                <span className="text-xs relative" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
             </div>
         </div>
     </div>
 );
 
-// ─── Streaming text into view ─────────────────────────────────────────────
 function useStreamText(target: string | undefined, onDone?: () => void) {
     const [displayed, setDisplayed] = useState('');
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,7 +119,7 @@ function useStreamText(target: string | undefined, onDone?: () => void) {
         };
         timerRef.current = setTimeout(tick, 30);
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [target]);
 
     return displayed;
@@ -122,16 +128,18 @@ function useStreamText(target: string | undefined, onDone?: () => void) {
 const StreamingBubble: React.FC<{ target: string; onDone: () => void }> = ({ target, onDone }) => {
     const text = useStreamText(target, onDone);
     return (
-        <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>
             {text}
             {text.length < target.length && (
-                <span className="inline-block w-0.5 h-3.5 bg-zinc-400/70 ml-0.5 animate-pulse align-middle" />
+                <span
+                    className="inline-block w-0.5 h-3.5 ml-0.5 animate-pulse align-middle"
+                    style={{ backgroundColor: 'var(--color-accent)', opacity: 0.7 }}
+                />
             )}
         </p>
     );
 };
 
-// ─── Collapsible sources list ─────────────────────────────────────────────
 const SourcesList: React.FC<{ sources: SearchSource[] }> = ({ sources }) => {
     const [open, setOpen] = useState(false);
     if (!sources.length) return null;
@@ -139,20 +147,35 @@ const SourcesList: React.FC<{ sources: SearchSource[] }> = ({ sources }) => {
         <div className="mt-2">
             <button
                 onClick={() => setOpen(o => !o)}
-                className="inline-flex items-center gap-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="inline-flex items-center gap-1.5 text-[10px] transition-colors duration-150"
+                style={{ color: 'var(--color-text-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
             >
                 <ExternalLink className="w-2.5 h-2.5" />
                 {sources.length} fonte{sources.length > 1 ? 's' : ''}
                 {open ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
             </button>
             {open && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <div className="mt-1.5 flex flex-wrap gap-1.5" style={{ animation: 'fade-in 0.15s ease-out' }}>
                     {sources.map((s, idx) => {
                         let display = s.title;
                         try { if (!display) display = new URL(s.url).hostname; } catch { display = s.url; }
                         return (
-                            <a key={idx} href={s.url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 transition-colors">
+                            <a
+                                key={idx}
+                                href={s.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors duration-150"
+                                style={{
+                                    backgroundColor: 'var(--color-surface-2)',
+                                    color: 'var(--color-text-muted)',
+                                    border: '1px solid var(--color-border)',
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                            >
                                 <ExternalLink className="w-2.5 h-2.5" />{display}
                             </a>
                         );
@@ -182,7 +205,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
 
     useEffect(() => {
         if (!initialized) { setInitialized(true); initChat(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialized]);
 
     const cleanMessage = (c: string) => c.replace(/^🔍\s*\n?Buscou:.*?\n/i, '').trim();
@@ -223,7 +246,6 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
 
         const userMsg: Message = { role: 'user', content: text };
         const updatedMessages = [...messages, userMsg];
-        // Add user message + thinking placeholder
         setMessages(prev => [...prev, userMsg, { role: 'assistant', content: '...' }]);
         if (!overrideText) setInput('');
         setSending(true);
@@ -343,10 +365,13 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     return (
         <div className="flex flex-col h-full">
             {/* Progress bar */}
-            <div className="h-px bg-white/[0.04]">
+            <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }}>
                 <div
-                    className="h-full bg-gradient-to-r from-violet-600/50 to-violet-400/40 transition-all duration-700 ease-out"
-                    style={{ width: `${progressPercent}%` }}
+                    className="h-full transition-all duration-700 ease-out"
+                    style={{
+                        width: `${progressPercent}%`,
+                        background: `linear-gradient(90deg, var(--color-accent), rgba(59,130,246,0.4))`,
+                    }}
                 />
             </div>
 
@@ -357,20 +382,27 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                     const isStreaming = streamingIdx === i && !!msg.streamTarget;
 
                     if (isThinking) {
-                        return (
-                            <ShimmerRow key={i} label="Pensando..." />
-                        );
+                        return <ShimmerRow key={i} label="Pensando..." />;
                     }
 
                     if (msg.role === 'user') {
                         return (
-                            <div key={i} className="flex gap-3 flex-row-reverse">
-                                <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                    <UserIcon className="w-3.5 h-3.5 text-zinc-400" />
+                            <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
+                                <div
+                                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                                    style={{ backgroundColor: 'var(--color-surface-2)' }}
+                                >
+                                    <UserIcon className="w-3.5 h-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
                                 </div>
                                 <div className="flex-1 text-right">
-                                    <div className="inline-block text-left bg-white/[0.06] rounded-2xl rounded-tr-md px-4 py-2.5 max-w-[85%]">
-                                        <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                                    <div
+                                        className="inline-block text-left rounded-2xl rounded-tr-md px-4 py-2.5 max-w-[85%]"
+                                        style={{
+                                            backgroundColor: 'var(--color-surface-active)',
+                                            border: '1px solid var(--color-border)',
+                                        }}
+                                    >
+                                        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
                                     </div>
                                 </div>
                             </div>
@@ -378,14 +410,20 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                     }
 
                     return (
-                        <div key={i} className="flex gap-3">
+                        <div key={i} className="flex gap-3" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
                             <img src="/logo_icon.png" alt="Agent" className="w-7 h-7 object-contain flex-shrink-0 mt-0.5" />
                             <div className="flex-1 min-w-0">
                                 {msg.searching && msg.searchQuery && (
                                     <div className="flex items-center gap-1.5 mb-2">
-                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/15">
-                                            <Globe className="w-3 h-3 text-amber-400" />
-                                            <span className="text-[10px] text-amber-400/80 font-medium">&ldquo;{msg.searchQuery}&rdquo;</span>
+                                        <div
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                                            style={{
+                                                backgroundColor: 'var(--color-warning-muted)',
+                                                border: '1px solid rgba(234,179,8,0.15)',
+                                            }}
+                                        >
+                                            <Globe className="w-3 h-3" style={{ color: 'var(--color-warning)' }} />
+                                            <span className="text-[10px] font-medium" style={{ color: 'rgba(234,179,8,0.8)' }}>&ldquo;{msg.searchQuery}&rdquo;</span>
                                         </div>
                                     </div>
                                 )}
@@ -393,18 +431,36 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                 {isStreaming && msg.streamTarget ? (
                                     <StreamingBubble target={msg.streamTarget} onDone={() => finalizeStreaming(i, msg)} />
                                 ) : (
-                                    <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
                                 )}
 
-                                {/* Research action buttons — task-style */}
+                                {/* Research action buttons */}
                                 {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
                                     <div className="flex flex-wrap items-center gap-2 mt-3">
-                                        <button onClick={handleConfirmResearch}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all active:scale-95 border border-emerald-500/15">
+                                        <button
+                                            onClick={handleConfirmResearch}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95"
+                                            style={{
+                                                backgroundColor: 'var(--color-success-muted)',
+                                                color: 'var(--color-success)',
+                                                border: '1px solid rgba(34,197,94,0.15)',
+                                            }}
+                                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(34,197,94,0.15)')}
+                                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-success-muted)')}
+                                        >
                                             <Check className="w-3 h-3" />Concordo, pesquisar
                                         </button>
-                                        <button onClick={handleRejectResearch}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] transition-all active:scale-95 border border-white/[0.06]">
+                                        <button
+                                            onClick={handleRejectResearch}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95"
+                                            style={{
+                                                backgroundColor: 'var(--color-surface-hover)',
+                                                color: 'var(--color-text-tertiary)',
+                                                border: '1px solid var(--color-border)',
+                                            }}
+                                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-active)')}
+                                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                                        >
                                             <X className="w-3 h-3" />Definir eu mesmo
                                         </button>
                                     </div>
@@ -420,17 +476,20 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input card — mesma estrutura visual do task card */}
-            <div className="px-4 pb-4 pt-3 border-t border-white/[0.04] flex-shrink-0">
-                <div className="w-full rounded-xl bg-white/[0.06] p-3 flex flex-col gap-2">
-
-                    {/* Interim voice transcript */}
+            {/* Input card */}
+            <div className="px-4 pb-4 pt-3 flex-shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
+                <div
+                    className="w-full rounded-xl p-3 flex flex-col gap-2"
+                    style={{
+                        backgroundColor: 'var(--color-surface-active)',
+                        border: '1px solid var(--color-border)',
+                    }}
+                >
                     <VoiceInterimBadge text={voice.interimText} />
 
-                    {/* Top: input text + metadata badges */}
                     <div className="flex flex-col gap-2 flex-1 min-w-0 w-full mb-1">
                         {loading ? (
-                            <div className="flex items-center gap-2 text-[13px] text-zinc-500">
+                            <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
                                 <TypingDots />
                                 <span>Gerando análise...</span>
                             </div>
@@ -451,52 +510,55 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                         : 'Digite ou fale sua mensagem...'
                                 }
                                 disabled={sending || streamingIdx !== null}
-                                className="w-full bg-transparent text-[13px] font-medium text-white placeholder-zinc-600 focus:outline-none disabled:opacity-40 leading-snug"
+                                className="w-full bg-transparent text-[13px] font-medium focus:outline-none disabled:opacity-40 leading-snug"
+                                style={{
+                                    color: 'var(--color-text-primary)',
+                                }}
                             />
                         )}
 
                         {/* Metadata badges */}
-                        <div className="flex flex-wrap items-center gap-2 text-left text-[11px] text-zinc-500">
-                            <span className="font-mono text-zinc-400">
+                        <div className="flex flex-wrap items-center gap-2 text-left text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                            <span className="font-mono" style={{ color: 'var(--color-text-tertiary)' }}>
                                 {messages.filter(m => m.role === 'user').length > 0
                                     ? `#${messages.filter(m => m.role === 'user').length}`
                                     : '#0'}
                             </span>
                             {fieldsCollected.length > 0 && (
                                 <>
-                                    <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                                    <span className="text-violet-400/70">{progressPercent}% coletado</span>
+                                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--color-border-strong)' }} />
+                                    <span style={{ color: 'var(--color-accent)', opacity: 0.7 }}>{progressPercent}% coletado</span>
                                 </>
                             )}
                         </div>
                     </div>
 
-                    {/* Footer: model selector left, action buttons right */}
-                    <div className="w-full border-t border-white/[0.05] pt-3">
+                    {/* Footer */}
+                    <div className="w-full pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
                         <div className="flex items-center justify-between w-full">
-                            {/* Left: AI model selector */}
                             <div className="flex items-center gap-2">
                                 <ModelSelector value={aiModel} onChange={setAiModel} direction="up" />
                             </div>
 
-                            {/* Right: action buttons */}
                             <div className="flex items-center gap-1">
                                 {readyForAnalysis && !loading && !sending && (
                                     <button
                                         onClick={handleGenerateAnalysis}
-                                        className="relative overflow-hidden flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer"
+                                        className="relative overflow-hidden flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer"
+                                        style={{ backgroundColor: 'transparent' }}
+                                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent-muted)')}
+                                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                                         title="Gerar análise completa"
                                     >
                                         <div
                                             className="absolute inset-0 pointer-events-none"
-                                            style={{ background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.12), transparent)', animation: 'shimmer-slide 2.4s ease-in-out infinite' }}
+                                            style={{ background: 'linear-gradient(90deg, transparent, var(--color-accent-muted), transparent)', animation: 'shimmer-slide 2.4s ease-in-out infinite' }}
                                         />
-                                        <Play className="w-3.5 h-3.5 text-violet-400 fill-current relative z-10" />
-                                        <span className="text-[11px] font-medium text-zinc-400 relative z-10">Gerar Análise</span>
+                                        <Play className="w-3.5 h-3.5 fill-current relative z-10" style={{ color: 'var(--color-accent)' }} />
+                                        <span className="text-[11px] font-medium relative z-10" style={{ color: 'var(--color-text-tertiary)' }}>Gerar Análise</span>
                                     </button>
                                 )}
 
-                                {/* Voice input button */}
                                 <VoiceButton
                                     state={voice.state}
                                     interimText={voice.interimText}
@@ -507,17 +569,19 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                 <button
                                     onClick={() => sendMessage()}
                                     disabled={!input.trim() || sending || streamingIdx !== null || loading}
-                                    className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                    className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50"
+                                    style={{ backgroundColor: 'transparent' }}
+                                    onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
+                                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                                     title="Enviar mensagem"
                                 >
                                     {sending
-                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
-                                        : <Send className="w-3.5 h-3.5 text-zinc-400" />}
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
+                                        : <Send className="w-3.5 h-3.5" style={{ color: 'var(--color-text-tertiary)' }} />}
                                 </button>
                             </div>
                         </div>
                     </div>
-
                 </div>
             </div>
         </div>

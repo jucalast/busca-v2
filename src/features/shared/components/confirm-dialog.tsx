@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 interface ConfirmDialogProps {
@@ -24,54 +24,111 @@ export default function ConfirmDialog({
   onCancel,
   isDangerous = false,
 }: ConfirmDialogProps) {
+  // Keyboard: Escape to close
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') onCancel();
+  }, [onCancel]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, handleKeyDown]);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Overlay */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+        style={{ animation: 'fade-in 0.15s ease-out' }}
+        onClick={onCancel}
+      />
 
       {/* Dialog */}
-      <div className="relative z-10 w-full max-w-md mx-4 bg-[#1a1a1d] rounded-2xl shadow-2xl overflow-hidden">
+      <div
+        className="relative z-10 w-full max-w-[420px] mx-4 rounded-xl overflow-hidden"
+        style={{
+          backgroundColor: 'var(--color-surface-1)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-xl)',
+          animation: 'scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
         {/* Header */}
-        <div className="flex items-start justify-between p-6 border-b border-zinc-800/40">
+        <div className="flex items-start justify-between p-5" style={{ borderBottom: '1px solid var(--color-border)' }}>
           <div className="flex items-start gap-3">
             {isDangerous && (
-              <div className="p-2 bg-red-500/10 rounded-xl">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+              <div
+                className="p-2 rounded-lg flex-shrink-0"
+                style={{ backgroundColor: 'var(--color-destructive-muted)' }}
+              >
+                <AlertTriangle className="w-4 h-4" style={{ color: 'var(--color-destructive)' }} />
               </div>
             )}
             <div>
-              <h2 className="text-lg font-semibold text-white">{title}</h2>
+              <h2 className="text-[15px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h2>
             </div>
           </div>
           <button
             onClick={onCancel}
-            className="p-1.5 hover:bg-zinc-800 rounded-lg transition-colors"
+            className="p-1.5 rounded-md transition-colors duration-150"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
-            <X className="w-5 h-5 text-zinc-400" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Message */}
-        <div className="p-6">
-          <p className="text-sm text-zinc-300 leading-relaxed">{message}</p>
+        <div className="p-5">
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>{message}</p>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-zinc-800/40 bg-zinc-900/50">
+        <div
+          className="flex items-center justify-end gap-2.5 px-5 py-4"
+          style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'rgba(0,0,0,0.15)' }}
+        >
           <button
             onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-all"
+            className="px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+            style={{
+              color: 'var(--color-text-secondary)',
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.backgroundColor = 'var(--color-surface-3)';
+              e.currentTarget.style.color = 'var(--color-text-primary)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.backgroundColor = 'var(--color-surface-2)';
+              e.currentTarget.style.color = 'var(--color-text-secondary)';
+            }}
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isDangerous
-                ? 'text-white bg-red-600 hover:bg-red-500'
-                : 'text-white bg-emerald-600 hover:bg-emerald-500'
-              }`}
+            className="px-3.5 py-2 rounded-lg text-sm font-medium text-white transition-all duration-150"
+            style={{
+              backgroundColor: isDangerous ? 'var(--color-destructive)' : 'var(--color-accent)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.opacity = '0.9';
+              e.currentTarget.style.transform = 'translateY(-0.5px)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
           >
             {confirmText}
           </button>

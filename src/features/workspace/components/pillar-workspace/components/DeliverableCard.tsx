@@ -11,39 +11,63 @@ export function DeliverableCard({ deliverable, color, session, loadingState, set
     const toolInfo = getToolInfo(deliverable);
 
     return (
-        <div className={`mt-3 p-3 bg-zinc-900 rounded-xl shadow-2xl shadow-black/70 overflow-hidden ${isPartial ? '' : ''}`}>
+        <div
+            className="mt-3 p-3 rounded-xl overflow-hidden"
+            style={{
+                backgroundColor: 'var(--color-surface-1)',
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-lg)',
+            }}
+        >
             {/* Header */}
-            <div onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 cursor-pointer hover:bg-white/[0.04]">
-                {/* Tool Icon */}
+            <div
+                onClick={() => setExpanded(!expanded)}
+                className="w-full flex items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 cursor-pointer"
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
                 <img src={toolInfo.icon} alt={toolInfo.name} className="w-7 h-7 rounded object-contain shrink-0 opacity-60 grayscale" />
 
                 <div className="flex-1 flex items-center gap-2 text-left min-w-0">
-                    <span className={`text-[13px] font-medium ${isPartial ? 'text-amber-300' : 'text-zinc-300'}`}>
+                    <span className="text-[13px] font-medium" style={{ color: isPartial ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>
                         {safeRender(deliverable.entregavel_titulo)}
                     </span>
                     <span className={`text-[11px] ${toolInfo.color}`}>
                         {toolInfo.name}
                     </span>
                     {deliverable.entregavel_tipo && (
-                        <span className="text-[11px] text-zinc-600">
+                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                             {safeRender(deliverable.entregavel_tipo)}
                         </span>
                     )}
                     {isPartial && pct && (
-                        <span className="text-[11px] text-amber-400">
+                        <span className="text-[11px]" style={{ color: 'var(--color-warning)' }}>
                             IA completou {pct}%
                         </span>
                     )}
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, '', session, setLoadingDoc); }} disabled={loadingState === (deliverable.id || 'export')}
-                        className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg transition-all duration-150 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04] disabled:opacity-50">
-                        {loadingState === (deliverable.id || 'export') ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : <img src={toolInfo.icon} alt="" className="w-4 h-4 rounded object-contain opacity-60 grayscale" />}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, '', session, setLoadingDoc); }}
+                        disabled={loadingState === (deliverable.id || 'export')}
+                        className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg transition-all duration-150 text-[11px] font-medium disabled:opacity-50"
+                        style={{ color: 'var(--color-text-tertiary)' }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                            e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                        }}
+                    >
+                        {loadingState === (deliverable.id || 'export') ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} /> : <img src={toolInfo.icon} alt="" className="w-4 h-4 rounded object-contain opacity-60 grayscale" />}
                         {loadingState === (deliverable.id || 'export') ? 'Gerando...' : `Abrir no ${toolInfo.name}`}
                     </button>
-                    {expanded ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+                    {expanded
+                        ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                        : <ChevronDown className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />}
                 </div>
             </div>
 

@@ -10,19 +10,19 @@ import { cleanMarkdown, exportAsCSV, openInGoogleDocs, openInGoogleSheets, openI
 import { useSession } from 'next-auth/react';
 
 // ═══ Intelligence Tools Visualization ═══
-const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string; bgColor: string }> = {
-    web_search:            { icon: Search,      label: 'Web Search',       color: 'text-blue-400',    bgColor: 'bg-blue-500/10 border-blue-500/20' },
-    web_extractor:         { icon: Globe,        label: 'Web Extractor',    color: 'text-cyan-400',    bgColor: 'bg-cyan-500/10 border-cyan-500/20' },
-    news_extractor:        { icon: Newspaper,    label: 'News Intel',       color: 'text-amber-400',   bgColor: 'bg-amber-500/10 border-amber-500/20' },
-    trend_analyzer:        { icon: TrendingUp,   label: 'Google Trends',    color: 'text-emerald-400', bgColor: 'bg-emerald-500/10 border-emerald-500/20' },
-    trend_analyzer_rising: { icon: Zap,          label: 'Termos em Alta',   color: 'text-orange-400',  bgColor: 'bg-orange-500/10 border-orange-500/20' },
-    sales_triggers:        { icon: Zap,          label: 'Sales Triggers',   color: 'text-rose-400',    bgColor: 'bg-rose-500/10 border-rose-500/20' },
-    cnpj_lookup:           { icon: Building2,    label: 'CNPJ Lookup',      color: 'text-violet-400',  bgColor: 'bg-violet-500/10 border-violet-500/20' },
+const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; style: React.CSSProperties }> = {
+    web_search: { icon: Search, label: 'Web Search', style: { color: 'var(--color-accent)' } },
+    web_extractor: { icon: Globe, label: 'Web Extractor', style: { color: 'var(--color-accent)' } },
+    news_extractor: { icon: Newspaper, label: 'News Intel', style: { color: 'var(--color-warning)' } },
+    trend_analyzer: { icon: TrendingUp, label: 'Google Trends', style: { color: 'var(--color-success)' } },
+    trend_analyzer_rising: { icon: Zap, label: 'Termos em Alta', style: { color: 'var(--color-warning)' } },
+    sales_triggers: { icon: Zap, label: 'Sales Triggers', style: { color: 'var(--color-destructive)' } },
+    cnpj_lookup: { icon: Building2, label: 'CNPJ Lookup', style: { color: 'var(--color-accent)' } },
 };
 
 function IntelToolRow({ tool }: { tool: any }) {
     const [open, setOpen] = React.useState(false);
-    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool };
+    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool, style: { color: 'var(--color-text-secondary)' } };
     const Icon = config.icon;
     const detail = tool.detail as string | undefined;
 
@@ -32,14 +32,16 @@ function IntelToolRow({ tool }: { tool: any }) {
                 onClick={() => detail && setOpen(p => !p)}
                 className={`group flex items-center gap-1.5 w-fit transition-colors ${detail ? 'cursor-pointer' : 'cursor-default'}`}
             >
-                <Icon className="w-3 h-3 text-zinc-500 shrink-0 group-hover:text-zinc-200 transition-colors" />
-                <span className="text-[11px] text-zinc-500 group-hover:text-zinc-200 transition-colors">{config.label}</span>
+                <Icon className="w-3 h-3 shrink-0 transition-colors" style={config.style} />
+                <span className="text-[11px] transition-colors" style={{ color: 'var(--color-text-secondary)' }}>
+                    {config.label}
+                </span>
                 {detail && (
-                    <ChevronDown className={`w-3 h-3 text-zinc-600 group-hover:text-zinc-300 transition-all duration-200 ${open ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`w-3 h-3 transition-all duration-200 ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--color-text-muted)' }} />
                 )}
             </button>
             {open && detail && (
-                <p className="text-[11px] text-zinc-500 leading-relaxed mt-1 pl-[18px]">{detail}</p>
+                <p className="text-[11px] leading-relaxed mt-1 pl-[18px]" style={{ color: 'var(--color-text-muted)' }}>{detail}</p>
             )}
         </div>
     );
@@ -130,7 +132,10 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                     return (
                         <div
                             key={i}
-                            className="relative overflow-hidden transition-colors rounded-lg flex items-center gap-3 px-3 w-full hover:bg-white/[0.04] border border-transparent hover:border-white/[0.02]"
+                            className="relative overflow-hidden transition-colors rounded-lg flex items-center gap-3 px-3 w-full border border-transparent"
+                            style={{
+                                backgroundColor: 'var(--color-surface-hover)',
+                            }}
                         >
                             {/* Shimmer sweep — only on the currently running subtask or if overall loading at this index */}
                             {((isLoading && i === activeIndex) || status === 'running') && (
@@ -141,7 +146,7 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                                         left: 0,
                                         width: '50%',
                                         height: '100%',
-                                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)',
+                                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent)',
                                         animation: 'subtask-shimmer 1.6s ease-in-out infinite',
                                         pointerEvents: 'none',
                                         zIndex: 0,
@@ -150,18 +155,27 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                             )}
                             {/* Done badge — per subtask or whole task done */}
                             {(isDone || status === 'done')
-                                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 relative z-10" />
+                                ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 relative z-10" style={{ color: 'var(--color-success)' }} />
                                 : status === 'running' || (isLoading && i === activeIndex)
-                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500 shrink-0 relative z-10" />
-                                    : <Circle className="w-3.5 h-3.5 text-zinc-600 shrink-0 relative z-10" />
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
+                                    : <Circle className="w-3.5 h-3.5 shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
                             }
-                            <span className={`text-[12px] font-medium truncate flex-1 relative z-10 ${status === 'done' || isDone ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                            <span
+                                className="text-[12px] font-medium truncate flex-1 relative z-10"
+                                style={{
+                                    color: status === 'done' || isDone ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
+                                    textDecoration: status === 'done' || isDone ? 'line-through' : 'none',
+                                }}
+                            >
                                 {safeRender(st.titulo)}
                             </span>
                             {arrayIdx === 0 && renderList.length > 1 && (
                                 <button
                                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExp(p => !p); }}
-                                    className="relative z-10 flex items-center justify-center p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors ml-2"
+                                    className="relative z-10 flex items-center justify-center p-1 rounded transition-colors ml-2"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                                     title={isExp ? 'Recolher' : 'Expandir'}
                                 >
                                     {isExp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -200,14 +214,17 @@ function ContentAccordion({
             <div className="flex items-center gap-2 flex-wrap">
                 <button
                     onClick={() => setOpen(p => !p)}
-                    className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                    className="flex items-center gap-1.5 text-[11px] transition-colors"
+                    style={{ color: 'var(--color-text-muted)' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                 >
                     <span>Ver pensamento da IA</span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
                 </button>
                 {fmts.length > 0 && (
                     <>
-                        <span className="text-zinc-700 select-none">·</span>
+                        <span className="select-none" style={{ color: 'var(--color-text-ghost)' }}>·</span>
                         {fmts.map((fmt) => {
                             const isLoading = loadingDocId === fmt;
                             return (
@@ -215,7 +232,19 @@ function ContentAccordion({
                                     key={fmt}
                                     disabled={!!isLoading}
                                     onClick={() => onExport(fmt)}
-                                    className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-medium hover:bg-white/[0.08] hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-50"
+                                    className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer disabled:opacity-50"
+                                    style={{
+                                        backgroundColor: 'var(--color-surface-hover)',
+                                        color: 'var(--color-text-tertiary)'
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.backgroundColor = 'var(--color-surface-active)';
+                                        e.currentTarget.style.color = 'var(--color-text-secondary)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                                        e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                                    }}
                                 >
                                     {isLoading ? '...' : (
                                         <>
@@ -224,10 +253,10 @@ function ContentAccordion({
                                             {(fmt === 'google_sheets' || fmt === 'csv') && <img src="/sheets.png" alt="" className={`w-3 h-3 object-contain ${fmt === 'csv' ? 'opacity-60' : ''}`} />}
                                             {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
                                             {fmt === 'google_docs' ? 'Google Docs' :
-                                             fmt === 'google_forms' ? 'Google Forms' :
-                                             fmt === 'google_sheets' ? 'Google Sheets' :
-                                             fmt === 'pdf' ? 'PDF' :
-                                             fmt === 'csv' ? 'CSV' : fmt}
+                                                fmt === 'google_forms' ? 'Google Forms' :
+                                                    fmt === 'google_sheets' ? 'Google Sheets' :
+                                                        fmt === 'pdf' ? 'PDF' :
+                                                            fmt === 'csv' ? 'CSV' : fmt}
                                         </>
                                     )}
                                 </button>
@@ -239,7 +268,7 @@ function ContentAccordion({
 
             {/* Collapsible content */}
             {open && (
-                <div className="mt-3 text-[13px] font-light text-zinc-100 leading-relaxed">
+                <div className="mt-3 text-[13px] font-light leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
                     <MarkdownContent content={cleanMarkdown(safeRenderFn(
                         executionMode === 'producao' ? content : formatJsonAsReadable(content)
                     ))} />
@@ -320,8 +349,8 @@ export default function TaskSubtasksDisplay({
         if (!base && allowFallback && !result.conteudo) {
             const meaningfulKeys = Object.keys(result).filter(k =>
                 !['sources', 'task_id', 'entregavel_titulo', 'fontes_consultadas',
-                  'entregavel_tipo', 'execution_mode', 'artifact_type',
-                  'export_formats', 'structured_data', 'conteudo'].includes(k)
+                    'entregavel_tipo', 'execution_mode', 'artifact_type',
+                    'export_formats', 'structured_data', 'conteudo'].includes(k)
             );
             if (meaningfulKeys.length > 0) {
                 const firstKey = meaningfulKeys[0];
@@ -357,12 +386,16 @@ export default function TaskSubtasksDisplay({
                 {Array.from({ length: 4 }).map((_, idx) => (
                     <span
                         key={idx}
-                        className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-violet-500/60 to-blue-500/40 animate-pulse"
-                        style={{ animationDelay: `${idx * 120}ms` }}
+                        className="w-2 h-2 rounded-full animate-pulse"
+                        style={{
+                            backgroundColor: 'var(--color-accent)',
+                            animationDelay: `${idx * 120}ms`,
+                            opacity: 0.6
+                        }}
                     />
                 ))}
             </div>
-            <span className="text-[9px] font-semibold tracking-[0.24em] uppercase text-violet-200/70">
+            <span className="text-[9px] font-semibold tracking-[0.24em] uppercase" style={{ color: 'var(--color-accent)' }}>
                 {label}
             </span>
         </div>
@@ -408,7 +441,7 @@ export default function TaskSubtasksDisplay({
                             animation: 'result-block-fade-in 0.5s ease-out forwards',
                             opacity: 0
                         }}>
-{/* Intelligence tools visualization */}
+                            {/* Intelligence tools visualization */}
                             <IntelligenceToolsBadges
                                 tools={result?.intelligence_tools_used}
                                 isRunning={isStreaming}
@@ -418,7 +451,7 @@ export default function TaskSubtasksDisplay({
                             {hasSources && (
                                 <div className="mb-3">
                                     <SourceBadgeList
-                                        sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]} 
+                                        sources={[...(result.sources || []), ...(result.fontes_consultadas || [])]}
                                         maxVisible={4}
                                         animated={isStreaming || taskExecStatuses[index] === 'done'}
                                     />
@@ -442,8 +475,8 @@ export default function TaskSubtasksDisplay({
                                             {[0, 1, 2].map(i => (
                                                 <span
                                                     key={i}
-                                                    className="w-1 h-1 rounded-full bg-zinc-500"
-                                                    style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                                                    className="w-1.5 h-1.5 rounded-full"
+                                                    style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
                                                 />
                                             ))}
                                         </div>
@@ -458,8 +491,8 @@ export default function TaskSubtasksDisplay({
                                     {[0, 1, 2].map(i => (
                                         <span
                                             key={i}
-                                            className="w-1 h-1 rounded-full bg-zinc-500"
-                                            style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                                            className="w-1.5 h-1.5 rounded-full"
+                                            style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
                                         />
                                     ))}
                                 </div>
@@ -569,22 +602,37 @@ export default function TaskSubtasksDisplay({
                                     };
 
                                     return (
-                                        <div key={i} className={`transition-colors rounded-lg overflow-hidden flex flex-col hover:bg-white/[0.04] border border-transparent ${status === 'running' ? 'bg-violet-500/[0.04] border-violet-500/10' :
-                                            status === 'error' ? 'bg-red-500/[0.03] border-red-500/10' : ''
-                                            }`}>
+                                        <div key={i} className={`transition-colors rounded-lg overflow-hidden flex flex-col border border-transparent`}
+                                            style={{
+                                                backgroundColor: status === 'running' ? 'var(--color-surface-active)' : 'transparent',
+                                                borderColor: status === 'running' ? 'var(--color-border-strong)' : 'transparent',
+                                                ...(status === 'error' ? { backgroundColor: 'var(--color-destructive-muted)', borderColor: 'rgba(239,68,68,0.1)' } : {}),
+                                                ...(status !== 'running' && status !== 'error' ? { ':hover': { backgroundColor: 'var(--color-surface-hover)' } } : {}) as any // Simple fallback inline
+                                            }}>
                                             <div className="flex items-center gap-3 px-3 w-full">
                                                 <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center">
-                                                    {status === 'waiting' && <Circle className="w-3.5 h-3.5 text-zinc-600" />}
-                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
-                                                    {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
-                                                    {status === 'error' && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
+                                                    {status === 'waiting' && <Circle className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />}
+                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />}
+                                                    {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: 'var(--color-success)' }} />}
+                                                    {status === 'error' && <AlertTriangle className="w-3.5 h-3.5" style={{ color: 'var(--color-destructive)' }} />}
                                                 </div>
 
-                                                <span className={`text-[12px] font-medium truncate flex-1 ${status === 'done' ? 'text-zinc-500 line-through decoration-zinc-800' :
-                                                    status === 'running' ? 'text-zinc-200' : 'text-zinc-400'
-                                                    }`}>
+                                                <span
+                                                    className="text-[12px] font-medium truncate flex-1"
+                                                    style={{
+                                                        color: status === 'done' ? 'var(--color-text-muted)' : status === 'running' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                                        textDecoration: status === 'done' ? 'line-through' : 'none',
+                                                    }}
+                                                >
                                                     {st.modo_execucao === 'producao' && (
-                                                        <span className="inline-flex items-center px-1 py-0 mr-1.5 text-[8px] font-bold tracking-wider uppercase rounded bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
+                                                        <span
+                                                            className="inline-flex items-center px-1 py-0 mr-1.5 text-[8px] font-bold tracking-wider uppercase rounded"
+                                                            style={{
+                                                                backgroundColor: 'var(--color-warning-muted)',
+                                                                color: 'var(--color-warning)',
+                                                                border: '1px solid rgba(234,179,8,0.2)'
+                                                            }}
+                                                        >
                                                             produção
                                                         </span>
                                                     )}
@@ -592,19 +640,22 @@ export default function TaskSubtasksDisplay({
                                                 </span>
 
                                                 {status === 'running' && (
-                                                    <span className="text-[9px] font-medium text-violet-400 animate-pulse px-2">
+                                                    <span className="text-[9px] font-medium animate-pulse px-2" style={{ color: 'var(--color-accent)' }}>
                                                         {st.modo_execucao === 'producao' ? '🏭 Produzindo...' : 'Executando...'}
                                                     </span>
                                                 )}
 
                                                 {status === 'error' && (
-                                                    <span className="text-[9px] font-medium text-red-400 px-2">Falhou</span>
+                                                    <span className="text-[9px] font-medium px-2" style={{ color: 'var(--color-destructive)' }}>Falhou</span>
                                                 )}
 
                                                 {handleRetryAutoExecSubtask && status === 'error' && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); handleRetryAutoExecSubtask(pillarKey, task, i); }}
-                                                        className="flex items-center justify-center p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                                        className="flex items-center justify-center p-1 rounded transition-colors"
+                                                        style={{ color: 'var(--color-text-muted)' }}
+                                                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-text-secondary)' }}
+                                                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
                                                         title="Tentar Novamente">
                                                         <RefreshCw className="w-3 h-3" />
                                                     </button>
@@ -614,7 +665,10 @@ export default function TaskSubtasksDisplay({
                                                 {isFirstItemInList && taskExecSubtasks.length > 1 && (
                                                     <button
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(!isExpanded); }}
-                                                        className="flex items-center justify-center p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors ml-2"
+                                                        className="flex items-center justify-center p-1 rounded transition-colors ml-2"
+                                                        style={{ color: 'var(--color-text-muted)' }}
+                                                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-text-secondary)' }}
+                                                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
                                                         title={isExpanded ? 'Recolher' : 'Expandir'}
                                                     >
                                                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -623,10 +677,10 @@ export default function TaskSubtasksDisplay({
                                             </div>
 
                                             {status === 'running' && (
-                                                <div className="bg-violet-500/[0.02]">
+                                                <div style={{ backgroundColor: 'var(--color-surface-hover)' }}>
                                                     {renderResearchBubbles(
-                                                        st.modo_execucao === 'producao' 
-                                                            ? '🏭 Produzindo artefato...' 
+                                                        st.modo_execucao === 'producao'
+                                                            ? '🏭 Produzindo artefato...'
                                                             : 'Pesquisando fontes...'
                                                     )}
                                                     <div className="px-3 pb-2">
@@ -651,9 +705,15 @@ export default function TaskSubtasksDisplay({
 
                         {/* Summary generation indicator */}
                         {(isAutoExec && (autoExecStep || 0) > (autoExecTotal || 0)) || (taskExecSubtasks.length > 0 && !deliverable && (autoExecTotal || 0) > 0 && (autoExecStep || 0) > (autoExecTotal || 0) && !isAutoExec) ? (
-                            <div className="flex items-center gap-3 px-3 py-2 bg-blue-500/[0.04] rounded-lg mt-1 border border-blue-500/10">
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
-                                <span className="text-[11px] font-medium text-blue-400/80">Gerando resumo executivo...</span>
+                            <div
+                                className="flex items-center gap-3 px-3 py-2 rounded-lg mt-1"
+                                style={{
+                                    backgroundColor: 'var(--color-accent-muted)',
+                                    border: '1px solid rgba(59,130,246,0.1)',
+                                }}
+                            >
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-accent)' }} />
+                                <span className="text-[11px] font-medium" style={{ color: 'var(--color-accent)' }}>Gerando resumo executivo...</span>
                             </div>
                         ) : null}
 
@@ -680,8 +740,8 @@ export default function TaskSubtasksDisplay({
                         {[0, 1, 2].map(i => (
                             <span
                                 key={i}
-                                className="w-1 h-1 rounded-full bg-zinc-500"
-                                style={{ animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
+                                className="w-1.5 h-1.5 rounded-full"
+                                style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
                             />
                         ))}
                     </div>

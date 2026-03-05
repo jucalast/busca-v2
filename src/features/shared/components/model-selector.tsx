@@ -102,16 +102,20 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
         ? createPortal(
             <div
                 ref={dropdownRef}
-                className="fixed z-[12000] min-w-[200px] p-1 rounded-lg shadow-xl shadow-black/70 overflow-hidden bg-[#111113]"
+                className="fixed z-[12000] min-w-[200px] p-1 rounded-lg overflow-hidden"
                 style={{
                     top: baseTop,
                     left: computedLeft,
                     width: dropdownWidth,
                     transform: dropdownTransform,
+                    backgroundColor: 'var(--color-surface-1)',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-popover)',
+                    animation: 'fade-in-up 0.12s ease-out',
                 }}
             >
                 <div className="px-2 pt-1.5 pb-1">
-                    <span className="text-[9px] font-semibold text-zinc-600 uppercase tracking-wider">Modelo</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Modelo</span>
                 </div>
 
                 {MODEL_OPTIONS.map((opt) => {
@@ -123,7 +127,12 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                                 onChange(opt.value);
                                 setIsOpen(false);
                             }}
-                            className={`w-full flex items-center gap-2 px-2 py-2 rounded transition-all duration-150 cursor-pointer ${active ? 'bg-zinc-800' : 'hover:bg-[#1b1b1f]'}`}
+                            className="w-full flex items-center gap-2 px-2 py-2 rounded-md transition-all duration-150 cursor-pointer"
+                            style={{
+                                backgroundColor: active ? 'var(--color-surface-active)' : 'transparent',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent'; }}
                         >
                             <Image
                                 src={opt.logo}
@@ -134,10 +143,13 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                             />
 
                             <div className="flex-1 flex items-center gap-1.5 text-left min-w-0 whitespace-nowrap">
-                                <span className={`text-[11px] font-medium ${active ? 'text-white' : 'text-zinc-400'}`}>
+                                <span
+                                    className="text-[11px] font-medium"
+                                    style={{ color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
+                                >
                                     {opt.label}
                                 </span>
-                                <span className="text-[10px] text-zinc-600">{opt.sub}</span>
+                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{opt.sub}</span>
                             </div>
 
                             {active && (
@@ -153,10 +165,12 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
 
     return (
         <div ref={ref} className="relative">
-            {/* Trigger */}
             <button
                 onClick={handleToggle}
-                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer"
+                className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer"
+                style={{ backgroundColor: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
                 <Image
                     src={selected.logo}
@@ -165,9 +179,10 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                     height={16}
                     className="rounded shrink-0 object-contain"
                 />
-                <span className="text-[11px] font-medium text-zinc-300">{selected.label}</span>
+                <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-secondary)' }}>{selected.label}</span>
                 <ChevronDown
-                    className={`w-2.5 h-2.5 text-zinc-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                    className={`w-2.5 h-2.5 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+                    style={{ color: 'var(--color-text-muted)' }}
                 />
             </button>
 

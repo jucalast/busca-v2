@@ -61,9 +61,12 @@ export default function AuthForm() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex overflow-hidden">
+    <div className="min-h-screen flex overflow-hidden" style={{ backgroundColor: 'var(--color-bg)' }}>
       {/* Form Side */}
-      <div className="w-full lg:w-[40%] flex flex-col justify-center px-8 sm:px-16 py-12 z-10 relative bg-[#09090b] overflow-y-auto">
+      <div
+        className="w-full lg:w-[40%] flex flex-col justify-center px-8 sm:px-16 py-12 z-10 relative overflow-y-auto"
+        style={{ backgroundColor: 'var(--color-bg)' }}
+      >
         <div className="w-full max-w-sm mx-auto">
           {/* Logo and Header */}
           <div className="mb-10 text-center lg:text-left">
@@ -77,10 +80,13 @@ export default function AuthForm() {
                 priority
               />
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">
+            <h1
+              className="text-3xl font-bold tracking-tight"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
             </h1>
-            <p className="text-zinc-500 mt-2 text-sm">
+            <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
               {mode === 'login'
                 ? 'Acesse sua plataforma IA de Business Intelligence.'
                 : 'Inicie agora com a plataforma avançada de estratégia.'}
@@ -89,23 +95,37 @@ export default function AuthForm() {
 
           <div className="w-full">
 
-            {/* Google Login Option */}
+            {/* Google Login */}
             <button
               onClick={() => loginWithGoogle()}
               disabled={loading}
               type="button"
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-zinc-800/50 text-white rounded-xl hover:bg-zinc-800 hover:ring-1 hover:ring-zinc-600 transition-all mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-150 mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface-3)';
+                e.currentTarget.style.borderColor = 'var(--color-border-strong)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface-2)';
+                e.currentTarget.style.borderColor = 'var(--color-border)';
+              }}
             >
               <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
               Continuar com o Google
             </button>
 
+            {/* Divider */}
             <div className="relative flex items-center justify-center mb-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-zinc-800/50"></div>
+                <div className="w-full" style={{ borderTop: '1px solid var(--color-border)' }}></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase font-medium tracking-widest">
-                <span className="bg-[#111113] px-3 text-zinc-600">Ou use seu E-mail</span>
+                <span className="px-3" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>Ou use seu E-mail</span>
               </div>
             </div>
 
@@ -113,17 +133,34 @@ export default function AuthForm() {
               {/* Name field (register only) */}
               {mode === 'register' && (
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-2">
+                  <label
+                    className="block text-xs font-semibold uppercase tracking-[0.2em] mb-2"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  >
                     Nome
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Seu nome"
-                      className="w-full pl-10 pr-4 py-3 bg-zinc-800/40 rounded-xl text-white text-sm placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
+                      className="w-full pl-10 pr-4 py-3 rounded-lg text-sm transition-all duration-150"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        color: 'var(--color-text-primary)',
+                        border: '1px solid var(--color-border)',
+                        outline: 'none',
+                      }}
+                      onFocus={e => {
+                        e.currentTarget.style.borderColor = 'var(--color-accent)';
+                        e.currentTarget.style.boxShadow = '0 0 0 3px var(--color-accent-ring)';
+                      }}
+                      onBlur={e => {
+                        e.currentTarget.style.borderColor = 'var(--color-border)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
                       required={mode === 'register'}
                     />
                   </div>
@@ -132,17 +169,34 @@ export default function AuthForm() {
 
               {/* Email field */}
               <div>
-                <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-2">
+                <label
+                  className="block text-xs font-semibold uppercase tracking-[0.2em] mb-2"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   Email
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="seu@email.com"
-                    className="w-full pl-10 pr-4 py-3 bg-zinc-800/40 rounded-xl text-white text-sm placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
+                    className="w-full pl-10 pr-4 py-3 rounded-lg text-sm transition-all duration-150"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      color: 'var(--color-text-primary)',
+                      border: '1px solid var(--color-border)',
+                      outline: 'none',
+                    }}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-accent)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px var(--color-accent-ring)';
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                     required
                   />
                 </div>
@@ -150,36 +204,63 @@ export default function AuthForm() {
 
               {/* Password field */}
               <div>
-                <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-[0.2em] mb-2">
+                <label
+                  className="block text-xs font-semibold uppercase tracking-[0.2em] mb-2"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   Senha
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-12 py-3 bg-zinc-800/40 rounded-xl text-white text-sm placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
+                    className="w-full pl-10 pr-12 py-3 rounded-lg text-sm transition-all duration-150"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      color: 'var(--color-text-primary)',
+                      border: '1px solid var(--color-border)',
+                      outline: 'none',
+                    }}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-accent)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px var(--color-accent-ring)';
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                     required
                     minLength={6}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-150"
+                    style={{ color: 'var(--color-text-muted)' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {mode === 'register' && (
-                  <p className="text-xs text-zinc-600 mt-1.5">Mínimo de 6 caracteres</p>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>Mínimo de 6 caracteres</p>
                 )}
               </div>
 
               {/* Error message */}
               {error && (
-                <div className="p-3 bg-red-500/10 rounded-xl text-red-400 text-sm">
+                <div
+                  className="p-3 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-destructive-muted)',
+                    color: 'var(--color-destructive)',
+                    border: '1px solid rgba(239,68,68,0.15)',
+                  }}
+                >
                   {error}
                 </div>
               )}
@@ -188,25 +269,34 @@ export default function AuthForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-zinc-800/60 text-white font-semibold text-sm rounded-xl hover:bg-zinc-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+                className="w-full py-3 text-sm font-semibold rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+                style={{
+                  backgroundColor: 'var(--color-accent)',
+                  color: 'white',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent)')}
               >
                 {loading ? 'Processando...' : mode === 'login' ? 'Entrar com E-mail' : 'Criar Conta com E-mail'}
               </button>
             </form>
 
             {/* Toggle mode */}
-            <div className="mt-5 pt-5 border-t border-zinc-800/50 text-center">
+            <div className="mt-5 pt-5 text-center" style={{ borderTop: '1px solid var(--color-border)' }}>
               <button
                 onClick={toggleMode}
-                className="text-sm text-zinc-500 hover:text-white transition-colors"
+                className="text-sm transition-colors duration-150"
+                style={{ color: 'var(--color-text-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
               >
                 {mode === 'login' ? (
                   <>
-                    Não tem uma conta? <span className="text-white font-medium">Registre-se</span>
+                    Não tem uma conta? <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Registre-se</span>
                   </>
                 ) : (
                   <>
-                    Já tem uma conta? <span className="text-white font-medium">Faça login</span>
+                    Já tem uma conta? <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Faça login</span>
                   </>
                 )}
               </button>
@@ -216,13 +306,22 @@ export default function AuthForm() {
       </div>
 
       {/* Animation Side */}
-      <div className="hidden lg:flex flex-1 relative bg-black items-center justify-center border-l border-white/[0.02]">
+      <div
+        className="hidden lg:flex flex-1 relative items-center justify-center"
+        style={{
+          backgroundColor: 'black',
+          borderLeft: '1px solid var(--color-border)',
+        }}
+      >
         <ParticleLoader
           progress=""
           thoughts={[]}
         />
         {/* Gradient overlay for blending */}
-        <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#09090b] to-transparent z-10 pointer-events-none"></div>
+        <div
+          className="absolute inset-y-0 left-0 w-32 z-10 pointer-events-none"
+          style={{ background: `linear-gradient(to right, var(--color-bg), transparent)` }}
+        ></div>
       </div>
     </div>
   );

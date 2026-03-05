@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Plus, TrendingUp, LogOut, MapPin, Trash2, MoreVertical } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Building2, Plus, LogOut, Trash2, MoreVertical, Search } from 'lucide-react';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
 import { HotzoneMapButton } from './HotzoneMapButton';
 import UserAvatar from '@/components/ui/UserAvatar';
@@ -57,6 +57,20 @@ export default function SidebarLayout({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // ─── Command Menu (Cmd+K) ───
+  const handleCommandMenu = useCallback((e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      // Command menu placeholder — will be implemented in future iteration
+      console.log('Command Menu triggered');
+    }
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleCommandMenu);
+    return () => document.removeEventListener('keydown', handleCommandMenu);
+  }, [handleCommandMenu]);
+
   useEffect(() => {
     loadBusinesses();
   }, [userId]);
@@ -103,15 +117,9 @@ export default function SidebarLayout({
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-400';
-    if (score >= 60) return 'text-yellow-400';
-    return 'text-red-400';
-  };
-
-  const getScoreBg = (score: number) => {
-    if (score >= 80) return 'bg-green-500/10';
-    if (score >= 60) return 'bg-yellow-500/10';
-    return 'bg-red-500/10';
+    if (score >= 80) return 'var(--color-success)';
+    if (score >= 60) return 'var(--color-warning)';
+    return 'var(--color-destructive)';
   };
 
   const handleDeleteBusiness = async (businessId: string, businessName: string, e: React.MouseEvent) => {
@@ -132,22 +140,36 @@ export default function SidebarLayout({
   };
 
   return (
-    <div className="relative h-screen overflow-hidden" style={{ background: 'lab(5 0 0)' }}>
+    <div className="relative h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
       <div className="absolute inset-0 flex">
 
-        {/* ── LEFT SIDEBAR — hover to expand ──────────────────────────── */}
+        {/* ── LEFT SIDEBAR ──────────────────────────────────────────── */}
         <aside
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="flex-shrink-0 flex flex-col overflow-hidden relative z-30 transition-all duration-300 ease-in-out border-r border-white/[0.04]"
+          className="flex-shrink-0 flex flex-col overflow-hidden relative z-30"
           style={{
             width: isExpanded ? 256 : 52,
-            background: 'lab(5 0 0)',
+            background: 'var(--color-bg)',
+            borderRight: '1px solid var(--color-border)',
+            transition: `width var(--duration-slow) var(--ease-out)`,
           }}
         >
           {/* Logo */}
-          <div className="flex-shrink-0 flex items-center justify-center border-b border-white/[0.04]" style={{ height: 56, position: 'relative' }}>
-            <img src="/logo_icon.png" alt="Logo" className="object-contain" style={{ width: 24, height: 24, position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
+          <div
+            className="flex-shrink-0 flex items-center justify-center"
+            style={{
+              height: 56,
+              position: 'relative',
+              borderBottom: '1px solid var(--color-border)',
+            }}
+          >
+            <img
+              src="/logo_icon.png"
+              alt="Logo"
+              className="object-contain"
+              style={{ width: 24, height: 24, position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }}
+            />
           </div>
 
           {/* New Business */}
@@ -155,13 +177,30 @@ export default function SidebarLayout({
             <button
               onClick={onCreateNew}
               title="Novo Negócio"
-              className="w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] overflow-hidden"
-              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
+              style={{
+                height: 36,
+                paddingLeft: 10,
+                paddingRight: 10,
+                color: 'var(--color-text-tertiary)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
             >
               <Plus className="w-4 h-4 flex-shrink-0" />
               <span
-                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
-                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
+                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
+                style={{
+                  opacity: isExpanded ? 1 : 0,
+                  maxWidth: isExpanded ? 160 : 0,
+                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
+                }}
               >
                 Novo Negócio
               </span>
@@ -173,14 +212,35 @@ export default function SidebarLayout({
             <button
               onClick={() => setIsPinned(!isPinned)}
               title="Negócios"
-              className={`w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 overflow-hidden ${isPinned ? 'text-zinc-200 bg-white/[0.07]' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06]'
-                }`}
-              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
+              style={{
+                height: 36,
+                paddingLeft: 10,
+                paddingRight: 10,
+                color: isPinned ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                backgroundColor: isPinned ? 'var(--color-surface-active)' : 'transparent',
+              }}
+              onMouseEnter={e => {
+                if (!isPinned) {
+                  e.currentTarget.style.color = 'var(--color-text-secondary)';
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isPinned) {
+                  e.currentTarget.style.color = 'var(--color-text-muted)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }
+              }}
             >
               <Building2 className="w-4 h-4 flex-shrink-0" />
               <span
-                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
-                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
+                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
+                style={{
+                  opacity: isExpanded ? 1 : 0,
+                  maxWidth: isExpanded ? 160 : 0,
+                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
+                }}
               >
                 Negócios
               </span>
@@ -192,11 +252,14 @@ export default function SidebarLayout({
             {isExpanded && (
               loading ? (
                 <div className="flex justify-center py-6">
-                  <div className="w-5 h-5 rounded-full border-2 border-zinc-700 border-t-violet-500/60 animate-spin" />
+                  <div
+                    className="w-5 h-5 rounded-full border-2 animate-spin"
+                    style={{ borderColor: 'var(--color-border-strong)', borderTopColor: 'var(--color-accent)' }}
+                  />
                 </div>
               ) : businesses.length === 0 ? (
                 <div className="flex items-center gap-2 px-2 py-3">
-                  <p className="text-[11px] text-zinc-600">Nenhum negócio cadastrado</p>
+                  <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Nenhum negócio cadastrado</p>
                 </div>
               ) : (
                 businesses.map((business) => {
@@ -211,22 +274,32 @@ export default function SidebarLayout({
                         href={`/analysis/${business.id}`}
                         scroll={false}
                         title={business.name}
-                        className={`flex items-center gap-2.5 rounded-lg transition-all duration-200 overflow-hidden ${isActive ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]'}`}
-                        style={{ height: 36, paddingLeft: 8, paddingRight: 32 }}
+                        className="flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
+                        style={{
+                          height: 36,
+                          paddingLeft: 8,
+                          paddingRight: 32,
+                          backgroundColor: isActive ? 'var(--color-surface-active)' : 'transparent',
+                        }}
+                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
+                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
                       >
                         <div
                           className="flex-shrink-0 flex items-center justify-center rounded-md"
-                          style={{ width: 24, height: 24, background: 'rgba(255,255,255,0.05)', minWidth: 24 }}
+                          style={{ width: 24, height: 24, background: 'var(--color-surface-hover)', minWidth: 24 }}
                         >
-                          <Building2 className="w-3 h-3 text-zinc-500" />
+                          <Building2 className="w-3 h-3" style={{ color: 'var(--color-text-muted)' }} />
                         </div>
                         <div className="flex-1 min-w-0 flex items-center justify-between">
                           <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-medium text-zinc-300 truncate leading-none">{business.name}</p>
-                            <p className="text-[10px] text-zinc-600 truncate mt-0.5">{displaySegment}</p>
+                            <p className="text-[12px] font-medium truncate leading-none" style={{ color: 'var(--color-text-secondary)' }}>{business.name}</p>
+                            <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{displaySegment}</p>
                           </div>
                           {business.latest_analysis && (
-                            <span className={`text-[10px] font-bold ml-2 flex-shrink-0 ${getScoreColor(business.latest_analysis.score_geral)}`}>
+                            <span
+                              className="text-[10px] font-bold ml-2 flex-shrink-0 tabular-nums"
+                              style={{ color: getScoreColor(business.latest_analysis.score_geral) }}
+                            >
                               {business.latest_analysis.score_geral}
                             </span>
                           )}
@@ -235,18 +308,32 @@ export default function SidebarLayout({
                       <div className="absolute right-1 top-0 bottom-0 flex items-center" ref={openMenuId === business.id ? menuRef : null}>
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(openMenuId === business.id ? null : business.id); }}
-                          className={`p-1 hover:bg-white/[0.06] rounded-md transition-colors ${openMenuId === business.id ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                          className={`p-1 rounded-md transition-all duration-150 ${openMenuId === business.id ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                          style={{
+                            color: 'var(--color-text-muted)',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                         >
-                          <MoreVertical className="w-3 h-3 text-zinc-600" />
+                          <MoreVertical className="w-3 h-3" />
                         </button>
                         {openMenuId === business.id && (
                           <div
-                            className="absolute right-0 bottom-full mb-1 w-40 bg-[#111113] border border-white/[0.06] rounded-xl overflow-hidden z-50 shadow-xl shadow-black/50"
+                            className="absolute right-0 bottom-full mb-1 w-40 rounded-lg overflow-hidden z-50"
+                            style={{
+                              backgroundColor: 'var(--color-surface-1)',
+                              border: '1px solid var(--color-border)',
+                              boxShadow: 'var(--shadow-popover)',
+                              animation: 'fade-in-up 0.1s ease-out',
+                            }}
                             onClick={e => e.stopPropagation()}
                           >
                             <button
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(null); handleDeleteBusiness(business.id, business.name, e); }}
-                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors text-left"
+                              style={{ color: 'var(--color-destructive)' }}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-destructive-muted)')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                               <span>Excluir negócio</span>
@@ -261,18 +348,59 @@ export default function SidebarLayout({
             )}
           </div>
 
-          {/* Footer — logout */}
-          <div className="flex-shrink-0 px-2 py-3 border-t border-white/[0.04]">
+          {/* Footer — Cmd+K hint + logout */}
+          <div className="flex-shrink-0 px-2 py-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+            {/* Cmd+K shortcut hint */}
+            {isExpanded && (
+              <div
+                className="flex items-center gap-2 px-2.5 py-2 mb-2 rounded-lg cursor-default"
+                style={{
+                  backgroundColor: 'var(--color-surface-hover)',
+                  animation: 'fade-in 0.2s ease-out',
+                }}
+              >
+                <Search className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />
+                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Buscar...</span>
+                <kbd
+                  className="ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-text-muted)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  ⌘K
+                </kbd>
+              </div>
+            )}
+
             <button
               onClick={onLogout}
               title="Sair"
-              className="w-full flex items-center gap-2.5 rounded-lg transition-all duration-200 text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.05] overflow-hidden"
-              style={{ height: 36, paddingLeft: 10, paddingRight: 10 }}
+              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
+              style={{
+                height: 36,
+                paddingLeft: 10,
+                paddingRight: 10,
+                color: 'var(--color-text-muted)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+                e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-muted)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
             >
               <LogOut className="w-4 h-4 flex-shrink-0" />
               <span
-                className="text-[12px] font-medium whitespace-nowrap transition-all duration-300 overflow-hidden"
-                style={{ opacity: isExpanded ? 1 : 0, maxWidth: isExpanded ? 160 : 0 }}
+                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
+                style={{
+                  opacity: isExpanded ? 1 : 0,
+                  maxWidth: isExpanded ? 160 : 0,
+                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
+                }}
               >
                 Sair da Conta
               </span>
@@ -296,8 +424,11 @@ export default function SidebarLayout({
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Top Header Bar */}
           <header
-            className="flex-shrink-0 flex items-center justify-end border-b border-white/[0.04] px-4 z-[60]"
-            style={{ height: 56 }}
+            className="flex-shrink-0 flex items-center justify-end px-4 z-[60]"
+            style={{
+              height: 56,
+              borderBottom: '1px solid var(--color-border)',
+            }}
           >
             <UserAvatar />
           </header>
@@ -305,7 +436,14 @@ export default function SidebarLayout({
           {/* Content */}
           <main className="flex-1 overflow-hidden" style={{ height: 'calc(100% - 56px)' }}>
             {error && (
-              <div className="m-6 p-4 bg-red-500/10 rounded-xl text-red-400">
+              <div
+                className="m-6 p-4 rounded-lg text-sm"
+                style={{
+                  backgroundColor: 'var(--color-destructive-muted)',
+                  color: 'var(--color-destructive)',
+                  border: '1px solid rgba(239,68,68,0.15)',
+                }}
+              >
                 {error}
               </div>
             )}
@@ -318,7 +456,8 @@ export default function SidebarLayout({
           <>
             {rightSidebarOpen && (
               <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300"
+                className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[60]"
+                style={{ animation: 'fade-in 0.2s ease-out' }}
                 onClick={() => setRightSidebarOpen(false)}
               />
             )}
@@ -327,7 +466,11 @@ export default function SidebarLayout({
               setRightSidebarOpen={setRightSidebarOpen}
             />
             <aside
-              className={`fixed top-0 right-0 bottom-0 z-[65] transition-all duration-500 ease-in-out overflow-hidden ${rightSidebarOpen ? 'w-[80vw]' : 'w-0'}`}
+              className="fixed top-0 right-0 bottom-0 z-[65] overflow-hidden"
+              style={{
+                width: rightSidebarOpen ? '80vw' : 0,
+                transition: `width 500ms var(--ease-out)`,
+              }}
             >
               {rightSidebar}
             </aside>

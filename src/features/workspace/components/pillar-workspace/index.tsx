@@ -287,7 +287,7 @@ export default function PillarWorkspace({
         }
 
         return (
-            <div className="h-full bg-[#09090b] flex">
+            <div className="h-full flex" style={{ backgroundColor: 'var(--color-bg)' }}>
                 {/* Left Column - Header and Documents */}
                 <PillarHeader
                     selectedPillar={selectedPillar}
@@ -309,7 +309,7 @@ export default function PillarWorkspace({
                 />
 
                 {/* Right Column - Tasks */}
-                <div className="flex-1 min-w-0 flex flex-col pt-0 relative z-30 overflow-hidden" style={{ backgroundColor: 'lab(5 0 0)' }}>
+                <div className="flex-1 min-w-0 flex flex-col pt-0 relative z-30 overflow-hidden" style={{ backgroundColor: 'var(--color-bg)' }}>
                     <TaskProgressBar
                         totalTasks={totalTasks}
                         completedCount={completedCount}
@@ -325,11 +325,10 @@ export default function PillarWorkspace({
                         <div className="px-6">
                             {/* Dependencies */}
                             {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
-                                <div className={`mb-4 p-3 rounded-lg ${deps.blockers?.length > 0
-                                    ? 'bg-red-500/[0.04]' : 'bg-amber-500/[0.04]'}`}>
+                                <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: deps.blockers?.length > 0 ? 'var(--color-destructive-muted)' : 'var(--color-warning-muted)' }}>
                                     <div className="flex items-center gap-2 mb-2">
-                                        <Link2 className="w-4 h-4 text-amber-400" />
-                                        <span className="text-xs font-semibold text-amber-400">Dependências</span>
+                                        <Link2 className="w-4 h-4" style={{ color: 'var(--color-warning)' }} />
+                                        <span className="text-xs font-semibold" style={{ color: 'var(--color-warning)' }}>Dependências</span>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
                                         {(deps.blockers || []).map((b: any) => <DepBadge key={b.pillar} dep={b} />)}
@@ -339,9 +338,9 @@ export default function PillarWorkspace({
                             )}
 
                             {error && (
-                                <div className="mb-4 p-3 rounded-xl bg-red-950/30 text-red-200 text-sm">
+                                <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-destructive-muted)', color: 'var(--color-destructive)', border: '1px solid rgba(239,68,68,0.15)' }}>
                                     {error}
-                                    <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">Fechar</button>
+                                    <button onClick={() => setError('')} className="ml-2 underline text-xs" style={{ color: 'var(--color-destructive)' }}>Fechar</button>
                                 </div>
                             )}
                         </div>

@@ -9,8 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "docx": "^9.6.0",
-    "file-saver": "^2.0.5",
     "googleapis": "^171.4.0",
     "lucide-react": "^0.563.0",
     "next": "16.1.3",

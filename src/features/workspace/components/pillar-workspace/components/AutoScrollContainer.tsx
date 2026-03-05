@@ -60,7 +60,20 @@ export function AutoScrollContainer({ children }: { children: React.ReactNode })
                 <div className="absolute bottom-25 left-0 right-0 flex justify-center pointer-events-none z-20">
                     <button
                         onClick={scrollToBottom}
-                        className="pointer-events-auto w-7 h-7 flex items-center justify-center rounded-full bg-zinc-800 border border-white/10 text-zinc-400 shadow-lg hover:bg-zinc-700 hover:text-zinc-200 transition-all active:scale-95"
+                        className="pointer-events-auto w-7 h-7 flex items-center justify-center rounded-full shadow-lg transition-all active:scale-95"
+                        style={{
+                            backgroundColor: 'var(--color-surface-hover)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-secondary)',
+                        }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-active)';
+                            e.currentTarget.style.color = 'var(--color-text-primary)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                        }}
                     >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 2.5v7M3 7l3 3 3-3" />

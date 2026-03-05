@@ -142,7 +142,6 @@ export default function Home() {
 
               // SUCCESS! NOW ROUTE TO APP ROUTER DYNAMIC ROUTE
               if (result.business_id) {
-                // Instantly teleport the user out of the single-page state into the clean Next.JS Rote
                 router.push(`/analysis/${result.business_id}`);
                 return;
               }
@@ -163,7 +162,6 @@ export default function Home() {
   };
 
   const handleCreateNewBusiness = () => {
-    // Already in creation mode at Home route
     setError('');
   };
 
@@ -182,24 +180,27 @@ export default function Home() {
       if (!result.success) {
         throw new Error(result.error || 'Falha ao excluir negócio');
       }
-
-      // If we are making a new business, we stay here.
     } catch (err: any) {
       throw new Error(err.message || 'Erro ao excluir negócio');
     }
   };
 
   if (authLoading || !isAuthenticated) {
-    return <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-2 border-zinc-600 border-t-transparent mx-auto"></div>
-    </div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg)' }}>
+        <div
+          className="animate-spin rounded-full h-8 w-8 border-2 mx-auto"
+          style={{ borderColor: 'var(--color-border-strong)', borderTopColor: 'transparent' }}
+        ></div>
+      </div>
+    );
   }
 
   return (
     <SidebarLayout
       userId={user?.id || 'default_user'}
       currentBusinessId={null}
-      onSelectBusiness={() => { }} // Navigated purely via `<Link>` out-of-the-box now inside SidebarLayout
+      onSelectBusiness={() => { }}
       onCreateNew={handleCreateNewBusiness}
       onDeleteBusiness={handleDeleteBusiness}
       onLogout={logout}
@@ -220,13 +221,24 @@ export default function Home() {
 
           {/* Error Message Float */}
           {error && (
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 p-4 rounded-xl bg-red-950/80 border border-red-900/50 text-red-200 text-center shadow-xl backdrop-blur-sm">
+            <div
+              className="absolute top-6 left-1/2 -translate-x-1/2 z-50 p-4 rounded-xl text-center"
+              style={{
+                backgroundColor: 'var(--color-destructive-muted)',
+                border: '1px solid rgba(239,68,68,0.2)',
+                color: 'var(--color-destructive)',
+                boxShadow: 'var(--shadow-lg)',
+                backdropFilter: 'blur(8px)',
+                animation: 'fade-in-up 0.2s ease-out',
+              }}
+            >
               <p className="text-sm font-medium">{error}</p>
               <button
-                onClick={() => {
-                  setError('');
-                }}
-                className="block mx-auto mt-2 text-xs text-red-400 hover:text-red-300 transition-colors"
+                onClick={() => setError('')}
+                className="block mx-auto mt-2 text-xs transition-colors duration-150"
+                style={{ color: 'var(--color-destructive)', opacity: 0.7 }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
               >
                 Fechar
               </button>
