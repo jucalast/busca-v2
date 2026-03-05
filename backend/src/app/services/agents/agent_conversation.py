@@ -76,8 +76,11 @@ def _similar(s1: str, s2: str, threshold: float = 0.8) -> bool:
     return similarity >= threshold
 
 
-def _extract_business_info(message: str, current_profile: dict) -> dict:
-    """Extract business information from user message using LLM."""
+def _extract_business_info(message: str, current_profile: dict, messages: list = None) -> dict:
+    """Extract business information from user message using LLM.
+    
+    Uses conversation history (messages) to understand ambiguous/short references.
+    """
     
     log_debug(f"Extracting info: {message[:60]}...")
     
@@ -119,47 +122,71 @@ def _extract_business_info(message: str, current_profile: dict) -> dict:
         "required": []
     }
     
+    # Build recent conversation context so the LLM understands short/ambiguous messages
+    recent_context = "(primeira mensagem, sem contexto anterior)"
+    if messages and len(messages) > 0:
+        context_lines = []
+        for m in messages[-6:]:  # Last 6 messages for context
+            role_label = "Usuário" if m.get("role") == "user" else "Consultor"
+            content = m.get("content", "")[:200]
+            if content and content != '...':
+                context_lines.append(f"{role_label}: {content}")
+        if context_lines:
+            recent_context = "\n".join(context_lines)
+    
     prompt = f"""
-Você é um extrator de informações de negócios. Extraia SOMENTE as informações que o usuário mencionou explicitamente na mensagem abaixo.
+Você é um extrator de informações de negócios. Extraia as informações da mensagem atual, usando o contexto da conversa para entender referências.
 
-Mensagem do usuário: "{message}"
+CONTEXTO DA CONVERSA RECENTE:
+{recent_context}
 
-Perfil atual conhecido:
+MENSAGEM ATUAL DO USUÁRIO: "{message}"
+
+Perfil atual conhecido (já extraído anteriormente):
 {safe_json_dumps(current_profile, ensure_ascii=False)}
 
-Regras:
-1. Extraia APENAS informações mencionadas EXPLICITAMENTE
-2. NÃO invente ou complete informações
-3. Se não mencionou algo, mantenha o valor atual ou null
-4. Retorne um JSON válido com os campos extraídos
+REGRAS IMPORTANTES:
+1. Extraia informações da MENSAGEM ATUAL, usando o CONTEXTO para entender referências ambíguas
+2. Se a mensagem contém um nome próprio e o consultor perguntou o nome do negócio → é nome_negocio
+3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é problemas/dificuldades
+4. Se a mensagem fala de meta, objetivo, crescimento, aumento → é objetivos
+5. Se a mensagem contém "B2B" ou "B2C" → é modelo
+6. Se a mensagem contém uma cidade/estado → é localizacao
+7. Se a mensagem contém a área de atuação (ex: cyber segurança, restaurante) → é segmento
+8. Se a mensagem contém setor/indústria atendida (ex: setor bancário) → é tipo_cliente
+9. NÃO invente informações que NÃO estão na mensagem
+10. Campos não mencionados devem ser null ou string vazia
 
-Campos para extrair:
-- nome_negocio: Nome do negócio
-- segmento: Área de atuação (ex: restaurante, advocacia, autopeças)
+CAMPOS PARA EXTRAIR:
+- nome_negocio: Nome da empresa/negócio
+- segmento: Área de atuação (ex: cyber segurança, restaurante, advocacia)
 - localizacao: Cidade/Estado
 - modelo: Modelo de negócio (B2B, B2C, D2C ou Misto)
 - tipo_produto: Tipo de oferta (produto, serviço ou ambos)
 - faturamento: Faturamento mensal
 - equipe: Número de pessoas na equipe
 - ticket_medio: Ticket médio por venda/serviço
-- problemas: Problemas e desafios principais
-- objetivos: Objetivos e metas
+- problemas: Problemas e desafios principais (inclui "conseguir mais clientes", "vender mais", etc)
+- objetivos: Objetivos e metas de crescimento (ex: "10% a mais no faturamento")
 - investimento: Investimento em marketing
 - canais: Canais de venda/comunicação
 - clientes: Tipo de clientes
-- concorrentes: Concorrentes diretos (quem vende o MESMO produto/serviço para os MESMOS clientes)
-- fornecedores: Fornecedores de matéria-prima/insumos (NÃO são concorrentes)
-- tipo_cliente: Tipos de clientes/indústrias atendidas (ex: alimentos, autopeças, cosméticos)
-- capacidade_produtiva: Capacidade de produção/volume (ex: 50 mil caixas/mês)
-- regiao_atendimento: Região geográfica atendida (local, estadual, nacional, etc)
+- concorrentes: Concorrentes diretos
+- fornecedores: Fornecedores de matéria-prima/insumos
+- tipo_cliente: Tipos de clientes/indústrias atendidas (ex: setor bancário, alimentos)
+- capacidade_produtiva: Capacidade de produção/volume
+- regiao_atendimento: Região geográfica atendida
 - diferencial: Diferencial competitivo
 - margem: Margem de lucro
 - gargalos: Gargalos operacionais
 - site: Website/URL
 - instagram: Instagram handle
 - whatsapp: WhatsApp
+- linkedin: LinkedIn da empresa (URL ou nome)
+- google_maps: Link do Google Maps ou Google Meu Negócio
+- email_contato: E-mail de contato comercial
 - tempo_operacao: Há quanto tempo o negócio opera
-- modelo_operacional: Modelo operacional (estoque próprio, sob encomenda, dropshipping)
+- modelo_operacional: Modelo operacional
 - capital_disponivel: Capital disponível para investir
 - tempo_entrega: Prazo médio de entrega
 - origem_clientes: De onde vêm os clientes hoje
@@ -190,9 +217,84 @@ Responda apenas com o JSON, sem texto adicional.
         
         # Merge with current profile (only update non-null values)
         updated_profile = current_profile.copy()
+        new_fields = 0
         for key, value in extracted.items():
             if value is not None and value != "":
                 updated_profile[key] = value
+                new_fields += 1
+        
+        # ── Post-extraction safety net ──
+        # If nome_negocio is still empty, check for explicit name-giving patterns
+        if not updated_profile.get('nome_negocio'):
+            msg_lower = message.lower().strip()
+            # Pattern 1: explicit "o nome é X", "a empresa é X", "chama X"
+            name_patterns = [
+                r'(?:nome|empresa|negócio|negocio)\s+(?:é|e|se chama|chama)\s+(.+)',
+                r'(?:chamo|chamamos)\s+(?:de\s+)?(.+)',
+                r'(?:somos|sou)\s+(?:a|o|da|do)?\s*(.+)',
+            ]
+            for pat in name_patterns:
+                match = re.search(pat, msg_lower)
+                if match:
+                    candidate = match.group(1).strip().rstrip('.,;!')
+                    if candidate and len(candidate) >= 2 and len(candidate.split()) <= 4:
+                        # Capitalize it properly
+                        updated_profile['nome_negocio'] = candidate.title()
+                        new_fields += 1
+                        log_info(f"🔧 Safety net: detected nome_negocio = '{candidate.title()}'")
+                        break
+            
+            # Pattern 2: Only if the assistant SPECIFICALLY asked for the business name
+            if not updated_profile.get('nome_negocio') and messages:
+                last_assistant = None
+                for m in reversed(messages):
+                    if m.get('role') == 'assistant':
+                        last_assistant = m.get('content', '').lower()
+                        break
+                # Much more specific check: require explicit name-asking phrases
+                name_asking_phrases = ['nome da empresa', 'nome do negócio', 'nome do negocio',
+                                       'como se chama', 'qual o nome', 'qual é o nome']
+                if last_assistant and any(phrase in last_assistant for phrase in name_asking_phrases):
+                    # First comma-separated part is likely the name
+                    parts = message.strip().split(',')
+                    candidate = parts[0].strip()
+                    common_phrases = ['sim', 'não', 'nao', 'ok', 'eu', 'meu', 'minha', 'quero',
+                                      'preciso', 'tenho', 'acho', 'pode', 'obrigado', 'obrigada']
+                    if candidate and len(candidate) >= 2 and len(candidate.split()) <= 3 and candidate.lower() not in common_phrases:
+                        updated_profile['nome_negocio'] = candidate.strip()
+                        new_fields += 1
+                        log_info(f"🔧 Safety net: detected nome_negocio = '{candidate}'")
+        
+        # If objetivos is still empty but message mentions growth/increase targets
+        if not updated_profile.get('objetivos'):
+            msg_lower = message.lower()
+            if any(kw in msg_lower for kw in ['% a mais', 'aumentar', 'crescer', 'crescimento', 'dobrar', 'triplicar', 'meta']):
+                updated_profile['objetivos'] = message.strip()
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected objetivos from message")
+        
+        # If problemas/dificuldades is still empty but message mentions common challenges
+        if not updated_profile.get('problemas') and not updated_profile.get('dificuldades'):
+            msg_lower = message.lower()
+            if any(kw in msg_lower for kw in ['conseguir mais', 'dificuldade', 'problema', 'desafio', 'falta de', 'preciso de mais']):
+                updated_profile['problemas'] = message.strip()
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected problemas from message")
+        
+        # If modelo is still empty but message mentions selling to companies/consumers
+        if not updated_profile.get('modelo'):
+            msg_lower = message.lower()
+            if any(kw in msg_lower for kw in ['pra empresa', 'para empresa', 'p/ empresa', 'vendo para empresa',
+                                               'vendemos para empresa', 'b2b', 'business to business',
+                                               'atendo empresa', 'clientes são empresa']):
+                updated_profile['modelo'] = 'B2B'
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected modelo = B2B")
+            elif any(kw in msg_lower for kw in ['consumidor final', 'pessoa física', 'pessoa fisica',
+                                                 'varejo', 'b2c', 'business to consumer', 'pra pessoa']):
+                updated_profile['modelo'] = 'B2C'
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected modelo = B2C")
         
         # Normalize: create aliases so downstream consumers find fields by their expected names
         for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
@@ -202,7 +304,7 @@ Responda apenas com o JSON, sem texto adicional.
             if updated_profile.get(src):
                 updated_profile[dst] = updated_profile[src]
         
-        log_success(f"✅ JSON mode extracted: {len([k for k, v in extracted.items() if v is not None and v != ''])} fields")
+        log_success(f"✅ JSON mode extracted: {new_fields} fields (total profile: {len([k for k, v in updated_profile.items() if v and v != ''])} fields)")
         return updated_profile
         
     except Exception as e:
@@ -336,28 +438,73 @@ def _detect_discovery_gaps(message: str, current_profile: dict) -> list:
 # Sem TODOS estes, a análise fica comprometida (persona errada, queries genéricas)
 CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos']
 
-# Precisa de pelo menos BONUS_MINIMUM destes para enriquecer a análise
-BONUS_FIELDS = ['ticket_medio', 'concorrentes', 'site', 'instagram', 'equipe', 'capital_disponivel', 'fornecedores', 'tipo_cliente', 'capacidade_produtiva', 'regiao_atendimento']
-BONUS_MINIMUM = 2
+# O consultor DEVE perguntar TODOS estes campos antes de liberar a análise
+BONUS_FIELDS = [
+    'faturamento',           # Faturamento mensal
+    'ticket_medio',          # Ticket médio por venda
+    'tipo_produto',          # Produto, serviço ou ambos
+    'equipe',                # Tamanho da equipe
+    'diferencial',           # Diferencial competitivo
+    'concorrentes',          # Concorrentes diretos
+    'canais',                # Canais de venda/comunicação
+    'investimento',          # Investimento em marketing
+    'margem',                # Margem de lucro
+    'tempo_operacao',        # Há quanto tempo opera
+    'modelo_operacional',    # Estoque próprio, sob encomenda, etc
+    'capital_disponivel',    # Capital disponível para investir
+    'gargalos',              # Gargalos operacionais
+    'tipo_cliente',          # Indústrias/setores atendidos
+    'capacidade_produtiva',  # Volume de produção
+    'regiao_atendimento',    # Região geográfica atendida
+    'fornecedores',          # Fornecedores
+    'origem_clientes',       # De onde vêm os clientes
+    'maior_objecao',         # Maior objeção dos clientes
+    'site',                  # Website
+    'instagram',             # Instagram
+    'whatsapp',              # WhatsApp
+    'linkedin',              # LinkedIn da empresa
+    'google_maps',           # Google Maps / Google Meu Negócio
+    'email_contato',         # E-mail de contato
+    'tempo_entrega',         # Prazo médio de entrega
+]
+BONUS_MINIMUM = len(BONUS_FIELDS)  # TODOS são obrigatórios
 
 # Labels em português para injeção natural no prompt
 _FIELD_LABELS_PT = {
+    # Críticos
     'nome_negocio': 'nome do negócio',
     'segmento': 'segmento/área de atuação',
     'modelo': 'modelo de negócio (B2B ou B2C)',
     'localizacao': 'localização (cidade/estado)',
     'dificuldades': 'principais dificuldades/desafios',
     'objetivos': 'objetivos de crescimento',
+    # Bônus (todos obrigatórios)
+    'faturamento': 'faturamento mensal',
     'ticket_medio': 'ticket médio por venda',
-    'concorrentes': 'concorrentes diretos (quem vende o mesmo produto/serviço)',
-    'fornecedores': 'fornecedores de matéria-prima/insumos',
+    'tipo_produto': 'tipo de oferta (produto, serviço ou ambos)',
+    'equipe': 'tamanho da equipe',
+    'diferencial': 'diferencial competitivo',
+    'concorrentes': 'concorrentes diretos',
+    'canais': 'canais de venda/comunicação atuais',
+    'investimento': 'investimento atual em marketing',
+    'margem': 'margem de lucro',
+    'tempo_operacao': 'há quanto tempo o negócio opera',
+    'modelo_operacional': 'modelo operacional (estoque, sob encomenda, etc)',
+    'capital_disponivel': 'capital disponível para investir',
+    'gargalos': 'gargalos operacionais',
     'tipo_cliente': 'tipos de clientes/indústrias atendidas',
-    'capacidade_produtiva': 'capacidade produtiva / volume de produção',
+    'capacidade_produtiva': 'capacidade produtiva / volume',
     'regiao_atendimento': 'região geográfica de atendimento',
+    'fornecedores': 'fornecedores principais',
+    'origem_clientes': 'de onde vêm os clientes hoje',
+    'maior_objecao': 'maior objeção dos clientes ao comprar',
     'site': 'site/website',
     'instagram': 'perfil do Instagram',
-    'equipe': 'tamanho da equipe',
-    'capital_disponivel': 'capital disponível para investir',
+    'whatsapp': 'WhatsApp comercial',
+    'linkedin': 'LinkedIn da empresa',
+    'google_maps': 'Google Maps / Google Meu Negócio',
+    'email_contato': 'e-mail de contato comercial',
+    'tempo_entrega': 'prazo médio de entrega',
 }
 
 
@@ -380,7 +527,7 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     log_info(f"Chat consultant processing: {user_message[:50]}...")
     
     # 1. Extract business information
-    updated_profile = _extract_business_info(user_message, extracted_profile)
+    updated_profile = _extract_business_info(user_message, extracted_profile, messages)
     
     # 1.5. Track missing critical fields ("lista de compras")
     missing_critical, missing_bonus, bonus_count, all_missing = _compute_missing_fields(updated_profile)
@@ -432,10 +579,40 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     if discovery_gaps:
         gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}. Diga 'Não se preocupe, vamos descobrir isso automaticamente na análise.' NÃO tente pesquisar ou adivinhar.\n"
     
+    # ── Detect if user is explicitly asking for remaining questions ──
+    user_asking_for_questions = False
+    msg_lower = user_message.lower()
+    if any(kw in msg_lower for kw in ['perguntas restantes', 'quais perguntas', 'todas as perguntas',
+                                       'falta perguntar', 'mais perguntas', 'o que falta',
+                                       'que mais precisa', 'que mais quer saber',
+                                       'me mande todas', 'me de todas', 'mande todas',
+                                       'liste todas', 'quero todas', 'me fale todas',
+                                       'me dê todas', 'me diga todas']):
+        user_asking_for_questions = True
+    
     # ── Readiness-aware instruction block ──
     ready_now = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
     
-    if ready_now:
+    # If user explicitly asks for remaining questions, always list them
+    if user_asking_for_questions:
+        all_remaining = missing_critical + missing_bonus
+        all_remaining_labels = [_FIELD_LABELS_PT.get(f, f) for f in all_remaining]
+        # Build a numbered list so the LLM copies it verbatim
+        lista_str = "\n".join([f"  {i+1}. {label}" for i, label in enumerate(all_remaining_labels)])
+        total = len(all_remaining_labels)
+        status_instruction = f"""
+ESTADO: O usuário PEDIU para ver TODAS as perguntas. Existem {total} informações pendentes.
+
+INSTRUÇÃO OBRIGATÓRIA — COPIE A LISTA ABAIXO INTEIRA, SEM RESUMIR, SEM "ETC.", SEM CORTAR:
+- Liste TODAS as {total} informações abaixo usando uma lista numerada.
+- NÃO resuma. NÃO use "etc.". NÃO pule nenhum item. Copie CADA LINHA abaixo.
+- Diga que TODAS são obrigatórias para gerar a análise.
+- Se não há campos faltando, diga que já tem tudo e pode gerar a análise.
+
+LISTA COMPLETA ({total} itens — copie todos):
+{lista_str}
+"""
+    elif ready_now:
         # ALL fields collected → offer analysis, don't ask more questions
         status_instruction = """
 ESTADO: ✅ TENHO TODAS AS INFORMAÇÕES NECESSÁRIAS.
@@ -459,14 +636,15 @@ INSTRUÇÃO:
 - Seja BREVE. Não repita o que o usuário já disse. Máximo 6-8 linhas.
 """
     else:
-        bonus_missing = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:2]]
+        bonus_missing = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:3]]
         campos_str = ", ".join(bonus_missing)
         status_instruction = f"""
-ESTADO: Dados críticos OK. Faltam dados extras para uma análise melhor: {campos_str}
+ESTADO: ⚠️ Dados críticos OK, mas AINDA faltam informações importantes: {campos_str}
 
 INSTRUÇÃO:
-- Pergunte NATURALMENTE por 1 desses campos, OU ofereça gerar a análise com o que já tem.
-- Diga algo como "Posso gerar sua análise agora ou, se quiser, me conta [campo] para aprofundar ainda mais."
+- Pergunte NATURALMENTE por 1-2 desses campos na conversa.
+- NÃO ofereça gerar a análise ainda. Todas as perguntas precisam ser respondidas primeiro.
+- NÃO liste perguntas como formulário. Faça parecer conversa real.
 - Seja BREVE. Máximo 6-8 linhas.
 """
     

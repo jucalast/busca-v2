@@ -188,18 +188,26 @@ export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExpo
     const fillAngle = -78 + (currentScore / 100) * 156;
     const displayInt = Math.round(currentScore);
 
+    // Find current segment color for shadow
+    const getCurrentSegmentColor = () => {
+        for (const seg of segments) {
+            if (fillAngle <= seg.start) return segments[0].color;
+            if (fillAngle >= seg.start && fillAngle <= seg.end) return seg.color;
+        }
+        return segments[segments.length - 1].color;
+    };
+
     return (
         <div className="w-full flex flex-col relative">
-            {/* Efeito de Sombra Colorida */}
-            <div
-                className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[500px] opacity-20 blur-[130px] pointer-events-none transition-colors duration-1000 z-0"
-                style={{ background: `radial-gradient(circle, ${statusData.color} 0%, transparent 70%)` }}
-            />
-
             {/* PARTE SUPERIOR: DOIS CARTÕES */}
             <div className="flex flex-col md:flex-row gap-0 w-full relative z-10">
                 {/* CARTÃO ESQUERDO: SCORE */}
                 <div className="flex-1 relative h-[160px] overflow-hidden p-8 shadow-2xl border-r border-white/[0.04]">
+                    {/* Efeito de Sombra Colorida apenas neste card */}
+                    <div
+                        className="absolute -top-20 right-1/4 translate-x-1/2 w-[700px] h-[500px] opacity-20 blur-[130px] pointer-events-none transition-colors duration-1000 z-0"
+                        style={{ background: `radial-gradient(circle, ${getCurrentSegmentColor()} 0%, transparent 70%)` }}
+                    />
                     <div className="absolute top-8 left-8">
                         <div className="text-zinc-500 text-xs mb-1 font-bold uppercase tracking-[0.2em]">
                             Score Comercial Total
