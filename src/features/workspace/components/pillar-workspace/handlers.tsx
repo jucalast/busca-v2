@@ -7,6 +7,7 @@ export const useTaskHandlers = (
     apiCall: (action: string, data: any, options?: { signal?: AbortSignal, skipCache?: boolean }) => Promise<any>,
     profile: any,
     taskSubtasks: Record<string, any>,
+    taskDeliverables: Record<string, any>,
     autoExecResults: Record<string, Record<number, any>>,
     setTaskSubtasks: React.Dispatch<React.SetStateAction<Record<string, any>>>,
     setAutoExecuting: React.Dispatch<React.SetStateAction<string | null>>,
@@ -120,7 +121,7 @@ export const useTaskHandlers = (
                     if (statusRes.success && statusRes.progress) {
                         const { status, current_step, total_steps, result_data, error_message, subtask_results } = statusRes.progress;
 
-                        console.log('🔍 Polling status:', { status, current_step, total_steps, taskId: task.id, tid });
+                        console.log('🔍 Polling status:', { status, current_step, total_steps, taskId: task.id, tid, hasResultData: !!result_data });
 
                         // Status finais possíveis
                         const finalStatuses = ['done', 'completed', 'finalization', 'finalized', 'success'];
@@ -135,12 +136,26 @@ export const useTaskHandlers = (
                         if (subtasks) {
                             const newStatuses: Record<number, any> = {};
                             for (let i = 0; i < subtasks.length; i++) {
-                                if (finalStatuses.includes(status)) newStatuses[i] = 'done';
-                                else if (i + 1 < current_step) newStatuses[i] = 'done';
-                                else if (i + 1 === current_step && status === 'running') newStatuses[i] = 'running';
-                                else if (i + 1 === current_step && status === 'error') newStatuses[i] = 'error';
-                                else newStatuses[i] = 'waiting';
+                                if (finalStatuses.includes(status)) {
+                                    // Status final: todas as subtarefas estão completas
+                                    newStatuses[i] = 'done';
+                                } else if (i + 1 < current_step) {
+                                    newStatuses[i] = 'done';
+                                } else if (i + 1 === current_step && status === 'running') {
+                                    newStatuses[i] = 'running';
+                                } else if (i + 1 === current_step && status === 'error') {
+                                    newStatuses[i] = 'error';
+                                } else {
+                                    newStatuses[i] = 'waiting';
+                                }
                             }
+                            
+                            // Se status final, também marca a subtarefa de finalização (se existir)
+                            if (finalStatuses.includes(status) && total_steps > subtasks.length) {
+                                newStatuses[subtasks.length] = 'done'; // Finalization task
+                            }
+                            
+                            console.log('🔄 Updating subtask statuses:', { tid, newStatuses, totalSteps: total_steps, subtaskCount: subtasks.length });
                             setAutoExecStatuses(prev => ({ ...prev, [tid]: newStatuses }));
                         }
 
@@ -158,18 +173,35 @@ export const useTaskHandlers = (
                         }
 
                         if (finalStatuses.includes(status)) {
-                            console.log('✅ Final status detected:', { status, hasResultData: !!result_data, taskId: task.id });
+                            console.log('✅ Final status detected:', { status, hasResultData: !!result_data, taskId: task.id, resultDataLength: result_data ? Object.keys(result_data).length : 0 });
+                            
+                            // Garante que o progresso mostre 100% completado
+                            setAutoExecStep(total_steps);
+                            setAutoExecTotal(total_steps);
+                            
                             if (result_data) {
+                                console.log('💾 Saving deliverable to state:', { tid, resultDataKeys: Object.keys(result_data) });
                                 setTaskDeliverables(prev => ({ ...prev, [tid]: result_data }));
                                 setCompletedTasks(prev => {
                                     const s = new Set(prev[pillarKey] || []);
                                     s.add(task.id);
                                     s.add(tid);
+                                    console.log('✅ Task marked as completed:', { taskId: task.id, tid, totalCompleted: s.size });
                                     return { ...prev, [pillarKey]: s };
                                 });
+                                setAutoExecuting(null);
+                                return true; // Stop polling
+                            } else {
+                                console.log('⚠️ Final status but no result_data:', { status, taskId: task.id });
+                                // Additional safety check: continue polling if we have final status but no deliverable yet
+                                const currentDeliverable = taskDeliverables?.[tid];
+                                if (!currentDeliverable) {
+                                    console.log('⚠️ Final status detected but no deliverable yet, continuing polling...', { tid, status });
+                                    return false; // Continue polling
+                                }
+                                setAutoExecuting(null);
+                                return true; // Stop polling
                             }
-                            setAutoExecuting(null);
-                            return true; // Stop polling
                         } else if (status === 'error' || status === 'cancelled') {
                             console.log('❌ Error/cancelled status:', { status, error_message, taskId: task.id });
                             if (status === 'error') setError(error_message || 'Erro na execução');
@@ -177,15 +209,18 @@ export const useTaskHandlers = (
                             return true; // Stop polling
                         }
                     } else if (statusRes && statusRes.success === false) {
+                        console.log('❌ Polling failed:', statusRes);
                         // If task is not found (deleted) or similar explicit failure
                         setAutoExecuting(null);
                         return true;
+                    } else {
+                        console.log('⏳ No status yet, continuing polling:', { taskId: task.id, tid, statusRes });
                     }
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
 
-                // If it was stopped, abortControllersRef.current[tid] will be undefined
+                // If it was stopped, abort controllers will be undefined
                 if (!abortControllersRef.current[tid]) {
                     console.log('🛑 Polling stopped: abort controller cleared', { tid });
                     return true;
@@ -216,7 +251,7 @@ export const useTaskHandlers = (
             setError(err.message || 'Erro na execução automática');
             setAutoExecuting(null);
         }
-    }, [analysisId, profile, apiCall, taskSubtasks, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setError]);
+    }, [analysisId, profile, apiCall, taskSubtasks, taskDeliverables, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setError]);
 
     // ─── Redo Task Handler ───
     const handleRedoTask = useCallback(async (pillarKey: string, tid: string, task: TaskItem) => {
@@ -284,7 +319,7 @@ export const useTaskHandlers = (
         }
 
         console.log('task.executavel_por_ia:', task.executavel_por_ia, 'success:', success);
-    }, [analysisId, apiCall, setTaskDeliverables, setAutoExecResults, setAutoExecStatuses, setAutoExecSubtasks, setCompletedTasks, setTaskSubtasks, setError]);
+    }, [analysisId, apiCall, setTaskDeliverables, taskDeliverables, setAutoExecResults, setAutoExecStatuses, setAutoExecSubtasks, setCompletedTasks, setTaskSubtasks, setError]);
 
     // ─── Redo Subtasks Handler ───
     const handleRedoSubtasks = useCallback(async (pillarKey: string, tid: string, task: TaskItem) => {

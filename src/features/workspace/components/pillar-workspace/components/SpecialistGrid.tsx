@@ -8,6 +8,7 @@ import { ScoreRing } from './ScoreRing';
 import { ScoreGauge } from './ScoreGauge';
 import { PILLAR_META, PILLAR_ORDER } from '../constants';
 import { safeRender, openInGoogleDocs, exportFullAnalysis } from '../utils';
+import { StackedSources } from './StackedSources';
 
 interface SpecialistGridProps {
     userProfile: { name: string; segment: string };
@@ -60,9 +61,153 @@ export function SpecialistGrid({
     error,
     setError
 }: SpecialistGridProps) {
+    const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = sessionStorage.getItem('tgt_map_transform');
+            if (saved) {
+                try { return JSON.parse(saved); } catch (e) { }
+            }
+        }
+        return { x: 80, y: 150, scale: 0.85 };
+    });
+
+    React.useEffect(() => {
+        if (typeof window !== 'undefined') {
+            sessionStorage.setItem('tgt_map_transform', JSON.stringify(transform));
+        }
+    }, [transform]);
+
+    const [isDragging, setIsDragging] = React.useState(false);
+    const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+    const [hasMoved, setHasMoved] = React.useState(false);
+    const boardRef = React.useRef<HTMLDivElement>(null);
+
+    const handleWheel = (e: React.WheelEvent) => {
+        // Zooming centered on mouse position
+        e.preventDefault();
+        const board = boardRef.current;
+        if (!board) return;
+
+        const rect = board.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomSpeed = 0.0015;
+        const delta = -e.deltaY * zoomSpeed;
+        const newScale = Math.min(Math.max(transform.scale * (1 + delta), 0.1), 4);
+
+        const scaleFactor = newScale / transform.scale;
+
+        setTransform(prev => ({
+            x: mouseX - (mouseX - prev.x) * scaleFactor,
+            y: mouseY - (mouseY - prev.y) * scaleFactor,
+            scale: newScale
+        }));
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        // Panning with just Left Click or Middle Click
+        if (e.button === 0 || e.button === 1) {
+            setIsDragging(true);
+            setHasMoved(false);
+            setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+            // We don't preventDefault here to allow clicks on cards, 
+            // unless we specifically want to block selection while dragging.
+        }
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (isDragging) {
+            const newX = e.clientX - dragStart.x;
+            const newY = e.clientY - dragStart.y;
+
+            // If moved more than 3px, it's a drag
+            if (Math.abs(newX - transform.x) > 3 || Math.abs(newY - transform.y) > 3) {
+                setHasMoved(true);
+            }
+
+            setTransform(prev => ({
+                ...prev,
+                x: newX,
+                y: newY
+            }));
+        }
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+
+    const resetTransform = () => setTransform({ x: 0, y: 0, scale: 0.85 });
+
+    const renderAgentCard = (key: string, index: number) => {
+        const meta = PILLAR_META[key];
+        const dim = dims[key] || {};
+        const isLoading = loadingPillar === key;
+
+        if (!meta) return null;
+
+        const mktCats = marketData?.categories || [];
+        const mktCat = mktCats.find((c: any) => c.id === key);
+        const mktSources = mktCat?.fontes || [];
+        const planSources = pillarStates[key]?.sources || [];
+        const pillarSources = [...new Set([...mktSources, ...planSources])];
+
+        const isExecuted = !!(pillarStates[key] || (completedTasks[key]?.size ?? 0) > 0);
+        const hoverColor = isExecuted ? meta.color : '#4B5563';
+
+        return (
+            <div
+                key={key}
+                className="relative flex flex-col group cursor-pointer transition-all"
+                style={{
+                    animationDelay: `${index * 60}ms`,
+                    animation: 'fade-in-up 0.4s ease-out backwards',
+                }}
+                onClick={() => !isLoading && !hasMoved && handleSelectPillar(key)}
+            >
+                {/* Minimalist Agent Card - Opaque with Subtitle */}
+                <div
+                    className="w-72 h-16 rounded-xl px-5 transition-all duration-200 overflow-hidden relative flex items-center justify-between pointer-events-auto"
+                    style={{ backgroundColor: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = hoverColor;
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = `0 4px 20px -5px ${hoverColor}30`;
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = 'var(--color-border)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                    }}
+                >
+                    <div className="flex flex-col gap-0.5 mt-0.5 truncate pr-4">
+                        <h3 className="text-lg font-normal tracking-tight truncate leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+                            {meta.label}
+                        </h3>
+                        <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[10px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
+                                Diag: {typeof dim.score === 'number' ? Math.round(dim.score) : 0}
+                            </span>
+                            {isExecuted && pillarSources.length > 0 && <StackedSources sources={pillarSources} max={3} />}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200">
+                        {isLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" style={{ color: hoverColor }} />
+                        ) : (
+                            <ChevronRight className="w-4 h-4" style={{ color: hoverColor }} />
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="min-h-full relative z-20" style={{ backgroundColor: 'var(--color-bg)' }}>
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col">
                 {/* Score Gauge Header */}
                 <ScoreGauge
                     score={scoreGeral}
@@ -73,7 +218,24 @@ export function SpecialistGrid({
                     onRedo={onRedo}
                     loadingExport={loadingFullExport}
                     hasSession={!!session?.accessToken}
-                />
+                >
+                    {/* Map Controls */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={resetTransform}
+                            className="p-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-hover)] transition-colors shadow-lg text-[var(--color-text-secondary)] flex items-center gap-2 px-3 h-8"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span className="text-[9px] font-bold uppercase tracking-wider">Resetar Vista</span>
+                        </button>
+                        <div className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[8px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest text-center h-8 flex items-center">
+                            Apenas Arraste p/ Mover
+                        </div>
+                        <div className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[8px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest text-center h-8 flex items-center">
+                            Scroll p/ Zoom
+                        </div>
+                    </div>
+                </ScoreGauge>
 
                 {error && (
                     <div
@@ -89,177 +251,214 @@ export function SpecialistGrid({
                     </div>
                 )}
 
-                {/* Agent Pipeline Architecture */}
-                <div className="w-full max-w-5xl mx-auto px-4 md:px-8 mt-4 pb-16">
-                    <div className="flex items-center gap-3 mb-8 ml-2">
-                        <Users className="w-6 h-6" style={{ color: 'var(--color-text-primary)' }} />
-                        <h2 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>Arquitetura de Agentes</h2>
-                    </div>
+                {/* Agent Pipeline Architecture - Dark Board Section with Dots */}
+                <div className="w-full -mt-[57px] relative z-0 overflow-hidden select-none">
+                    <div
+                        ref={boardRef}
+                        className="w-full relative min-h-[85vh] outline-none cursor-grab active:cursor-grabbing"
+                        style={{
+                            backgroundColor: 'var(--color-bg)',
+                            backgroundImage: `radial-gradient(var(--color-border) 1px, transparent 1px)`,
+                            backgroundSize: '24px 24px',
+                            backgroundPosition: `${transform.x}px ${transform.y}px`
+                        }}
+                        onWheel={handleWheel}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseUp}
+                    >
+                        {/* Hierarchical Content with Transform */}
+                        <div
+                            className="absolute inset-0"
+                            style={{
+                                transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+                                transformOrigin: '0 0',
+                                backfaceVisibility: 'hidden',
+                                WebkitFontSmoothing: 'antialiased',
+                                MozOsxFontSmoothing: 'grayscale',
+                                transformStyle: 'preserve-3d'
+                            }}
+                        >
+                            <div className="flex flex-row items-center justify-start gap-0 relative min-h-[600px] min-w-max px-32">
+                                <style jsx>{`
+                                    .custom-scrollbar::-webkit-scrollbar {
+                                        height: 5px;
+                                        width: 5px;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-track {
+                                        background: transparent;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-thumb {
+                                        background: var(--color-border);
+                                        border-radius: 10px;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                                        background: var(--color-text-tertiary);
+                                    }
+                                `}</style>
 
-                    <div className="relative pl-14 md:pl-20">
-                        {/* Connecting Line */}
-                        <div className="absolute left-[27px] md:left-[39px] top-8 bottom-12 w-[2px] z-0" style={{ backgroundColor: 'var(--color-border)' }}></div>
-
-                        {PILLAR_ORDER.map((key: string, index: number) => {
-                            const meta = PILLAR_META[key];
-                            const Icon = meta.icon;
-                            const dim = dims[key] || {};
-                            const s = typeof dim.score === 'number' ? dim.score : 0;
-                            const spec = specialists[key] || {};
-                            const isLoading = loadingPillar === key;
-
-                            const statusBadge = s >= 70
-                                ? { text: 'Forte', color: 'var(--color-success)', bg: 'var(--color-success-muted)' }
-                                : s >= 40
-                                    ? { text: 'Atenção', color: 'var(--color-warning)', bg: 'var(--color-warning-muted)' }
-                                    : s > 0
-                                        ? { text: 'Crítico', color: 'var(--color-destructive)', bg: 'var(--color-destructive-muted)' }
-                                        : { text: 'Sem dados', color: 'var(--color-text-muted)', bg: 'var(--color-surface-hover)' };
-
-                            const cached = pillarStates[key];
-                            const hasPlan = cached?.plan?.plan_data;
-                            const progress = cached?.progress;
-
-                            return (
-                                <div
-                                    key={key}
-                                    className="relative flex flex-col group cursor-pointer mb-8 transition-opacity"
-                                    style={{
-                                        animationDelay: `${index * 60}ms`,
-                                        animation: 'fade-in-up 0.4s ease-out backwards',
-                                    }}
-                                    onClick={() => !isLoading && handleSelectPillar(key)}
-                                >
-                                    {/* Timeline Node Icon */}
-                                    <div
-                                        className="absolute -left-14 md:-left-20 top-4 w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-[4deg] shadow-md z-10"
-                                        style={{ backgroundColor: 'var(--color-surface-1)', border: `2px solid ${meta.color}` }}
-                                    >
-                                        <Icon className="w-5 h-5 md:w-6 md:h-6" style={{ color: meta.color }} />
-                                    </div>
-
-                                    {/* Agent Workspace Card */}
-                                    <div
-                                        className="w-full rounded-2xl p-0 transition-all duration-300 overflow-hidden relative"
-                                        style={{ backgroundColor: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}
-                                        onMouseEnter={e => {
-                                            e.currentTarget.style.borderColor = meta.color;
-                                            e.currentTarget.style.boxShadow = `0 8px 30px -4px ${meta.color}25`;
-                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                        }}
-                                        onMouseLeave={e => {
-                                            e.currentTarget.style.borderColor = 'var(--color-border)';
-                                            e.currentTarget.style.boxShadow = 'none';
-                                            e.currentTarget.style.transform = 'translateY(0)';
-                                        }}
-                                    >
-                                        <div className="flex flex-col md:flex-row h-full">
-                                            {/* Main Agent Info */}
-                                            <div className="flex-1 p-6 md:p-8 flex flex-col justify-center relative">
-                                                {/* Background subtle glow */}
-                                                <div
-                                                    className="absolute top-0 right-0 w-40 h-40 rounded-bl-full opacity-[0.03] transition-opacity duration-300 group-hover:opacity-[0.08]"
-                                                    style={{ backgroundColor: meta.color, pointerEvents: 'none' }}
+                                {/* SVG DEFS for Dynamic Colored Arrows */}
+                                <svg className="absolute w-0 h-0">
+                                    <defs>
+                                        <marker
+                                            id="arrowhead-inactive"
+                                            markerWidth="16"
+                                            markerHeight="16"
+                                            refX="10"
+                                            refY="8"
+                                            orient="auto"
+                                            markerUnits="userSpaceOnUse"
+                                        >
+                                            <path
+                                                d="M 4 3 L 10 8 L 4 13"
+                                                fill="none"
+                                                stroke="#4B5563"
+                                                strokeWidth="2.5"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        </marker>
+                                        {Object.entries(PILLAR_META).map(([key, meta]) => (
+                                            <marker
+                                                key={`arrow-${key}`}
+                                                id={`arrowhead-${key}`}
+                                                markerWidth="16"
+                                                markerHeight="16"
+                                                refX="10"
+                                                refY="8"
+                                                orient="auto"
+                                                markerUnits="userSpaceOnUse"
+                                            >
+                                                <path
+                                                    d="M 4 3 L 10 8 L 4 13"
+                                                    fill="none"
+                                                    stroke={meta.color}
+                                                    strokeWidth="2.5"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
                                                 />
+                                            </marker>
+                                        ))}
+                                    </defs>
+                                </svg>
 
-                                                <div className="flex items-center gap-3 mb-2 relative z-10">
-                                                    <h3 className="text-lg md:text-xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>Agente {meta.label}</h3>
-                                                    <span
-                                                        className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wide"
-                                                        style={{ color: statusBadge.color, backgroundColor: statusBadge.bg }}
-                                                    >
-                                                        {statusBadge.text}
-                                                    </span>
-                                                </div>
-
-                                                <div className="text-sm font-semibold mb-4 flex items-center gap-2 relative z-10" style={{ color: meta.color }}>
-                                                    <Users className="w-4 h-4" style={{ opacity: 0.8 }} />
-                                                    {spec.cargo || 'Especialista em Análise'}
-                                                </div>
-
-                                                {dim.justificativa && (
-                                                    <p className="text-sm leading-relaxed mb-6 text-left line-clamp-2 relative z-10 font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                                                        {safeRender(dim.justificativa)}
-                                                    </p>
-                                                )}
-
-                                                {hasPlan && progress && (
-                                                    <div className="mt-auto relative z-10 w-full max-w-md">
-                                                        <div className="flex items-center justify-between text-[11px] font-bold mb-2 uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
-                                                            <span>Progresso das Tarefas</span>
-                                                            <span style={{ color: 'var(--color-text-primary)' }}>{progress.completed || 0} / {progress.total || 0} ({progress.total > 0 ? Math.round(((progress.completed || 0) / progress.total) * 100) : 0}%)</span>
-                                                        </div>
-                                                        <div className="h-2 rounded-full overflow-hidden w-full" style={{ backgroundColor: 'var(--color-border)' }}>
-                                                            <div className="h-full rounded-full transition-all duration-700 ease-out"
-                                                                style={{ width: `${progress.total > 0 ? ((progress.completed || 0) / progress.total) * 100 : 0}%`, backgroundColor: meta.color }} />
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {!hasPlan && (
-                                                    <div className="mt-auto text-xs font-semibold py-1.5 px-3 rounded-md self-start relative z-10" style={{ backgroundColor: 'var(--color-surface-hover)', color: 'var(--color-text-muted)' }}>
-                                                        Nenhuma tarefa gerada
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Metrics & Actions Sidebar */}
-                                            <div className="w-full md:w-64 p-6 md:p-8 flex flex-row md:flex-col items-center justify-between gap-5 border-t md:border-t-0 md:border-l relative z-10" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-hover)' }}>
-                                                <div className="flex flex-col items-center justify-center w-full">
-                                                    <ScoreRing score={s} size={76} color={meta.color} />
-                                                    <span className="text-[11px] font-bold uppercase tracking-widest mt-3" style={{ color: 'var(--color-text-tertiary)' }}>Score do Pilar</span>
-                                                </div>
-
-                                                <div className="flex flex-col gap-2.5 w-full mt-2 md:mt-4">
-                                                    <button
-                                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:brightness-110 active:scale-[0.98] shadow-sm"
-                                                        style={{ backgroundColor: meta.color, color: '#FFFFFF' }}
-                                                    >
-                                                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
-                                                        {isLoading ? 'Abrindo...' : 'Abrir Workspace'}
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            const mktCat = marketData?.categories?.find((c: any) => c.id === key);
-                                                            const marketHighlights = (mktCat?.resumo?.pontos_chave || [])
-                                                                .map((p: any) => '• ' + safeRender(p))
-                                                                .join('\n');
-                                                            const highlightsSection = marketHighlights ? `\n${marketHighlights}` : '';
-                                                            const mktInsights = mktCat?.resumo?.visao_geral
-                                                                ? `\n\n**Visão de Mercado:**\n${safeRender(mktCat.resumo.visao_geral)}${highlightsSection}`
-                                                                : '';
-                                                            const contextDeliverable = {
-                                                                id: `context_${key}`,
-                                                                entregavel_titulo: `Contexto de Análise: ${meta.label}`,
-                                                                conteudo_completo: `**Diagnóstico da IA:**\n${safeRender(dim.justificativa || 'Sem dados diagnósticos.')}\n\n**Meta do Pilar:**\n${safeRender(dim.meta_pilar || 'Não definida.')}\n\n**Principal Desafio/Oportunidade:**\n${safeRender(dim.dado_chave || 'Não identificado.')}${mktInsights}`,
-                                                                fontes_consultadas: mktCat?.fontes || []
-                                                            };
-                                                            openInGoogleDocs(contextDeliverable, meta.label, session, setLoadingDoc, `ctx_${key}`);
-                                                        }}
-                                                        disabled={loadingDoc === `ctx_${key}`}
-                                                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all hover:bg-[var(--color-surface-active)]"
-                                                        style={{
-                                                            backgroundColor: 'transparent',
-                                                            color: 'var(--color-text-secondary)',
-                                                            border: '1px solid var(--color-border)'
-                                                        }}
-                                                        onMouseEnter={e => {
-                                                            e.currentTarget.style.color = 'var(--color-text-primary)';
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            e.currentTarget.style.color = 'var(--color-text-secondary)';
-                                                        }}
-                                                    >
-                                                        {loadingDoc === `ctx_${key}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <img src="/docs.png" alt="" className="w-3.5 h-3.5 opacity-70" style={{ filter: 'grayscale(100%)' }} />}
-                                                        Ver Contexto
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                {/* Phase 1: Público-Alvo */}
+                                <div className="flex-none z-10 w-72 flex justify-center">
+                                    {renderAgentCard('publico_alvo', 0)}
                                 </div>
-                            );
-                        })}
+
+                                {/* Flow 1 -> 2 (Colors from publico_alvo) - Curved Branch */}
+                                <div className="w-24 h-[192px] flex-none relative z-0">
+                                    <svg className="w-full h-full" style={{ overflow: 'visible' }}>
+                                        <path
+                                            d="M 0 96 C 36 96, 36 32, 76 32 L 96 32"
+                                            fill="none"
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
+                                        />
+                                        <path
+                                            d="M 0 96 C 36 96, 36 160, 76 160 L 96 160"
+                                            fill="none"
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
+                                        />
+                                    </svg>
+                                </div>
+
+                                {/* Phase 2: Branding & Identidade Visual */}
+                                <div className="flex-none flex flex-col justify-center gap-[64px] z-10 w-72 h-[192px]">
+                                    <div className="flex justify-center">{renderAgentCard('branding', 1)}</div>
+                                    <div className="flex justify-center">{renderAgentCard('identidade_visual', 2)}</div>
+                                </div>
+
+                                {/* Flow 2 -> 3 (Converging curved paths) */}
+                                <div className="w-24 h-[192px] flex-none relative z-0">
+                                    <svg className="w-full h-full" style={{ overflow: 'visible' }}>
+                                        <path
+                                            d="M 0 32 C 36 32, 36 96, 76 96 L 96 96"
+                                            fill="none"
+                                            stroke={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? PILLAR_META['branding'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "url(#arrowhead-branding)" : "url(#arrowhead-inactive)")}
+                                        />
+                                        <path
+                                            d="M 0 160 C 36 160, 36 96, 76 96 L 96 96"
+                                            fill="none"
+                                            stroke={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? PILLAR_META['identidade_visual'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "url(#arrowhead-identidade_visual)" : "url(#arrowhead-inactive)")}
+                                        />
+                                    </svg>
+                                </div>
+
+                                {/* Phase 3: Canais de Venda */}
+                                <div className="flex-none z-10 w-72 flex justify-center">
+                                    {renderAgentCard('canais_venda', 3)}
+                                </div>
+
+                                {/* Flow 3 -> 4 - Curved Branch */}
+                                <div className="w-24 h-[192px] flex-none relative z-0">
+                                    <svg className="w-full h-full" style={{ overflow: 'visible' }}>
+                                        <path
+                                            d="M 0 96 C 36 96, 36 32, 76 32 L 96 32"
+                                            fill="none"
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
+                                        />
+                                        <path
+                                            d="M 0 96 C 36 96, 36 160, 76 160 L 96 160"
+                                            fill="none"
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
+                                        />
+                                    </svg>
+                                </div>
+
+                                {/* Phase 4: Tráfego Orgânico & Pago */}
+                                <div className="flex-none flex flex-col justify-center gap-[64px] z-10 w-72 h-[192px]">
+                                    <div className="flex justify-center">{renderAgentCard('trafego_organico', 4)}</div>
+                                    <div className="flex justify-center">{renderAgentCard('trafego_pago', 5)}</div>
+                                </div>
+
+                                {/* Flow 4 -> 5 - Curved convergence */}
+                                <div className="w-24 h-[192px] flex-none relative z-0">
+                                    <svg className="w-full h-full" style={{ overflow: 'visible' }}>
+                                        <path
+                                            d="M 0 32 C 36 32, 36 96, 76 96 L 96 96"
+                                            fill="none"
+                                            stroke={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? PILLAR_META['trafego_organico'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_organico)" : "url(#arrowhead-inactive)")}
+                                        />
+                                        <path
+                                            d="M 0 160 C 36 160, 36 96, 76 96 L 96 96"
+                                            fill="none"
+                                            stroke={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? PILLAR_META['trafego_pago'].color : '#4B5563')}
+                                            strokeWidth="2.5"
+                                            strokeOpacity={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            markerEnd={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_pago)" : "url(#arrowhead-inactive)")}
+                                        />
+                                    </svg>
+                                </div>
+
+                                {/* Phase 5: Processo de Vendas */}
+                                <div className="flex-none z-10 w-72 flex justify-center">
+                                    {renderAgentCard('processo_vendas', 6)}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

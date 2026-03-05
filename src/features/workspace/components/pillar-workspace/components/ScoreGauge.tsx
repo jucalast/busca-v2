@@ -135,9 +135,10 @@ interface ScoreGaugeProps {
     onRedo: () => void;
     loadingExport?: boolean;
     hasSession?: boolean;
+    children?: React.ReactNode;
 }
 
-export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExport, hasSession }: ScoreGaugeProps) {
+export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExport, hasSession, children }: ScoreGaugeProps) {
     const [currentScore, setCurrentScore] = useState(0);
 
     useEffect(() => {
@@ -186,9 +187,9 @@ export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExpo
     };
 
     return (
-        <div className="w-full flex flex-col relative">
+        <div className="w-full flex flex-col relative border-b border-r border-[var(--color-border)]">
             {/* Top section: two cards */}
-            <div className="flex flex-col md:flex-row gap-0 w-full relative z-10">
+            <div className="flex flex-col md:flex-row gap-0 w-full relative z-10 border-b border-[var(--color-border)]">
                 {/* Left: Score */}
                 <div
                     className="flex-1 relative h-[160px] overflow-hidden p-8"
@@ -272,46 +273,54 @@ export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExpo
 
             {/* Bottom: action bar */}
             <div
-                className="w-full p-2 px-2 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-6 relative z-10"
-                style={{ borderTop: '1px solid var(--color-border)' }}
+                className="w-full p-2 px-2 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-6 relative z-50 bg-transparent"
+                style={{ borderTop: 'none' }}
             >
-                <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--color-success)' }} />
-                    <span className="text-sm font-medium tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
-                        Análise processada com inteligência de dados
-                    </span>
+                <div className="flex items-center gap-2">
+                    {children}
                 </div>
 
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-2.5">
                     <button
                         onClick={onExport}
                         disabled={loadingExport}
-                        className="px-6 py-3 rounded-lg text-[13px] font-semibold transition-all duration-150 active:scale-95 whitespace-nowrap"
+                        className="px-4 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 whitespace-nowrap"
                         style={{
-                            backgroundColor: 'var(--color-surface-2)',
+                            backgroundColor: 'var(--color-surface-1)',
                             color: 'var(--color-text-secondary)',
                             border: '1px solid var(--color-border)',
                         }}
                         onMouseEnter={e => {
-                            e.currentTarget.style.backgroundColor = 'var(--color-surface-3)';
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
                             e.currentTarget.style.color = 'var(--color-text-primary)';
+                            e.currentTarget.style.borderColor = 'var(--color-border-strong)';
                         }}
                         onMouseLeave={e => {
-                            e.currentTarget.style.backgroundColor = 'var(--color-surface-2)';
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-1)';
                             e.currentTarget.style.color = 'var(--color-text-secondary)';
+                            e.currentTarget.style.borderColor = 'var(--color-border)';
                         }}
                     >
-                        {loadingExport ? 'Gerando Doc...' : !hasSession ? 'Login c/ Google' : 'Exportar para Google Docs'}
+                        {loadingExport ? 'Gerando...' : !hasSession ? 'Login c/ Google' : 'Exportar para Google Docs'}
                     </button>
                     <button
                         onClick={onRedo}
-                        className="px-8 py-3 rounded-lg text-white text-[13px] font-bold transition-all duration-150 active:scale-95 whitespace-nowrap"
+                        className="px-4 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 whitespace-nowrap"
                         style={{
-                            backgroundColor: 'var(--color-accent)',
-                            boxShadow: '0 4px 14px rgba(59,130,246,0.25)',
+                            backgroundColor: 'var(--color-surface-1)',
+                            color: 'var(--color-text-secondary)',
+                            border: '1px solid var(--color-border)',
                         }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent)')}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                            e.currentTarget.style.color = 'var(--color-text-primary)';
+                            e.currentTarget.style.borderColor = 'var(--color-border-strong)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = 'var(--color-surface-1)';
+                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                            e.currentTarget.style.borderColor = 'var(--color-border)';
+                        }}
                     >
                         Refazer Diagnóstico
                     </button>

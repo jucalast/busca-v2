@@ -176,23 +176,11 @@ export function PillarHeader({
                     <p className="text-[11px] leading-relaxed mb-3 line-clamp-3" style={{ color: 'var(--color-text-muted)' }}>{diagnostico}</p>
                 )}
 
-                {/* Key insight callout */}
-                {dadoChave && (
-                    <div
-                        className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg"
-                        style={{
-                            background: 'var(--color-surface-hover)',
-                            border: '1px solid var(--color-border)',
-                        }}
-                    >
-                        <Lightbulb className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: 'var(--color-warning)', opacity: 0.7 }} />
-                        <p className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>{dadoChave}</p>
-                    </div>
-                )}
+
 
                 {/* Sources */}
                 {allSources.length > 0 && (
-                    <div>
+                    <div className="mt-4">
                         <div className="flex items-center gap-2 mb-2">
                             <img src="/google.png" alt="Fontes" className="w-3.5 h-3.5" />
                             <span className="text-[10px] font-semibold uppercase tracking-[0.15em]" style={{ color: 'var(--color-text-muted)' }}>Fontes</span>

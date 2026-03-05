@@ -134,6 +134,7 @@ export default function PillarWorkspace({
         apiCall,
         profile,
         taskSubtasks,
+        taskDeliverables,
         autoExecResults,
         setTaskSubtasks,
         setAutoExecuting,
