@@ -522,10 +522,28 @@ class UnifiedPillarAgent:
         competitor_insights = state["competitor_insights"]
         learned_responses = state["learned_responses"]
         
-        # Construir prompt
-        prompt = self._build_output_prompt(
-            pillar_key, profile, upstream_context, 
-            enhanced_research, competitor_insights, learned_responses
+        # Load prompt from YAML
+        from app.core.prompt_loader import load_prompt_file
+        prompt_config = load_prompt_file("pillar_agent.yaml")
+        template = prompt_config.get("structured_analysis", {}).get("prompt_template", "")
+        
+        # Construir contexto upstream formatado
+        upstream_text = "\n".join([f"- {p}: {d.get('status')} (score: {d.get('score')})" for p, d in upstream_context.items()])
+        
+        # Obter configuração do especialista
+        from app.services.agents.pillar_config import get_specialist
+        specialist = get_specialist(pillar_key, profile)
+        
+        prompt = template.format(
+            specialist_persona=specialist.get('persona', 'Especialista'),
+            nome_negocio=profile.get('nome_negocio', 'N/A'),
+            segmento=profile.get('segmento', 'N/A'),
+            localizacao=profile.get('localizacao', 'N/A'),
+            upstream_context=upstream_text,
+            num_sources=len(enhanced_research),
+            num_competitors=len(competitor_insights),
+            num_learned=len(learned_responses),
+            pillar_key=pillar_key
         )
         
         # Chamar LLM
@@ -708,20 +726,15 @@ class UnifiedPillarAgent:
     def _analyze_competitor(self, competitor_data: Dict[str, Any], pillar_key: str) -> Dict[str, Any]:
         """Analisa dados do concorrente com LLM."""
         
-        prompt = f"""
-        Analise este concorrente para o pilar '{pillar_key}':
+        # Load prompt from YAML
+        from app.core.prompt_loader import load_prompt_file
+        prompt_config = load_prompt_file("pillar_agent.yaml")
+        template = prompt_config.get("competitor_analysis", {}).get("prompt_template", "")
         
-        Dados: {safe_json_dumps(competitor_data, ensure_ascii=False)}
-        
-        Extraia insights relevantes em formato JSON:
-        {{
-            'strengths': ['força 1', 'força 2'],
-            'weaknesses': ['fraqueza 1', 'fraqueza 2'],
-            'strategies': ['estratégia 1', 'estratégia 2'],
-            'market_position': 'líder|desafiante|seguidor',
-            'key_differentiators': ['diferencial 1', 'diferencial 2']
-        }}
-        """
+        prompt = template.format(
+            pillar_key=pillar_key,
+            competitor_data=safe_json_dumps(competitor_data, ensure_ascii=False)
+        )
         
         result = call_llm(
             provider="groq",

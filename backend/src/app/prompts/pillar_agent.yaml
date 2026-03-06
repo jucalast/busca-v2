@@ -1,0 +1,46 @@
+structured_analysis:
+  prompt_template: |
+    ## ESPECIALISTA: {specialist_persona}
+
+    ## NEGÓCIO:
+    Nome: {nome_negocio}
+    Segmento: {segmento}
+    Localização: {localizacao}
+
+    ## CONTEXTO UPSTREAM:
+    {upstream_context}
+
+    ## PESQUISA AVANÇADA:
+    Fontes encontradas: {num_sources}
+    Inteligência de concorrentes: {num_competitors}
+    Respostas aprendidas: {num_learned}
+
+    ## MISSÃO:
+    Analise o pilar '{pillar_key}' com base em todo o contexto acima e gere uma saída estruturada completa.
+
+    ## FORMATO DE SAÍDA (JSON):
+    {{
+      "status": "completed|needs_attention|urgent",
+      "score": 0-100,
+      "key_insights": ["insight 1", "insight 2", "insight 3"],
+      "recommendations": ["rec 1", "rec 2", "rec 3"],
+      "action_items": ["action 1", "action 2"],
+      "risks": ["risk 1", "risk 2"],
+      "opportunities": ["opp 1", "opp 2"],
+      "next_steps": ["step 1", "step 2"]
+    }}
+
+competitor_analysis:
+  prompt_template: |
+    Analise este concorrente para o pilar '{pillar_key}':
+
+    Dados: {competitor_data}
+
+    Extraia insights relevantes em formato JSON:
+    {{
+        "strengths": ["força 1", "força 2"],
+        "weaknesses": ["fraqueza 1", "fraqueza 2"],
+        "strategies": ["estratégia 1", "estratégia 2"],
+        "market_position": "líder|desafiante|seguidor",
+        "key_differentiators": ["diferencial 1", "diferencial 2"]
+    }}

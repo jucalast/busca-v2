@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { runOrchestrator, runOrchestratorStreaming } from '@/lib/api/client';
 
+import { auth } from '@/auth';
+
 // ─────────────────────────────────────────────
 // Growth Mode API
 // ─────────────────────────────────────────────
 
 export async function POST(request: Request) {
     try {
+        const session = await auth();
+        const jwtToken = session?.jwtToken || null;
+
         const body = await request.json();
         const { action, onboardingData, task, profile, region, messages, user_message, extracted_profile, user_id, business_id, aiModel } = body;
 
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
                 aiModel,
                 action: 'profile',
                 onboardingData,
-            }, 60000);
+            }, 60000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -39,7 +44,7 @@ export async function POST(request: Request) {
                 region: region || 'br-pt',
                 business_id: business_id || null,
                 user_id: user_id || 'default_user',
-            }, 600000);
+            }, 600000, jwtToken);
 
             return new Response(stream, {
                 headers: {
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
                 action: 'assist',
                 task,
                 profile,
-            }, 60000);
+            }, 60000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('list-businesses', {
                 aiModel,
                 user_id: user_id || 'default_user',
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-business', {
                 aiModel,
                 business_id,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -130,7 +135,7 @@ export async function POST(request: Request) {
                 aiModel,
                 user_id: user_id || 'default_user',
                 profile,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -148,7 +153,7 @@ export async function POST(request: Request) {
                 score,
                 taskPlan,
                 marketData,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -165,7 +170,7 @@ export async function POST(request: Request) {
                 email,
                 password,
                 name: name || null,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -181,7 +186,7 @@ export async function POST(request: Request) {
                 aiModel,
                 email,
                 password,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -193,7 +198,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('logout', {
                 aiModel,
                 token: token || null,
-            }, 10000);
+            }, 10000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -208,7 +213,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('validate-session', {
                 aiModel,
                 token,
-            }, 10000);
+            }, 10000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -243,7 +248,7 @@ export async function POST(request: Request) {
                 analysis_id,
                 pillar_key,
                 user_notes: user_notes || '',
-            }, 10000);
+            }, 10000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -263,7 +268,7 @@ export async function POST(request: Request) {
                 action_title: action_title || '',
                 outcome: outcome || '',
                 business_impact: business_impact || '',
-            }, 10000);
+            }, 10000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -279,7 +284,7 @@ export async function POST(request: Request) {
                 aiModel,
                 analysis_id,
                 pillar_key,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -369,7 +374,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('all-pillars-state', {
                 aiModel,
                 analysis_id,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -388,7 +393,7 @@ export async function POST(request: Request) {
                 meta: meta || '',
                 discovery_data: discovery_data || null,
                 analysis_id: analysis_id || null,
-            }, 120000);
+            }, 120000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -444,7 +449,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('delete-business', {
                 aiModel,
                 business_id,
-            }, 30000);
+            }, 30000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -474,7 +479,7 @@ export async function POST(request: Request) {
 
             const result = await runOrchestrator('pillar-status', {
                 business_id,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -489,7 +494,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-analysis-tasks', {
                 analysis_id,
                 pillar_key,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -504,7 +509,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-pillar-data', {
                 pillar_key,
                 business_id,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -512,7 +517,7 @@ export async function POST(request: Request) {
         // ━━━ Action: Stop Task ━━━
         if (action === 'stop-task') {
             // Frontend handles abort via AbortController, backend just acknowledges
-            const result = await runOrchestrator('stop-task', {}, 5000);
+            const result = await runOrchestrator('stop-task', {}, 5000, jwtToken);
             return NextResponse.json(result);
         }
 
@@ -527,7 +532,7 @@ export async function POST(request: Request) {
                 analysis_id,
                 pillar_key,
                 task_id,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -544,7 +549,7 @@ export async function POST(request: Request) {
                 analysis_id,
                 pillar_key,
                 task_id,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -559,7 +564,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('redo-pillar', {
                 analysis_id,
                 pillar_key,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -574,7 +579,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-subtasks', {
                 analysis_id,
                 pillar_key,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -589,7 +594,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-pillar-executions', {
                 analysis_id,
                 pillar_key,
-            }, 15000);
+            }, 15000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -623,7 +628,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('poll-background-status', {
                 analysis_id,
                 task_id,
-            }, 5000);
+            }, 5000, jwtToken);
 
             return NextResponse.json(result);
         }

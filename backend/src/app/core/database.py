@@ -3,33 +3,48 @@ Database Layer — SQLite persistence for multi-business support.
 Stores users, businesses, analyses, and dimension chats.
 """
 
-import sqlite3
 import json
 import os
 import hashlib
 import secrets
+import logging
+import bcrypt
+import jwt
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 
-# Database location (moved to app/core, so we need one more .parent)
+logger = logging.getLogger(__name__)
+
+# Database location (deprecated for Postgres, but kept for context if needed)
 DB_DIR = Path(__file__).parent.parent.parent.parent.parent / 'data'
-DB_DIR.mkdir(exist_ok=True)
-DB_PATH = DB_DIR / 'growth_platform.db'
+DB_DIR.mkdir(exist_ok=True) # Keep mkdir for consistency, though DB_PATH is not used
+DB_PATH = DB_DIR / 'growth_platform.db' # Keep for context, not used
+
+# PostgreSQL
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# JWT Configuration
+JWT_SECRET = os.environ.get("NEXTAUTH_SECRET") or os.environ.get("JWT_SECRET") or "dev_secret_keys_change_in_production"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
 
 
 def get_connection():
-    """Get database connection with JSON support."""
-    # Add timeout to avoid locks during concurrent access
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    """Get native PostgreSQL database connection."""
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL is not set. A valid PostgreSQL connection string is required.")
+    conn = psycopg2.connect(db_url)
     return conn
 
 
 def init_db():
-    """Initialize database schema."""
+    """Initialize database schema native to PostgreSQL."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # Users table - now with authentication
     cursor.execute('''
@@ -43,7 +58,21 @@ def init_db():
             metadata TEXT
         )
     ''')
-    
+    conn.commit()
+
+    # Migration: Stripe Billing columns
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'free'")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     # Sessions table - for authentication
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
@@ -55,7 +84,7 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
-    
+
     # Businesses table - each user can have multiple businesses
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS businesses (
@@ -244,18 +273,21 @@ def init_db():
             UNIQUE(analysis_id, task_id)
         )
     ''')
-    
+    conn.commit()
+
     # Migration: add status column to specialist_results if missing
     try:
         cursor.execute("ALTER TABLE specialist_results ADD COLUMN status TEXT DEFAULT 'pending'")
+        conn.commit()
     except Exception:
-        pass  # Column already exists
+        conn.rollback()  # Column already exists
     
     # Migration: add unique index to specialist_executions for upsert support
     try:
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_specialist_executions_unique ON specialist_executions (analysis_id, pillar_key, task_id)')
+        conn.commit()
     except Exception:
-        pass
+        conn.rollback()
     
     # Research cache table for unified research system
     cursor.execute('''
@@ -271,7 +303,7 @@ def init_db():
     # Research results table for analytics
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS research_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             research_type TEXT NOT NULL,
             cache_key TEXT NOT NULL,
             data TEXT NOT NULL,
@@ -294,13 +326,26 @@ def init_db():
 # ═══════════════════════════════════════════════════════════════════
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA-256."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash a password using bcrypt (secure, salted)."""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def _is_bcrypt_hash(password_hash: str) -> bool:
+    """Check if a hash is bcrypt format (starts with $2b$)."""
+    return password_hash.startswith('$2b$') or password_hash.startswith('$2a$')
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a hash."""
-    return hash_password(password) == password_hash
+    """Verify a password against a hash.
+    
+    Supports both bcrypt (new) and SHA-256 (legacy) hashes.
+    Legacy SHA-256 hashes are auto-migrated to bcrypt on successful verification.
+    """
+    if _is_bcrypt_hash(password_hash):
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    else:
+        # Legacy SHA-256 fallback
+        return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
 
 def generate_session_token() -> str:
@@ -311,7 +356,7 @@ def generate_session_token() -> str:
 def create_session(user_id: str, duration_days: int = 30) -> Dict:
     """Create a new session for a user."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     token = generate_session_token()
     now = datetime.utcnow()
@@ -319,7 +364,7 @@ def create_session(user_id: str, duration_days: int = 30) -> Dict:
     
     cursor.execute('''
         INSERT INTO sessions (token, user_id, created_at, expires_at, last_used)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
     ''', (token, user_id, now.isoformat(), expires.isoformat(), now.isoformat()))
     
     conn.commit()
@@ -335,13 +380,13 @@ def create_session(user_id: str, duration_days: int = 30) -> Dict:
 def validate_session(token: str) -> Optional[Dict]:
     """Validate a session token and return user data if valid."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT s.token, s.user_id, s.expires_at, u.email, u.name
         FROM sessions s
         JOIN users u ON s.user_id = u.id
-        WHERE s.token = ?
+        WHERE s.token = %s
     ''', (token,))
     
     row = cursor.fetchone()
@@ -354,14 +399,14 @@ def validate_session(token: str) -> Optional[Dict]:
     expires_at = datetime.fromisoformat(row["expires_at"])
     if datetime.utcnow() > expires_at:
         # Delete expired session
-        cursor.execute('DELETE FROM sessions WHERE token = ?', (token,))
+        cursor.execute('DELETE FROM sessions WHERE token = %s', (token,))
         conn.commit()
         conn.close()
         return None
     
     # Update last_used
     cursor.execute('''
-        UPDATE sessions SET last_used = ? WHERE token = ?
+        UPDATE sessions SET last_used = %s WHERE token = %s
     ''', (datetime.utcnow().isoformat(), token))
     
     conn.commit()
@@ -379,9 +424,9 @@ def validate_session(token: str) -> Optional[Dict]:
 def delete_session(token: str) -> bool:
     """Delete a session (logout)."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('DELETE FROM sessions WHERE token = ?', (token,))
+    cursor.execute('DELETE FROM sessions WHERE token = %s', (token,))
     
     conn.commit()
     success = cursor.rowcount > 0
@@ -393,10 +438,10 @@ def delete_session(token: str) -> bool:
 def cleanup_expired_sessions():
     """Remove all expired sessions."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    cursor.execute('DELETE FROM sessions WHERE expires_at < ?', (now,))
+    cursor.execute('DELETE FROM sessions WHERE expires_at < %s', (now,))
     
     conn.commit()
     deleted = cursor.rowcount
@@ -414,10 +459,10 @@ def register_user(email: str, password: str, name: Optional[str] = None) -> Dict
     import uuid
     
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # Check if email already exists
-    cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+    cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
     if cursor.fetchone():
         conn.close()
         raise ValueError("Email já cadastrado")
@@ -428,7 +473,7 @@ def register_user(email: str, password: str, name: Optional[str] = None) -> Dict
     
     cursor.execute('''
         INSERT INTO users (id, email, password_hash, name, created_at, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     ''', (user_id, email, password_hash, name, now, json.dumps({})))
     
     conn.commit()
@@ -445,12 +490,12 @@ def register_user(email: str, password: str, name: Optional[str] = None) -> Dict
 def login_user(email: str, password: str) -> Optional[Dict]:
     """Login user and return session token."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT id, email, password_hash, name 
         FROM users 
-        WHERE email = ?
+        WHERE email = %s
     ''', (email,))
     
     row = cursor.fetchone()
@@ -462,17 +507,26 @@ def login_user(email: str, password: str) -> Optional[Dict]:
     if not verify_password(password, row["password_hash"]):
         return None
     
-    # Update last login
+    # Auto-migrate legacy SHA-256 hash to bcrypt
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    if not _is_bcrypt_hash(row["password_hash"]):
+        new_hash = hash_password(password)
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_hash, row["id"]))
+        logger.info(f"Auto-migrated password hash to bcrypt for user {row['id']}")
+    
+    # Update last login
     cursor.execute('''
-        UPDATE users SET last_login = ? WHERE id = ?
+        UPDATE users SET last_login = %s WHERE id = %s
     ''', (datetime.utcnow().isoformat(), row["id"]))
     conn.commit()
     conn.close()
     
-    # Create session
+    # Create session (Legacy)
     session = create_session(row["id"])
+    
+    # Create JWT Access Token (New)
+    access_token = create_jwt_token(row["id"], row["email"], row["name"])
     
     return {
         "user": {
@@ -480,14 +534,15 @@ def login_user(email: str, password: str) -> Optional[Dict]:
             "email": row["email"],
             "name": row["name"]
         },
-        "session": session
+        "session": session,
+        "access_token": access_token
     }
 
 
 def create_user(user_id: str, email: Optional[str] = None, name: Optional[str] = None, metadata: Optional[Dict] = None) -> Dict:
     """Create a new user (legacy function for backward compatibility)."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     # For legacy users without password, generate a random one
@@ -495,7 +550,7 @@ def create_user(user_id: str, email: Optional[str] = None, name: Optional[str] =
     
     cursor.execute('''
         INSERT INTO users (id, email, password_hash, name, created_at, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     ''', (user_id, email or f'{user_id}@temp.local', password_hash, name, now, json.dumps(metadata or {})))
     
     conn.commit()
@@ -513,9 +568,9 @@ def create_user(user_id: str, email: Optional[str] = None, name: Optional[str] =
 def get_user(user_id: str) -> Optional[Dict]:
     """Get user by ID."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT id, email, name, created_at, last_login, metadata FROM users WHERE id = ?', (user_id,))
+    cursor.execute('SELECT id, email, name, created_at, last_login, metadata FROM users WHERE id = %s', (user_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -535,9 +590,9 @@ def get_user(user_id: str) -> Optional[Dict]:
 def get_user_by_email(email: str) -> Optional[Dict]:
     """Get user by email."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT id, email, name, created_at, last_login FROM users WHERE email = ?', (email,))
+    cursor.execute('SELECT id, email, name, created_at, last_login FROM users WHERE email = %s', (email,))
     row = cursor.fetchone()
     conn.close()
     
@@ -562,7 +617,39 @@ def get_or_create_user(user_id: str, email: Optional[str] = None, name: Optional
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Business Operations
+# JWT AUTHENTICATION
+# ═══════════════════════════════════════════════════════════════════
+
+def create_jwt_token(user_id: Union[str, int], email: str, name: str) -> str:
+    """Generate a stateless JWT token for the user."""
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "name": name,
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_jwt_token(token: str) -> Optional[Dict]:
+    """Verify a JWT token and return the payload if valid."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error decoding JWT: {e}")
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SESSIONS (Legacy - to be replaced by JWT completely)
 # ═══════════════════════════════════════════════════════════════════
 
 def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
@@ -570,10 +657,33 @@ def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
     import uuid
     
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     business_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    
+    # --- ROBUSTNESS: Ensure user exists before inserting business ---
+    # This prevents FK constraint violations if the user_id is an email or just not in DB yet
+    try:
+        user_exists = get_user(user_id)
+        if not user_exists:
+            # If it looks like an email, try lookup by email
+            if "@" in str(user_id):
+                user_by_email = get_user_by_email(user_id)
+                if user_by_email:
+                    user_id = user_by_email["id"]
+                else:
+                    # Auto-register if not found
+                    logger.info(f"Auto-registrando usuário {user_id} durante criação de negócio")
+                    new_user = create_user(user_id, email=user_id, name="Usuário Auto-registrado")
+                    user_id = new_user["id"]
+            else:
+                # Basic UUID-like ID but missing in DB? Create it.
+                logger.info(f"Criando registro de usuário faltante: {user_id}")
+                create_user(user_id, name="Usuário")
+    except Exception as e:
+        logger.error(f"Erro ao resolver user_id {user_id} em create_business: {e}")
+        # Continue and let it fail at DB level if necessary, but we tried
     
     # Extract key fields from profile
     perfil = profile_data.get("perfil", {})
@@ -583,7 +693,7 @@ def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
     
     cursor.execute('''
         INSERT INTO businesses (id, user_id, name, segment, model, location, profile_data, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     ''', (business_id, user_id, name, segment, model, location, json.dumps(profile_data, ensure_ascii=False), now, now))
     
     conn.commit()
@@ -606,9 +716,9 @@ def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
 def get_business(business_id: str) -> Optional[Dict]:
     """Get business by ID."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT * FROM businesses WHERE id = ?', (business_id,))
+    cursor.execute('SELECT * FROM businesses WHERE id = %s', (business_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -635,11 +745,11 @@ def get_business(business_id: str) -> Optional[Dict]:
 def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
     """List all businesses for a user."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM businesses 
-        WHERE user_id = ? AND status = ?
+        WHERE user_id = %s AND status = %s
         ORDER BY updated_at DESC
     ''', (user_id, status))
     
@@ -670,7 +780,7 @@ def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
 def update_business(business_id: str, profile_data: Dict) -> bool:
     """Update business profile data."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -683,8 +793,8 @@ def update_business(business_id: str, profile_data: Dict) -> bool:
     
     cursor.execute('''
         UPDATE businesses 
-        SET name = ?, segment = ?, model = ?, location = ?, profile_data = ?, updated_at = ?
-        WHERE id = ?
+        SET name = %s, segment = %s, model = %s, location = %s, profile_data = %s, updated_at = %s
+        WHERE id = %s
     ''', (name, segment, model, location, json.dumps(profile_data, ensure_ascii=False), now, business_id))
     
     conn.commit()
@@ -697,14 +807,14 @@ def update_business(business_id: str, profile_data: Dict) -> bool:
 def delete_business(business_id: str) -> bool:
     """Soft delete a business (set status to 'deleted')."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE businesses 
-        SET status = 'deleted', updated_at = ?
-        WHERE id = ?
+        SET status = 'deleted', updated_at = %s
+        WHERE id = %s
     ''', (now, business_id))
     
     conn.commit()
@@ -717,10 +827,10 @@ def delete_business(business_id: str) -> bool:
 def hard_delete_business(business_id: str) -> bool:
     """Permanently delete a business and all its analyses."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
-        print(f"🗑️ Starting hard delete for business: {business_id}", file=sys.stderr)
+        logger.info(f"🗑️ Iniciando hard delete do negócio: {business_id}")
         
         # Delete all related data in correct order (respecting foreign keys)
         
@@ -728,19 +838,19 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM dimension_chats 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_chats = cursor.rowcount
-        print(f"🗑️ Deleted {deleted_chats} dimension chats", file=sys.stderr)
+        logger.info(f"🗑️ Deletados {deleted_chats} chats de dimensão")
         
         # 2. Delete pillar data
-        cursor.execute('DELETE FROM pillar_data WHERE business_id = ?', (business_id,))
+        cursor.execute('DELETE FROM pillar_data WHERE business_id = %s', (business_id,))
         deleted_pillar_data = cursor.rowcount
         print(f"🗑️ Deleted {deleted_pillar_data} pillar data records", file=sys.stderr)
         
         # 3. Delete business briefs
-        cursor.execute('DELETE FROM business_briefs WHERE business_id = ?', (business_id,))
+        cursor.execute('DELETE FROM business_briefs WHERE business_id = %s', (business_id,))
         deleted_briefs = cursor.rowcount
         print(f"🗑️ Deleted {deleted_briefs} business briefs", file=sys.stderr)
         
@@ -748,7 +858,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM pillar_diagnostics 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_diagnostics = cursor.rowcount
@@ -758,7 +868,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM specialist_plans 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_plans = cursor.rowcount
@@ -768,7 +878,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM specialist_executions 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_executions = cursor.rowcount
@@ -778,7 +888,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM specialist_results 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_results = cursor.rowcount
@@ -788,7 +898,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM pillar_kpis 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_kpis = cursor.rowcount
@@ -798,7 +908,7 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM specialist_subtasks 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_subtasks = cursor.rowcount
@@ -808,19 +918,19 @@ def hard_delete_business(business_id: str) -> bool:
         cursor.execute('''
             DELETE FROM background_tasks 
             WHERE analysis_id IN (
-                SELECT id FROM analyses WHERE business_id = ?
+                SELECT id FROM analyses WHERE business_id = %s
             )
         ''', (business_id,))
         deleted_background = cursor.rowcount
         print(f"🗑️ Deleted {deleted_background} background tasks", file=sys.stderr)
         
         # 11. Delete analyses
-        cursor.execute('DELETE FROM analyses WHERE business_id = ?', (business_id,))
+        cursor.execute('DELETE FROM analyses WHERE business_id = %s', (business_id,))
         deleted_analyses = cursor.rowcount
         print(f"🗑️ Deleted {deleted_analyses} analyses", file=sys.stderr)
         
         # 12. Delete business
-        cursor.execute('DELETE FROM businesses WHERE id = ?', (business_id,))
+        cursor.execute('DELETE FROM businesses WHERE id = %s', (business_id,))
         deleted_business = cursor.rowcount
         print(f"🗑️ Deleted {deleted_business} business record", file=sys.stderr)
         
@@ -828,12 +938,12 @@ def hard_delete_business(business_id: str) -> bool:
         success = deleted_business > 0
         conn.close()
         
-        print(f"🗑️ Hard delete completed. Success: {success}", file=sys.stderr)
+        logger.info(f"🗑️ Hard delete concluído. Sucesso: {success}")
         return success
     except Exception as e:
         conn.rollback()
         conn.close()
-        print(f"🗑️ Hard delete failed: {str(e)}", file=sys.stderr)
+        logger.error(f"🗑️ Hard delete falhou: {str(e)}")
         raise
 
 
@@ -846,26 +956,43 @@ _analysis_discovery_column_checked = False
 
 
 def ensure_analysis_profile_column(cursor):
+    """PostgreSQL handle: dynamic column checks (redundant with init_db but safe)."""
     global _analysis_profile_column_checked
     if _analysis_profile_column_checked:
         return
 
-    cursor.execute("PRAGMA table_info(analyses)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if 'profile_data' not in columns:
-        cursor.execute("ALTER TABLE analyses ADD COLUMN profile_data TEXT")
+    try:
+        # PostgreSQL native check for column existense
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='analyses' AND column_name='profile_data';
+        """)
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE analyses ADD COLUMN profile_data TEXT")
+    except Exception as e:
+        logger.warning(f"Erro em ensure_analysis_profile_column: {e}")
+        
     _analysis_profile_column_checked = True
 
 
 def ensure_analysis_discovery_column(cursor):
+    """PostgreSQL handle: discovery column check."""
     global _analysis_discovery_column_checked
     if _analysis_discovery_column_checked:
         return
 
-    cursor.execute("PRAGMA table_info(analyses)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if 'discovery_data' not in columns:
-        cursor.execute("ALTER TABLE analyses ADD COLUMN discovery_data TEXT")
+    try:
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='analyses' AND column_name='discovery_data';
+        """)
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE analyses ADD COLUMN discovery_data TEXT")
+    except Exception as e:
+        logger.warning(f"Erro em ensure_analysis_discovery_column: {e}")
+        
     _analysis_discovery_column_checked = True
 
 
@@ -874,7 +1001,7 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
     import uuid
     
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     analysis_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -887,7 +1014,7 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
 
     cursor.execute('''
         INSERT INTO analyses (id, business_id, score_data, task_data, market_data, profile_data, discovery_data, score_geral, classificacao, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ''', (
         analysis_id, 
         business_id, 
@@ -919,11 +1046,11 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
 def get_latest_analysis(business_id: str) -> Optional[Dict]:
     """Get the most recent analysis for a business."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM analyses 
-        WHERE business_id = ?
+        WHERE business_id = %s
         ORDER BY created_at DESC
         LIMIT 1
     ''', (business_id,))
@@ -951,13 +1078,13 @@ def get_latest_analysis(business_id: str) -> Optional[Dict]:
 def list_business_analyses(business_id: str, limit: int = 10) -> List[Dict]:
     """List recent analyses for a business."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM analyses 
-        WHERE business_id = ?
+        WHERE business_id = %s
         ORDER BY created_at DESC
-        LIMIT ?
+        LIMIT %s
     ''', (business_id, limit))
     
     rows = cursor.fetchall()
@@ -978,9 +1105,9 @@ def list_business_analyses(business_id: str, limit: int = 10) -> List[Dict]:
 def get_analysis(analysis_id: str) -> Optional[Dict]:
     """Get a specific analysis by ID."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT * FROM analyses WHERE id = ?', (analysis_id,))
+    cursor.execute('SELECT * FROM analyses WHERE id = %s', (analysis_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -1001,6 +1128,60 @@ def get_analysis(analysis_id: str) -> Optional[Dict]:
     }
 
 
+
+def update_analysis_profile(analysis_id: str, profile_data: Dict) -> bool:
+    """Update profile data stored within an analysis."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cursor.execute('''
+            UPDATE analyses 
+            SET profile_data = %s
+            WHERE id = %s
+        ''', (json.dumps(profile_data, ensure_ascii=False), analysis_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def update_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
+    """Update diagnostic results (score, status, etc.) for a specific pillar."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute('''
+            UPDATE pillar_diagnostics 
+            SET diagnostic_data = %s, updated_at = %s
+            WHERE analysis_id = %s AND pillar_key = %s
+        ''', (json.dumps(diagnostic_data, ensure_ascii=False), now, analysis_id, pillar_key))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def get_pillar_diagnostic(analysis_id: str, pillar_key: str) -> Optional[Dict]:
+    """Retrieve diagnostic data for a specific pillar."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cursor.execute('''
+            SELECT * FROM pillar_diagnostics 
+            WHERE analysis_id = %s AND pillar_key = %s
+        ''', (analysis_id, pillar_key))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "analysis_id": row["analysis_id"],
+            "pillar_key": row["pillar_key"],
+            "diagnostic_data": json.loads(row["diagnostic_data"]),
+            "updated_at": row["updated_at"]
+        }
+    finally:
+        conn.close()
+
 # ═══════════════════════════════════════════════════════════════════
 # Dimension Chat Operations
 # ═══════════════════════════════════════════════════════════════════
@@ -1010,14 +1191,14 @@ def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) 
     import uuid
     
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
     # Check if chat exists
     cursor.execute('''
         SELECT id FROM dimension_chats 
-        WHERE analysis_id = ? AND dimension = ?
+        WHERE analysis_id = %s AND dimension = %s
     ''', (analysis_id, dimension))
     
     row = cursor.fetchone()
@@ -1027,15 +1208,15 @@ def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) 
         chat_id = row["id"]
         cursor.execute('''
             UPDATE dimension_chats 
-            SET messages = ?, updated_at = ?
-            WHERE id = ?
+            SET messages = %s, updated_at = %s
+            WHERE id = %s
         ''', (json.dumps(messages, ensure_ascii=False), now, chat_id))
     else:
         # Create new
         chat_id = str(uuid.uuid4())
         cursor.execute('''
             INSERT INTO dimension_chats (id, analysis_id, dimension, messages, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         ''', (chat_id, analysis_id, dimension, json.dumps(messages, ensure_ascii=False), now, now))
     
     conn.commit()
@@ -1053,11 +1234,11 @@ def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) 
 def get_dimension_chat(analysis_id: str, dimension: str) -> Optional[Dict]:
     """Get dimension chat history."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM dimension_chats 
-        WHERE analysis_id = ? AND dimension = ?
+        WHERE analysis_id = %s AND dimension = %s
     ''', (analysis_id, dimension))
     
     row = cursor.fetchone()
@@ -1084,7 +1265,7 @@ def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict,
     """Save or update structured output for a pillar."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     output_json = json.dumps(structured_output, ensure_ascii=False)
@@ -1092,7 +1273,7 @@ def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict,
     
     cursor.execute('''
         INSERT INTO pillar_data (id, business_id, pillar_key, structured_output, sources, user_command, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(business_id, pillar_key) DO UPDATE SET
             structured_output = excluded.structured_output,
             sources = excluded.sources,
@@ -1108,12 +1289,12 @@ def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict,
 def get_pillar_data(business_id: str, pillar_key: str) -> Optional[dict]:
     """Get structured output for a specific pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT structured_output, sources, user_command, created_at, updated_at
         FROM pillar_data
-        WHERE business_id = ? AND pillar_key = ?
+        WHERE business_id = %s AND pillar_key = %s
     ''', (business_id, pillar_key))
     
     row = cursor.fetchone()
@@ -1134,12 +1315,12 @@ def get_pillar_data(business_id: str, pillar_key: str) -> Optional[dict]:
 def get_all_pillar_data(business_id: str) -> dict:
     """Get all pillar data for a business."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT pillar_key, structured_output, sources, user_command, created_at, updated_at
         FROM pillar_data
-        WHERE business_id = ?
+        WHERE business_id = %s
         ORDER BY pillar_key
     ''', (business_id,))
     
@@ -1165,14 +1346,14 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
     """Save or update business brief for specialist engine."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
     
     cursor.execute('''
         INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT(business_id, analysis_id) DO UPDATE SET
             brief_data = excluded.brief_data,
             created_at = excluded.created_at
@@ -1186,19 +1367,19 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
 def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[str] = None) -> Optional[Dict]:
     """Get business brief. Supports both (business_id, analysis_id) and (analysis_id) signatures."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     if analysis_id:
         # Called as get_business_brief(business_id, analysis_id)
         cursor.execute('''
             SELECT brief_data, created_at FROM business_briefs
-            WHERE business_id = ? AND analysis_id = ?
+            WHERE business_id = %s AND analysis_id = %s
         ''', (business_id_or_analysis_id, analysis_id))
     else:
         # Called as get_business_brief(analysis_id) — search by analysis_id only
         cursor.execute('''
             SELECT brief_data, created_at FROM business_briefs
-            WHERE analysis_id = ?
+            WHERE analysis_id = %s
         ''', (business_id_or_analysis_id,))
     
     row = cursor.fetchone()
@@ -1227,14 +1408,14 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
     """Save or update diagnostic data for a pillar."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
     
     cursor.execute('''
         INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
             diagnostic_data = excluded.diagnostic_data,
             updated_at = excluded.updated_at
@@ -1248,12 +1429,12 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
 def get_all_diagnostics(analysis_id: str) -> List[Dict]:
     """Get all pillar diagnostics for an analysis."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT pillar_key, diagnostic_data, created_at, updated_at
         FROM pillar_diagnostics
-        WHERE analysis_id = ?
+        WHERE analysis_id = %s
     ''', (analysis_id,))
     
     rows = cursor.fetchall()
@@ -1277,9 +1458,9 @@ def get_all_diagnostics(analysis_id: str) -> List[Dict]:
 def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
     """Get market data from a saved analysis."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT market_data FROM analyses WHERE id = ?', (analysis_id,))
+    cursor.execute('SELECT market_data FROM analyses WHERE id = %s', (analysis_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -1295,14 +1476,14 @@ def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
 def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
     """Approve a specialist plan for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE specialist_plans
-        SET status = 'approved', user_notes = ?, updated_at = ?
-        WHERE analysis_id = ? AND pillar_key = ?
+        SET status = 'approved', user_notes = %s, updated_at = %s
+        WHERE analysis_id = %s AND pillar_key = %s
     ''', (user_notes, now, analysis_id, pillar_key))
     
     conn.commit()
@@ -1320,14 +1501,14 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
     """Save or update a business brief for a given analysis."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
     
     cursor.execute('''
         INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT(business_id, analysis_id) DO UPDATE SET
             brief_data = excluded.brief_data
     ''', (str(uuid.uuid4()), business_id, analysis_id, brief_json, now))
@@ -1343,19 +1524,19 @@ def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[st
     - get_business_brief(analysis_id) — lookup by analysis_id only
     """
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     if analysis_id is not None:
         # Called as get_business_brief(business_id, analysis_id)
         cursor.execute('''
             SELECT * FROM business_briefs
-            WHERE business_id = ? AND analysis_id = ?
+            WHERE business_id = %s AND analysis_id = %s
         ''', (business_id_or_analysis_id, analysis_id))
     else:
         # Called as get_business_brief(analysis_id)
         cursor.execute('''
             SELECT * FROM business_briefs
-            WHERE analysis_id = ?
+            WHERE analysis_id = %s
         ''', (business_id_or_analysis_id,))
     
     row = cursor.fetchone()
@@ -1387,14 +1568,14 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
     """Save or update diagnostic data for a pillar."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
     
     cursor.execute('''
         INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
             diagnostic_data = excluded.diagnostic_data,
             updated_at = excluded.updated_at
@@ -1408,11 +1589,11 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: D
 def get_all_diagnostics(analysis_id: str) -> List[Dict]:
     """Get all pillar diagnostics for an analysis."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM pillar_diagnostics
-        WHERE analysis_id = ?
+        WHERE analysis_id = %s
     ''', (analysis_id,))
     
     rows = cursor.fetchall()
@@ -1444,11 +1625,11 @@ def get_all_diagnostics(analysis_id: str) -> List[Dict]:
 def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
     """Get market data from a saved analysis."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT market_data FROM analyses
-        WHERE id = ?
+        WHERE id = %s
     ''', (analysis_id,))
     
     row = cursor.fetchone()
@@ -1470,14 +1651,14 @@ def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
 def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
     """Approve a specialist plan for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         UPDATE specialist_plans
-        SET status = 'approved', user_notes = ?, updated_at = ?
-        WHERE analysis_id = ? AND pillar_key = ?
+        SET status = 'approved', user_notes = %s, updated_at = %s
+        WHERE analysis_id = %s AND pillar_key = %s
     ''', (user_notes, now, analysis_id, pillar_key))
     
     conn.commit()
@@ -1490,12 +1671,12 @@ def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "")
 def get_pillar_diagnostic(analysis_id: str, pillar_key: str) -> Optional[Dict]:
     """Get diagnostic data for a single pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT diagnostic_data, created_at, updated_at
         FROM pillar_diagnostics
-        WHERE analysis_id = ? AND pillar_key = ?
+        WHERE analysis_id = %s AND pillar_key = %s
     ''', (analysis_id, pillar_key))
     
     row = cursor.fetchone()
@@ -1516,14 +1697,14 @@ def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: 
     """Save or update a specialist plan for a pillar."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     plan_json = json.dumps(plan_data, ensure_ascii=False) if not isinstance(plan_data, str) else plan_data
     
     cursor.execute('''
         INSERT INTO specialist_plans (id, analysis_id, pillar_key, plan_data, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
             plan_data = excluded.plan_data,
             status = excluded.status,
@@ -1538,12 +1719,12 @@ def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: 
 def get_pillar_plan(analysis_id: str, pillar_key: str) -> Optional[Dict]:
     """Get the specialist plan for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT plan_data, status, user_notes, created_at, updated_at
         FROM specialist_plans
-        WHERE analysis_id = ? AND pillar_key = ?
+        WHERE analysis_id = %s AND pillar_key = %s
     ''', (analysis_id, pillar_key))
     
     row = cursor.fetchone()
@@ -1574,14 +1755,14 @@ def save_execution_result(
     """Save an execution result for a pillar task, including full content."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     result_id = str(uuid.uuid4())
     
     cursor.execute('''
         INSERT INTO specialist_results (id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     ''', (result_id, analysis_id, pillar_key, task_id, action_title, status, outcome, business_impact, now))
     
     # Also save full execution content if provided
@@ -1589,7 +1770,7 @@ def save_execution_result(
         result_json = json.dumps(result_data, ensure_ascii=False) if not isinstance(result_data, str) else result_data
         cursor.execute('''
             INSERT INTO specialist_executions (id, analysis_id, pillar_key, task_id, result_data, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(analysis_id, pillar_key, task_id) DO UPDATE SET
                 result_data = excluded.result_data,
                 status = excluded.status
@@ -1614,12 +1795,12 @@ def save_execution_result(
 def get_pillar_results(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
     """Get all execution results for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT id, task_id, action_title, status, outcome, business_impact, created_at
         FROM specialist_results
-        WHERE analysis_id = ? AND pillar_key = ?
+        WHERE analysis_id = %s AND pillar_key = %s
         ORDER BY created_at
     ''', (analysis_id, pillar_key))
     
@@ -1647,13 +1828,13 @@ def save_pillar_kpi(
     """Save or update a KPI for a pillar."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     
     cursor.execute('''
         INSERT INTO pillar_kpis (id, analysis_id, pillar_key, kpi_name, kpi_value, kpi_target, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, pillar_key, kpi_name) DO UPDATE SET
             kpi_value = excluded.kpi_value,
             kpi_target = excluded.kpi_target
@@ -1667,12 +1848,12 @@ def save_pillar_kpi(
 def get_pillar_kpis(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
     """Get all KPIs for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT kpi_name, kpi_value, kpi_target, created_at
         FROM pillar_kpis
-        WHERE analysis_id = ? AND pillar_key = ?
+        WHERE analysis_id = %s AND pillar_key = %s
     ''', (analysis_id, pillar_key))
     
     rows = cursor.fetchall()
@@ -1697,14 +1878,14 @@ def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data
     """Save or update expanded subtasks for a task."""
     import uuid
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
     data_json = json.dumps(subtasks_data, ensure_ascii=False) if not isinstance(subtasks_data, str) else subtasks_data
     
     cursor.execute('''
         INSERT INTO specialist_subtasks (id, analysis_id, pillar_key, task_id, subtasks_data, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, pillar_key, task_id) DO UPDATE SET
             subtasks_data = excluded.subtasks_data,
             updated_at = excluded.updated_at
@@ -1718,17 +1899,17 @@ def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data
 def get_subtasks(analysis_id: str, pillar_key: str, task_id: str = None) -> Any:
     """Get subtasks for a specific task or all tasks in a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     if task_id:
         cursor.execute('''
             SELECT task_id, subtasks_data FROM specialist_subtasks
-            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
         ''', (analysis_id, pillar_key, task_id))
     else:
         cursor.execute('''
             SELECT task_id, subtasks_data FROM specialist_subtasks
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
     
     rows = cursor.fetchall()
@@ -1750,12 +1931,12 @@ def get_subtasks(analysis_id: str, pillar_key: str, task_id: str = None) -> Any:
 def get_full_executions(analysis_id: str, pillar_key: str) -> Optional[Dict]:
     """Get all full execution results (with content) for a pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT task_id, result_data, status, created_at
         FROM specialist_executions
-        WHERE analysis_id = ? AND pillar_key = ? AND result_data IS NOT NULL
+        WHERE analysis_id = %s AND pillar_key = %s AND result_data IS NOT NULL
         ORDER BY created_at
     ''', (analysis_id, pillar_key))
     
@@ -1782,15 +1963,15 @@ def get_full_executions(analysis_id: str, pillar_key: str) -> Optional[Dict]:
 def get_subtask_executions(analysis_id: str, pillar_key: str, parent_task_id: str) -> List[Dict]:
     """Get all subtask execution results for a specific parent task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # Subtasks have IDs like {parent_task_id}_st1, {parent_task_id}_st2, etc.
     # Also include the summary: {parent_task_id}_summary
     cursor.execute('''
         SELECT task_id, result_data, status, created_at
         FROM specialist_executions
-        WHERE analysis_id = ? AND pillar_key = ? 
-        AND (task_id LIKE ? OR task_id = ?)
+        WHERE analysis_id = %s AND pillar_key = %s 
+        AND (task_id LIKE %s OR task_id = %s)
         ORDER BY created_at
     ''', (analysis_id, pillar_key, f"{parent_task_id}_st%", f"{parent_task_id}_summary"))
     
@@ -1815,18 +1996,18 @@ def get_subtask_executions(analysis_id: str, pillar_key: str, parent_task_id: st
 def delete_subtasks(analysis_id: str, pillar_key: str, task_id: str = None):
     """Delete subtasks for a task or entire pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         if task_id:
             cursor.execute('''
                 DELETE FROM specialist_subtasks
-                WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+                WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
             ''', (analysis_id, pillar_key, task_id))
         else:
             cursor.execute('''
                 DELETE FROM specialist_subtasks
-                WHERE analysis_id = ? AND pillar_key = ?
+                WHERE analysis_id = %s AND pillar_key = %s
             ''', (analysis_id, pillar_key))
         conn.commit()
     finally:
@@ -1836,13 +2017,13 @@ def delete_subtasks(analysis_id: str, pillar_key: str, task_id: str = None):
 def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str):
     """Delete specialist execution data for a specific task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         # Delete from specialist_executions table
         cursor.execute('''
             DELETE FROM specialist_executions
-            WHERE analysis_id = ? AND pillar_key = ? AND id = ?
+            WHERE analysis_id = %s AND pillar_key = %s AND id = %s
         ''', (analysis_id, pillar_key, task_id))
         
         conn.commit()
@@ -1853,13 +2034,13 @@ def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str)
 def delete_specialist_result(analysis_id: str, pillar_key: str, task_id: str):
     """Delete specialist result data for a specific task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         # Delete from specialist_results table
         cursor.execute('''
             DELETE FROM specialist_results
-            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
         ''', (analysis_id, pillar_key, task_id))
         
         conn.commit()
@@ -1870,19 +2051,19 @@ def delete_specialist_result(analysis_id: str, pillar_key: str, task_id: str):
 def delete_specialist_subtasks(analysis_id: str, pillar_key: str, task_id: str) -> bool:
     """Delete subtasks data and subtask executions for a specific task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         # Delete subtask executions (they have IDs like taskId_st1, taskId_st2, etc.)
         cursor.execute('''
             DELETE FROM specialist_executions
-            WHERE analysis_id = ? AND pillar_key = ? AND id LIKE ?
+            WHERE analysis_id = %s AND pillar_key = %s AND id LIKE %s
         ''', (analysis_id, pillar_key, f"{task_id}_st%"))
         
         # Delete the main subtasks array entry
         cursor.execute('''
             DELETE FROM specialist_subtasks
-            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
         ''', (analysis_id, pillar_key, task_id))
         
         conn.commit()
@@ -1894,12 +2075,12 @@ def delete_specialist_subtasks(analysis_id: str, pillar_key: str, task_id: str) 
 def delete_specialist_executions(analysis_id: str, pillar_key: str, task_id: str) -> bool:
     """Delete specialist executions (generated text content for subtasks) for a task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # Executions are stored with task_id + "_st1", "_st2" etc, so we delete by LIKE
     cursor.execute('''
         DELETE FROM specialist_executions
-        WHERE analysis_id = ? AND pillar_key = ? AND task_id LIKE ?
+        WHERE analysis_id = %s AND pillar_key = %s AND task_id LIKE %s
     ''', (analysis_id, pillar_key, f"{task_id}%"))
     
     conn.commit()
@@ -1909,11 +2090,11 @@ def delete_specialist_executions(analysis_id: str, pillar_key: str, task_id: str
 def delete_specialist_results(analysis_id: str, pillar_key: str, task_id: str) -> bool:
     """Delete the final specialist result for a task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         DELETE FROM specialist_results
-        WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+        WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
     ''', (analysis_id, pillar_key, task_id))
     
     conn.commit()
@@ -1924,12 +2105,12 @@ def delete_specialist_results(analysis_id: str, pillar_key: str, task_id: str) -
 def delete_background_task(analysis_id: str, pillar_key: str, task_id: str):
     """Delete background task progress."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         cursor.execute('''
             DELETE FROM background_tasks
-            WHERE analysis_id = ? AND pillar_key = ? AND task_id = ?
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
         ''', (analysis_id, pillar_key, task_id))
         
         conn.commit()
@@ -1940,37 +2121,37 @@ def delete_background_task(analysis_id: str, pillar_key: str, task_id: str):
 def delete_pillar_data(analysis_id: str, pillar_key: str):
     """Delete all plan and execution data for an entire pillar."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     try:
         cursor.execute('''
             DELETE FROM specialist_plans 
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
 
         cursor.execute('''
             DELETE FROM specialist_executions 
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
 
         cursor.execute('''
             DELETE FROM specialist_results 
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
 
         cursor.execute('''
             DELETE FROM pillar_diagnostics 
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
 
         cursor.execute('''
             DELETE FROM pillar_kpis 
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
         
         cursor.execute('''
             DELETE FROM background_tasks
-            WHERE analysis_id = ? AND pillar_key = ?
+            WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
 
         conn.commit()
@@ -1990,7 +2171,7 @@ def save_background_task_progress(
 ) -> None:
     """Save or update the status of a background task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     now = datetime.now(timezone.utc).isoformat()
     
     res_json = json.dumps(result_data, ensure_ascii=False) if result_data else None
@@ -2000,7 +2181,7 @@ def save_background_task_progress(
             id, analysis_id, pillar_key, task_id, status, 
             current_step, total_steps, result_data, error_message, 
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, task_id) DO UPDATE SET
             status = excluded.status,
             current_step = excluded.current_step,
@@ -2020,11 +2201,11 @@ def save_background_task_progress(
 def get_background_task_progress(analysis_id: str, task_id: str) -> Optional[Dict]:
     """Get the current progress of a background task."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     cursor.execute('''
         SELECT * FROM background_tasks 
-        WHERE analysis_id = ? AND task_id = ?
+        WHERE analysis_id = %s AND task_id = %s
     ''', (analysis_id, task_id))
     
     row = cursor.fetchone()
@@ -2054,7 +2235,7 @@ def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
     """Salva entrada de cache no banco."""
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         # Serializar dados
         data_json = json.dumps(cache_entry, default=str)
@@ -2065,7 +2246,7 @@ def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
         cursor.execute("""
             INSERT OR REPLACE INTO research_cache 
             (cache_key, data, cached_at, research_type) 
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, (cache_key, data_json, cached_at_iso, research_type))
         
         conn.commit()
@@ -2080,12 +2261,12 @@ def get_research_cache(cache_key: str) -> Optional[dict]:
     """Obtém entrada de cache do banco."""
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         cursor.execute("""
             SELECT data, cached_at, research_type 
             FROM research_cache 
-            WHERE cache_key = ?
+            WHERE cache_key = %s
         """, (cache_key,))
         
         row = cursor.fetchone()
@@ -2116,7 +2297,7 @@ def save_research_result(research_type: str, cache_key: str, data: dict) -> bool
     """Salva resultado de pesquisa no banco."""
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         # Serializar dados
         data_json = json.dumps(data, default=str)
@@ -2126,7 +2307,7 @@ def save_research_result(research_type: str, cache_key: str, data: dict) -> bool
         cursor.execute("""
             INSERT OR REPLACE INTO research_results 
             (research_type, cache_key, data, created_at) 
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, (research_type, cache_key, data_json, created_at))
         
         conn.commit()
@@ -2141,7 +2322,7 @@ def get_research_stats() -> dict:
     """Retorna estatísticas de pesquisas."""
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         # Total de pesquisas por tipo
         cursor.execute("""
@@ -2173,8 +2354,3 @@ def get_research_stats() -> dict:
             "total_cache": 0,
             "total_researches": 0
         }
-
-
-
-# Initialize database on module import
-init_db()

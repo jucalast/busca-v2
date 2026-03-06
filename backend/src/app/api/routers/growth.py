@@ -1,13 +1,16 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
+from app.core.auth_middleware import get_current_user
 import json
+from app.services.common import log_info, log_debug, log_error
 from app.schemas.requests import (
     ActionProfileRequest, ActionAnalyzeRequest, ActionAssistRequest, 
     ActionChatRequest, ActionDimensionChatRequest, BaseGrowthRequest,
     ActionSpecialistPlanRequest, ActionSpecialistExecuteRequest, 
     ActionExpandSubtasksRequest, ActionAITryUserTaskRequest,
     ActionExecuteAllSubtasksRequest, ActionPollBackgroundStatusRequest,
-    ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest
+    ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest,
+    PillarStateRequest, AnalysisTasksRequest, DeleteBusinessRequest, ProductionAgentRequest
 )
 from app.services.core.service_growth import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
@@ -39,13 +42,17 @@ def redo_pillar(req: ActionRedoPillarRequest):
 
 @router.post("/profile")
 def profile(req: ActionProfileRequest):
-    # Debug: log da requisição recebida
-    print(f"🔍 Router Profile - Request received:", json.dumps(req.model_dump(), ensure_ascii=False, indent=2))
+    # Log resumido da requisição
+    biz_name = req.onboardingData.get("nome_negocio") or req.onboardingData.get("nome", "Desconhecido")
+    log_info(f"Requisição de Perfil recebida para: {biz_name}")
+    log_debug(f"Router Profile - Dados: {json.dumps(req.model_dump(), ensure_ascii=False)}")
     
     result = do_profile(req.model_dump())
     
-    # Debug: log do resultado
-    print(f"🔍 Router Profile - Result:", json.dumps(result, ensure_ascii=False, indent=2))
+    # Log resumido do resultado
+    success = result.get("success", False)
+    log_info(f"Processamento de Perfil concluído: {'SUCESSO' if success else 'FALHA'}")
+    log_debug(f"Router Profile - Resultado: {json.dumps(result, ensure_ascii=False)}")
     
     return result
 
@@ -100,34 +107,63 @@ def ai_try_user_task(req: ActionAITryUserTaskRequest):
     return do_ai_try_user_task(req.model_dump())
 
 @router.post("/execute-all-subtasks")
-def execute_all_subtasks(req: ActionExecuteAllSubtasksRequest, background_tasks: BackgroundTasks):
-    return do_execute_all_subtasks(req.model_dump(), background_tasks)
+def execute_all_subtasks(req: ActionExecuteAllSubtasksRequest):
+    return do_execute_all_subtasks(req.model_dump())
 
 @router.post("/poll-background-status")
 def poll_background_status(req: ActionPollBackgroundStatusRequest):
     return do_get_background_status(req.analysis_id, req.task_id)
 
 @router.post("/pillar-state")
-def pillar_state(req: dict):
-    return do_pillar_state(req)
+def pillar_state(req: PillarStateRequest):
+    return do_pillar_state(req.model_dump())
 
 @router.post("/get-analysis-tasks")
-def get_analysis_tasks(req: dict):
-    return do_get_analysis_tasks(req)
+def get_analysis_tasks(req: AnalysisTasksRequest):
+    return do_get_analysis_tasks(req.model_dump())
 
 @router.post("/specialist-tasks")
-def specialist_tasks(req: dict):
-    return do_specialist_tasks(req)
+def specialist_tasks(req: AnalysisTasksRequest):
+    return do_specialist_tasks(req.model_dump())
 
 @router.post("/delete-business")
-def delete_business(req: dict):
+def delete_business(req: DeleteBusinessRequest):
     """Delete a business (soft delete)."""
-    return do_delete_business(req)
+    return do_delete_business(req.model_dump())
 
 @router.post("/run-production-agent")
-def run_production_agent(req: dict):
+def run_production_agent(req: ProductionAgentRequest):
     """Execute production-ready pillar agent with SRE safeguards."""
-    return do_run_production_pillar_agent(req)
+    return do_run_production_pillar_agent(req.model_dump())
 
-# More actions following the orchestrator patterns can be registered here:
-# /create-business, /save-analysis, /register, /login, /logout, etc.
+@router.get("/metrics")
+def get_dashboard_metrics(current_user: dict = Depends(get_current_user)):
+    from app.core import database as db
+    conn = db.get_connection()
+    c = conn.cursor()
+    
+    # Safe counting logic
+    c.execute("SELECT COUNT(*) as cnt FROM users")
+    users = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) as cnt FROM businesses")
+    businesses = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) as cnt FROM analyses")
+    analyses = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) as cnt FROM background_tasks WHERE status = 'failed'")
+    failed_tasks = c.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        "success": True,
+        "metrics": {
+            "total_users": users,
+            "total_businesses": businesses,
+            "total_analyses": analyses,
+            "failed_tasks": failed_tasks
+        }
+    }
+

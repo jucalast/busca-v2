@@ -61,21 +61,25 @@ export function SpecialistGrid({
     error,
     setError
 }: SpecialistGridProps) {
-    const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = sessionStorage.getItem('tgt_map_transform');
-            if (saved) {
-                try { return JSON.parse(saved); } catch (e) { }
-            }
-        }
-        return { x: 80, y: 150, scale: 0.85 };
-    });
+    const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>({ x: 80, y: 150, scale: 0.85 });
+    const [isMounted, setIsMounted] = React.useState(false);
 
     React.useEffect(() => {
-        if (typeof window !== 'undefined') {
+        setIsMounted(true);
+        const saved = sessionStorage.getItem('tgt_map_transform');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                setTransform(parsed);
+            } catch (e) { }
+        }
+    }, []);
+
+    React.useEffect(() => {
+        if (isMounted) {
             sessionStorage.setItem('tgt_map_transform', JSON.stringify(transform));
         }
-    }, [transform]);
+    }, [transform, isMounted]);
 
     const [isDragging, setIsDragging] = React.useState(false);
     const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });

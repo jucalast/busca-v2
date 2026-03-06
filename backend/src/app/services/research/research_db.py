@@ -20,14 +20,19 @@ def save_research_cache(cache_key: str, cache_entry: Dict[str, Any]) -> bool:
         cached_at_iso = cache_entry["cached_at"].isoformat()
         research_type = cache_entry.get("research_type", "unknown")
         
-        # Insert ou replace
+        # PostgreSQL ON CONFLICT (UPSERT)
         cursor.execute("""
-            INSERT OR REPLACE INTO research_cache 
+            INSERT INTO research_cache 
             (cache_key, data, cached_at, research_type) 
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (cache_key) DO UPDATE SET
+                data = EXCLUDED.data,
+                cached_at = EXCLUDED.cached_at,
+                research_type = EXCLUDED.research_type
         """, (cache_key, data_json, cached_at_iso, research_type))
         
         conn.commit()
+        conn.close()
         return True
         
     except Exception as e:
@@ -44,10 +49,11 @@ def get_research_cache(cache_key: str) -> Optional[Dict[str, Any]]:
         cursor.execute("""
             SELECT data, cached_at, research_type 
             FROM research_cache 
-            WHERE cache_key = ?
+            WHERE cache_key = %s
         """, (cache_key,))
         
         row = cursor.fetchone()
+        conn.close()
         if not row:
             return None
         
@@ -80,14 +86,18 @@ def save_research_result(research_type: str, cache_key: str, data: Dict[str, Any
         data_json = json.dumps(data, default=str)
         created_at = datetime.now().isoformat()
         
-        # Insert ou replace
+        # PostgreSQL ON CONFLICT (UPSERT)
         cursor.execute("""
-            INSERT OR REPLACE INTO research_results 
+            INSERT INTO research_results 
             (research_type, cache_key, data, created_at) 
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (research_type, cache_key) DO UPDATE SET
+                data = EXCLUDED.data,
+                created_at = EXCLUDED.created_at
         """, (research_type, cache_key, data_json, created_at))
         
         conn.commit()
+        conn.close()
         return True
         
     except Exception as e:
@@ -104,10 +114,11 @@ def get_research_result(research_type: str, cache_key: str) -> Optional[Dict[str
         cursor.execute("""
             SELECT data, created_at 
             FROM research_results 
-            WHERE research_type = ? AND cache_key = ?
+            WHERE research_type = %s AND cache_key = %s
         """, (research_type, cache_key))
         
         row = cursor.fetchone()
+        conn.close()
         if not row:
             return None
         
@@ -146,6 +157,7 @@ def get_research_stats() -> Dict[str, Any]:
         # Total de pesquisas
         cursor.execute("SELECT COUNT(*) FROM research_results")
         total_researches = cursor.fetchone()[0]
+        conn.close()
         
         return {
             "by_type": by_type,
@@ -168,14 +180,15 @@ def cleanup_expired_cache() -> int:
         conn = get_connection()
         cursor = conn.cursor()
         
-        # Deletar entradas mais antigas que 24 horas
+        # Deletar entradas mais antigas que 24 horas (Postgres syntax)
         cursor.execute("""
             DELETE FROM research_cache 
-            WHERE datetime(cached_at) < datetime('now', '-24 hours')
+            WHERE CAST(cached_at AS TIMESTAMP) < NOW() - INTERVAL '24 hours'
         """)
         
         deleted_count = cursor.rowcount
         conn.commit()
+        conn.close()
         
         return deleted_count
         
@@ -201,10 +214,10 @@ def create_research_tables() -> bool:
             )
         """)
         
-        # Tabela de resultados
+        # Tabela de resultados - PostgreSQL SERIAL
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS research_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 research_type TEXT NOT NULL,
                 cache_key TEXT NOT NULL,
                 data TEXT NOT NULL,

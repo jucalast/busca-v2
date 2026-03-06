@@ -1,0 +1,22 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\JoÒo Luccas\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src
+plugins: anyio-4.12.0, langsmith-0.7.9
+collecting ... collected 39 items / 1 error
+
+=================================== ERRORS ====================================
+____________________ ERROR collecting tests/test_fixes.py _____________________
+ImportError while importing test module 'C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\tests\test_fixes.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fixes.py:11: in <module>
+    from app.services.agents.agent_conversation import (
+E   ImportError: cannot import name '_infer_fields_from_context' from 'app.services.agents.agent_conversation' (C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\services\agents\agent_conversation.py)
+=========================== short test summary info ===========================
+ERROR tests/test_fixes.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+============================== 1 error in 2.64s ===============================

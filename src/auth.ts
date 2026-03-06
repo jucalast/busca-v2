@@ -1,5 +1,14 @@
-import NextAuth from "next-auth";
+import NextAuth, { type DefaultSession } from "next-auth";
 import Google from "next-auth/providers/google";
+import { encode } from "next-auth/jwt";
+
+declare module "next-auth" {
+    interface Session {
+        accessToken?: string;
+        error?: string;
+        jwtToken?: string;
+    }
+}
 
 async function refreshAccessToken(token: any) {
     try {
@@ -73,6 +82,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         async session({ session, token }) {
             session.accessToken = token.accessToken as string;
             session.error = token.error as string;
+
+            // CRITICAL INJECTION: Generate a standard HS256 JWT for FastAPI
+            const jwt = require("jsonwebtoken");
+            const secret = process.env.NEXTAUTH_SECRET as string;
+            // Create a standard JWT string that the Python backend can decode 
+            const rawJwt = jwt.sign({
+                sub: token.sub,
+                email: token.email,
+                name: token.name,
+            }, secret, { expiresIn: '7d' });
+            session.jwtToken = rawJwt; // FastAPI Auth Middleware Token
+
             return session;
         },
     },

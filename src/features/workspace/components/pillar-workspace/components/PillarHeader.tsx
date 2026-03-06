@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ArrowLeft, RefreshCw, Lightbulb } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Lightbulb, Zap } from 'lucide-react';
 import { PILLAR_META } from '../constants';
 import { safeRender } from '../utils';
 import { SourceBadgeList } from './SourceBadgeList';
@@ -174,6 +174,19 @@ export function PillarHeader({
                 {/* Diagnostic */}
                 {diagnostico && (
                     <p className="text-[11px] leading-relaxed mb-3 line-clamp-3" style={{ color: 'var(--color-text-muted)' }}>{diagnostico}</p>
+                )}
+
+                {/* 🔄 STRATEGIC FEEDBACK NOTE */}
+                {dims[selectedPillar]?.justificativa_feedback && (
+                    <div className="mb-4 p-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 flex items-start gap-2.5">
+                        <Zap className="w-3.5 h-3.5 text-indigo-400 mt-0.5 shrink-0" />
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 opacity-80">Feedback Estratégico Real</span>
+                            <span className="text-[11px] text-zinc-300 italic">
+                                {safeRender(dims[selectedPillar].justificativa_feedback)}
+                            </span>
+                        </div>
+                    </div>
                 )}
 
 

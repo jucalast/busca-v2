@@ -134,66 +134,16 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         if context_lines:
             recent_context = "\n".join(context_lines)
     
-    prompt = f"""
-Você é um extrator de informações de negócios. Extraia as informações da mensagem atual, usando o contexto da conversa para entender referências.
-
-CONTEXTO DA CONVERSA RECENTE:
-{recent_context}
-
-MENSAGEM ATUAL DO USUÁRIO: "{message}"
-
-Perfil atual conhecido (já extraído anteriormente):
-{safe_json_dumps(current_profile, ensure_ascii=False)}
-
-REGRAS IMPORTANTES:
-1. Extraia informações da MENSAGEM ATUAL, usando o CONTEXTO para entender referências ambíguas
-2. Se a mensagem contém um nome próprio e o consultor perguntou o nome do negócio → é nome_negocio
-3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é problemas/dificuldades
-4. Se a mensagem fala de meta, objetivo, crescimento, aumento → é objetivos
-5. Se a mensagem contém "B2B" ou "B2C" → é modelo
-6. Se a mensagem contém uma cidade/estado → é localizacao
-7. Se a mensagem contém a área de atuação (ex: cyber segurança, restaurante) → é segmento
-8. Se a mensagem contém setor/indústria atendida (ex: setor bancário) → é tipo_cliente
-9. NÃO invente informações que NÃO estão na mensagem
-10. Campos não mencionados devem ser null ou string vazia
-
-CAMPOS PARA EXTRAIR:
-- nome_negocio: Nome da empresa/negócio
-- segmento: Área de atuação (ex: cyber segurança, restaurante, advocacia)
-- localizacao: Cidade/Estado
-- modelo: Modelo de negócio (B2B, B2C, D2C ou Misto)
-- tipo_produto: Tipo de oferta (produto, serviço ou ambos)
-- faturamento: Faturamento mensal
-- equipe: Número de pessoas na equipe
-- ticket_medio: Ticket médio por venda/serviço
-- problemas: Problemas e desafios principais (inclui "conseguir mais clientes", "vender mais", etc)
-- objetivos: Objetivos e metas de crescimento (ex: "10% a mais no faturamento")
-- investimento: Investimento em marketing
-- canais: Canais de venda/comunicação
-- clientes: Tipo de clientes
-- concorrentes: Concorrentes diretos
-- fornecedores: Fornecedores de matéria-prima/insumos
-- tipo_cliente: Tipos de clientes/indústrias atendidas (ex: setor bancário, alimentos)
-- capacidade_produtiva: Capacidade de produção/volume
-- regiao_atendimento: Região geográfica atendida
-- diferencial: Diferencial competitivo
-- margem: Margem de lucro
-- gargalos: Gargalos operacionais
-- site: Website/URL
-- instagram: Instagram handle
-- whatsapp: WhatsApp
-- linkedin: LinkedIn da empresa (URL ou nome)
-- google_maps: Link do Google Maps ou Google Meu Negócio
-- email_contato: E-mail de contato comercial
-- tempo_operacao: Há quanto tempo o negócio opera
-- modelo_operacional: Modelo operacional
-- capital_disponivel: Capital disponível para investir
-- tempo_entrega: Prazo médio de entrega
-- origem_clientes: De onde vêm os clientes hoje
-- maior_objecao: Maior objeção dos clientes ao comprar
-
-Responda apenas com o JSON, sem texto adicional.
-"""
+    # Load prompt from YAML
+    from app.core.prompt_loader import load_prompt_file
+    prompt_config = load_prompt_file("chat_consultant.yaml")
+    template = prompt_config.get("information_extraction", {}).get("prompt_template", "")
+    
+    prompt = template.format(
+        recent_context=recent_context,
+        message=message,
+        current_profile=safe_json_dumps(current_profile, ensure_ascii=False)
+    )
     
     try:
         # Usar JSON mode nativo + modelo pequeno para extração
@@ -304,7 +254,7 @@ Responda apenas com o JSON, sem texto adicional.
             if updated_profile.get(src):
                 updated_profile[dst] = updated_profile[src]
         
-        log_success(f"✅ JSON mode extracted: {new_fields} fields (total profile: {len([k for k, v in updated_profile.items() if v and v != ''])} fields)")
+        log_success(f"JSON mode extracted: {new_fields} fields (total profile: {len([k for k, v in updated_profile.items() if v and v != ''])} fields)")
         return updated_profile
         
     except Exception as e:
@@ -325,7 +275,6 @@ Responda apenas com o JSON, sem texto adicional.
             fallback_fields["tipo_oferta"] = "produto"
         
         # Extract numbers with context (generic)
-        import re
         
         # Faturamento - look for monetary values
         faturamento_match = re.search(r'R\$\s*([\d.,]+)', message)
@@ -371,6 +320,23 @@ Responda apenas com o JSON, sem texto adicional.
         if location_match:
             city, state = location_match.groups()
             fallback_fields["localizacao"] = f"{city}-{state}"
+            
+        # Email extraction
+        email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', message)
+        if email_match:
+            fallback_fields["email_contato"] = email_match.group(0)
+            
+        # LinkedIn extraction
+        if "linkedin" in message_lower:
+            linkedin_url = re.search(r'(https?://(?:www\.)?linkedin\.com/[^\s]+)', message)
+            if linkedin_url:
+                fallback_fields["linkedin"] = linkedin_url.group(1)
+            else:
+                fallback_fields["linkedin"] = "Referenciado na conversa"
+                
+        # Google Maps / Address Extraction (e.g "Av. Eng. Fábio Roberto Barnabé, 2156")
+        if any(kw in message_lower for kw in ['rua', 'av.', 'avenida', 'praça', 'rodovia']) or re.search(r'\d{5}-\d{3}', message):
+            fallback_fields["google_maps"] = message.strip()
             
         if fallback_fields:
             log_success(f"Fallback extracted {len(fallback_fields)} fields")
@@ -534,15 +500,21 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     missing_labels = [_FIELD_LABELS_PT.get(f, f) for f in all_missing[:4]]  # Top 4
     
     if missing_critical:
-        log_info(f"📋 Campos críticos faltando: {missing_critical}")
+        critical_labels = [_FIELD_LABELS_PT.get(f, f) for f in missing_critical]
+        log_info(f"Campos críticos faltando ({len(missing_critical)}): {critical_labels}")
+    
     if bonus_count < BONUS_MINIMUM:
-        log_info(f"📋 Campos bônus faltando ({bonus_count}/{BONUS_MINIMUM} mínimo): {missing_bonus}")
+        missing_bonus_count = len(BONUS_FIELDS) - bonus_count
+        # Mostrar apenas os primeiros 5 nomes de bônus par não poluir
+        bonus_labels_to_show = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:5]]
+        suffix = "..." if len(missing_bonus) > 5 else ""
+        log_info(f"Campos bônus faltando ({bonus_count}/{BONUS_MINIMUM} coletados): {bonus_labels_to_show}{suffix}")
     
     # 2. Detect discovery gaps (when user says "não sei" about something)
     discovery_gaps = _detect_discovery_gaps(user_message, updated_profile)
     if discovery_gaps:
         updated_profile["_discovery_gaps"] = discovery_gaps
-        log_info(f"📋 Gaps para análise descobrir: {discovery_gaps}")
+        log_info(f"Gaps para análise descobrir: {discovery_gaps}")
     
     # NO web search in chat — all research happens in analysis phase
     search_result = None
@@ -648,28 +620,19 @@ INSTRUÇÃO:
 - Seja BREVE. Máximo 6-8 linhas.
 """
     
-    prompt = f"""Você é um consultor de crescimento especialista em negócios brasileiros.
-
-MODELO DO NEGÓCIO: {modelo_contexto}
-
-O QUE JÁ SEI SOBRE O NEGÓCIO:
-{profile_summary}
-
-HISTÓRICO DA CONVERSA:
-{history_text}
-
-MENSAGEM ATUAL DO USUÁRIO:
-{user_message}
-{gaps_text}
-{status_instruction}
-REGRAS ABSOLUTAS:
-1. NUNCA repita de volta os dados que o usuário acabou de fornecer. Ele já sabe o que disse.
-2. NUNCA sugira estratégias incompatíveis com o modelo de negócio descrito acima.
-3. Seja DIRETO e PRÁTICO. Nada de textos longos "para começar...", "é interessante notar que...".
-4. Se o usuário corrigiu algo, agradeça brevemente e adapte.
-5. Use linguagem profissional mas acessível. Sem excesso de emojis.
-6. Máximo 10 linhas totais na resposta.
-"""
+    # Load response prompt from YAML
+    from app.core.prompt_loader import load_prompt_file
+    prompt_config = load_prompt_file("chat_consultant.yaml")
+    template = prompt_config.get("response_generation", {}).get("prompt_template", "")
+    
+    prompt = template.format(
+        modelo_contexto=modelo_contexto,
+        profile_summary=profile_summary,
+        history_text=history_text,
+        user_message=user_message,
+        gaps_text=gaps_text,
+        status_instruction=status_instruction
+    )
     
     result = call_llm(
         provider="groq",
@@ -692,9 +655,9 @@ REGRAS ABSOLUTAS:
     ready_for_analysis = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
     
     if ready_for_analysis:
-        log_success(f"✅ Ready for analysis — all critical fields + {bonus_count} bonus fields")
+        log_success(f"Pronto para análise — {len(fields_collected)} campos coletados")
     else:
-        log_info(f"⏳ Not ready: {len(missing_critical)} critical missing, {bonus_count}/{BONUS_MINIMUM} bonus")
+        log_info(f"⏳ Aguardando dados: {len(missing_critical)} críticos e {len(missing_bonus)} bônus pendentes")
     
     return {
         "reply": reply,

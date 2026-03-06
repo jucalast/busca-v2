@@ -153,10 +153,14 @@ class AnalysisOrchestrator:
                 "pillar_kpis"
             ]
             
+            conn = db.get_connection()
+            cursor = conn.cursor()
             for table in tables_to_clear:
-                db.conn.execute(f"DELETE FROM {table} WHERE analysis_id = ?", (analysis_id,))
+                cursor.execute(f"DELETE FROM {table} WHERE analysis_id = %s", (analysis_id,))
             
-            db.conn.commit()
+            conn.commit()
+            cursor.close()
+            conn.close()
             self.logger.info("Previous analysis data cleared")
             
         except Exception as e:

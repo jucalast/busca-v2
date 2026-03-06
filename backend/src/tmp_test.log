@@ -1,0 +1,83 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\JoÒo Luccas\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src
+plugins: anyio-4.12.0, langsmith-0.7.9
+collecting ... collected 1 item
+
+tests/test_e2e.py::test_full_analysis_pipeline_e2e FAILED                [100%]
+
+================================== FAILURES ===================================
+_______________________ test_full_analysis_pipeline_e2e _______________________
+
+sample_profile = {'perfil': {'canais_venda': 'Instagram, venda na rua', 'diferencial': 'receita famÝlia, brownies belgas', 'dificuldades': 'atrair clientes online', 'faturamento_mensal': 'R$ 5.000', ...}}
+
+    def test_full_analysis_pipeline_e2e(sample_profile):
+        """E2E Test: Auth -> Create Business -> Analyze -> Metrics"""
+    
+        # In native PostgreSQL, the DB persists across runs so we must use unique emails
+        import uuid
+        from app.core.database import register_user, login_user
+    
+        unique_ext = uuid.uuid4().hex[:8]
+        test_email = f"e2e_{unique_ext}@test.com"
+    
+        # Register the user
+        user_id = register_user(email=test_email, password="dummy", name="E2E Native Postgres")
+    
+        # Login
+        token = login_user(email=test_email, password="dummy")
+    
+        current_user = {"id": user_id, "email": test_email}
+    
+        # Check metrics endpoint internally
+>       res = get_dashboard_metrics(current_user=current_user)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_e2e.py:25: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+current_user = {'email': 'e2e_d5b776cd@test.com', 'id': {'created_at': '2026-03-06T10:27:23.143073+00:00', 'email': 'e2e_d5b776cd@test.com', 'id': '95a852a5-15dd-456a-8271-3dd48d0b5985', 'name': 'E2E Native Postgres'}}
+
+    @router.get("/metrics")
+    def get_dashboard_metrics(current_user: dict = Depends(get_current_user)):
+        from app.core import database as db
+        conn = db.get_connection()
+        c = conn.cursor()
+    
+        # Safe counting logic
+        c.execute("SELECT COUNT(*) as cnt FROM users")
+>       users = c.fetchone()["cnt"]
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: tuple indices must be integers or slices, not str
+
+app\api\routers\growth.py:142: TypeError
+============================== warnings summary ===============================
+..\..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\formparsers.py:12
+  C:\Users\JoÒo Luccas\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+app\schemas\base_schema.py:11
+  C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\schemas\base_schema.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class BasePillarSchema(BaseModel):
+
+tests/test_e2e.py::test_full_analysis_pipeline_e2e
+  C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\core\database.py:521: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    ''', (datetime.utcnow().isoformat(), row["id"]))
+
+tests/test_e2e.py::test_full_analysis_pipeline_e2e
+  C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\core\database.py:362: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/test_e2e.py::test_full_analysis_pipeline_e2e
+  C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\core\database.py:629: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "iat": datetime.utcnow(),
+
+tests/test_e2e.py::test_full_analysis_pipeline_e2e
+  C:\Users\JoÒo Luccas\Desktop\TG-v3\busca-v2\backend\src\app\core\database.py:630: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_e2e.py::test_full_analysis_pipeline_e2e - TypeError: tuple ...
+======================= 1 failed, 6 warnings in 46.83s ========================

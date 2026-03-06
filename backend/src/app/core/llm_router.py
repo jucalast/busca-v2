@@ -405,83 +405,56 @@ def call_openrouter(api_key: str, prompt: str, temperature: float = 0.3, json_mo
     raise Exception("Todos os modelos OpenRouter falharam.")
 
 def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_retries: int = 4, json_mode: bool = True, messages: list = None, prefer_small: bool = False):
-    """Global router to send requests either to Groq, Gemini, or OpenRouter based on user preference."""
+    """Global router to send requests either to Groq, Gemini, or OpenRouter based on user preference.
+    
+    Includes hash-based caching to avoid duplicate LLM calls.
+    """
+    from app.core.llm_cache import get_cached_response, set_cached_response
+    
     actual_provider = provider.lower() if provider else "groq"
     
-    if actual_provider == "gemini":
-        api_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            print("⚠️ Chave GOOGLE_AI_API_KEY ausente. Fazendo fallback de emergência para Groq.", file=sys.stderr)
-            actual_provider = "groq"
-        else:
-            try:
-                res = call_gemini(api_key, prompt, temperature, json_mode, messages)
-                if json_mode and isinstance(res, str):
-                    try:
-                        return json.loads(res)
-                    except json.JSONDecodeError:
-                        print("⚠️ Gemini retornou JSON inválido, retornando texto cru", file=sys.stderr)
-                        return {"raw_response": res, "error": "Invalid JSON"}
-                return res
-            except Exception as e:
-                print(f"⚠️ Erro ao chamar Gemini: {e}. Fazendo fallback de emergência para Groq.", file=sys.stderr)
+    # Build cache key from prompt content
+    cache_prompt = prompt or ""
+    if messages:
+        cache_prompt = json.dumps(messages, ensure_ascii=False)
+    
+    # Check cache first (only for deterministic-ish calls)
+    if temperature <= 0.3 and cache_prompt:
+        cached = get_cached_response(cache_prompt, temperature, json_mode, actual_provider)
+        if cached is not None:
+            return cached
+    
+    def _do_call():
+        """Inner function to allow caching the result from any provider path."""
+        nonlocal actual_provider
+        
+        if actual_provider == "gemini":
+            api_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                print("⚠️ Chave GOOGLE_AI_API_KEY ausente. Fazendo fallback de emergência para Groq.", file=sys.stderr)
                 actual_provider = "groq"
-
-    if actual_provider == "openrouter":
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            print("⚠️ Chave OPENROUTER_API_KEY ausente. Fazendo fallback para Groq.", file=sys.stderr)
-            actual_provider = "groq"
-        else:
-            try:
-                res = call_openrouter(api_key, prompt, temperature, json_mode, messages)
-                if json_mode and isinstance(res, str):
-                    try:
-                        return json.loads(res)
-                    except json.JSONDecodeError:
-                        print("⚠️ OpenRouter retornou JSON inválido, retornando texto cru", file=sys.stderr)
-                        return {"raw_response": res, "error": "Invalid JSON"}
-                return res
-            except Exception as e:
-                print(f"⚠️ Erro ao chamar OpenRouter: {e}. Fazendo fallback para Groq.", file=sys.stderr)
-                actual_provider = "groq"
-            
-    if actual_provider == "groq":
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("Nenhuma chave (Groq ou Gemini) configurada.")
-        try:
-            res = _call_groq_engine(api_key, prompt, temperature, max_retries, json_mode, messages, prefer_small)
-            if json_mode and isinstance(res, str):
+            else:
                 try:
-                    return json.loads(res)
-                except json.JSONDecodeError:
-                    print("⚠️ Groq retornou JSON inválido, retornando texto cru", file=sys.stderr)
-                    return {"raw_response": res, "error": "Invalid JSON"}
-            return res
-        except Exception as groq_err:
-            # If all Groq models failed, try Gemini then OpenRouter as emergency fallback
-            gemini_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-            if gemini_key:
-                print(f"⚠️ Groq falhou ({str(groq_err)[:80]}). Fallback para Gemini.", file=sys.stderr)
-                try:
-                    res = call_gemini(gemini_key, prompt, temperature, json_mode, messages)
+                    res = call_gemini(api_key, prompt, temperature, json_mode, messages)
                     if json_mode and isinstance(res, str):
                         try:
                             return json.loads(res)
                         except json.JSONDecodeError:
-                            print("⚠️ Gemini fallback retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                            print("⚠️ Gemini retornou JSON inválido, retornando texto cru", file=sys.stderr)
                             return {"raw_response": res, "error": "Invalid JSON"}
                     return res
-                except Exception as gemini_err:
-                    print(f"⚠️ Gemini fallback também falhou: {str(gemini_err)[:80]}", file=sys.stderr)
+                except Exception as e:
+                    print(f"⚠️ Erro ao chamar Gemini: {e}. Fazendo fallback de emergência para Groq.", file=sys.stderr)
+                    actual_provider = "groq"
 
-            # Last resort: try OpenRouter
-            openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-            if openrouter_key:
-                print(f"⚠️ Tentando OpenRouter como último recurso...", file=sys.stderr)
+        if actual_provider == "openrouter":
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                print("⚠️ Chave OPENROUTER_API_KEY ausente. Fazendo fallback para Groq.", file=sys.stderr)
+                actual_provider = "groq"
+            else:
                 try:
-                    res = call_openrouter(openrouter_key, prompt, temperature, json_mode, messages)
+                    res = call_openrouter(api_key, prompt, temperature, json_mode, messages)
                     if json_mode and isinstance(res, str):
                         try:
                             return json.loads(res)
@@ -489,7 +462,61 @@ def call_llm(provider: str, prompt: str = None, temperature: float = 0.3, max_re
                             print("⚠️ OpenRouter retornou JSON inválido, retornando texto cru", file=sys.stderr)
                             return {"raw_response": res, "error": "Invalid JSON"}
                     return res
-                except Exception as or_err:
-                    print(f"⚠️ OpenRouter fallback também falhou: {str(or_err)[:80]}", file=sys.stderr)
+                except Exception as e:
+                    print(f"⚠️ Erro ao chamar OpenRouter: {e}. Fazendo fallback para Groq.", file=sys.stderr)
+                    actual_provider = "groq"
+                
+        if actual_provider == "groq":
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                raise RuntimeError("Nenhuma chave (Groq ou Gemini) configurada.")
+            try:
+                res = _call_groq_engine(api_key, prompt, temperature, max_retries, json_mode, messages, prefer_small)
+                if json_mode and isinstance(res, str):
+                    try:
+                        return json.loads(res)
+                    except json.JSONDecodeError:
+                        print("⚠️ Groq retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                        return {"raw_response": res, "error": "Invalid JSON"}
+                return res
+            except Exception as groq_err:
+                # If all Groq models failed, try Gemini then OpenRouter as emergency fallback
+                gemini_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+                if gemini_key:
+                    print(f"⚠️ Groq falhou ({str(groq_err)[:80]}). Fallback para Gemini.", file=sys.stderr)
+                    try:
+                        res = call_gemini(gemini_key, prompt, temperature, json_mode, messages)
+                        if json_mode and isinstance(res, str):
+                            try:
+                                return json.loads(res)
+                            except json.JSONDecodeError:
+                                print("⚠️ Gemini fallback retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                                return {"raw_response": res, "error": "Invalid JSON"}
+                        return res
+                    except Exception as gemini_err:
+                        print(f"⚠️ Gemini fallback também falhou: {str(gemini_err)[:80]}", file=sys.stderr)
 
-            raise groq_err  # Re-raise original error if all providers failed
+                # Last resort: try OpenRouter
+                openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+                if openrouter_key:
+                    print(f"⚠️ Tentando OpenRouter como último recurso...", file=sys.stderr)
+                    try:
+                        res = call_openrouter(openrouter_key, prompt, temperature, json_mode, messages)
+                        if json_mode and isinstance(res, str):
+                            try:
+                                return json.loads(res)
+                            except json.JSONDecodeError:
+                                print("⚠️ OpenRouter retornou JSON inválido, retornando texto cru", file=sys.stderr)
+                                return {"raw_response": res, "error": "Invalid JSON"}
+                        return res
+                    except Exception as or_err:
+                        print(f"⚠️ OpenRouter fallback também falhou: {str(or_err)[:80]}", file=sys.stderr)
+
+                raise groq_err  # Re-raise original error if all providers failed
+
+    # Execute and cache the result
+    result = _do_call()
+    if result is not None and temperature <= 0.3 and cache_prompt:
+        set_cached_response(cache_prompt, result, temperature, json_mode, actual_provider)
+    return result
+

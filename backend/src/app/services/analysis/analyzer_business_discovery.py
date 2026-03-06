@@ -345,7 +345,7 @@ def _synthesize_discovery(raw_results: list, hints: dict, model_provider: str = 
             raw_block += f"{r['raw_text']}\n"
     
     if not raw_block.strip():
-        print("  ⚠️ Nenhum dado de discovery encontrado", file=sys.stderr)
+        log_warning("Nenhum dado de discovery encontrado")
         return {"found": False, "insights": {}}
     
     nome = hints["nome"] or "o negócio"
@@ -412,12 +412,12 @@ JSON:
     
     for provider in providers_to_try:
         try:
-            print(f"  🧠 Tentando sintetizar com {provider}...", file=sys.stderr)
+            log_llm(f"Tentando sintetizar discovery com {provider}...")
             result = call_llm(provider=provider, prompt=prompt, temperature=0.2, json_mode=True)
             
             # Validate result structure
             if not isinstance(result, dict):
-                print(f"  ⚠️ {provider} retornou tipo inválido: {type(result)}", file=sys.stderr)
+                log_warning(f"{provider} retornou tipo inválido: {type(result)}")
                 continue
             
             # Ensure all required fields exist
@@ -451,17 +451,17 @@ JSON:
                     found_items.append(canal)
             n_comp = len(result.get("concorrentes_encontrados", []))
             n_probs = len(result.get("problemas_detectados", []))
-            has_market = bool(result.get("dados_mercado_local", {}).get("preco_medio_regiao"))
-            print(f"  📊 Discovery sintetizado com {provider}: canais={found_items} | concorrentes={n_comp} | problemas={n_probs} | mercado={'✅' if has_market else '❌'}", file=sys.stderr)
+            has_market = bool(result.get("dados_market_local", {}).get("preco_medio_regiao"))
+            log_success(f"Discovery sintetizado com {result.get('provider', provider)}: canais={found_items} | concorrentes={n_comp}")
             
             return result
             
         except Exception as e:
-            print(f"  ❌ Erro ao sintetizar discovery com {provider}: {e}", file=sys.stderr)
+            log_error(f"Erro ao sintetizar discovery com {provider}: {e}")
             continue
     
     # If all providers failed, return basic structure
-    print("  ⚠️ Todos os provedores falharam, retornando estrutura básica", file=sys.stderr)
+    log_warning("Todos os provedores falharam para síntese de discovery")
     return {
         "found": False, 
         "error": "All providers failed",
@@ -493,24 +493,15 @@ def discover_business(profile: dict, region: str = "br-pt", model_provider: str 
     Returns:
         discovery_data dict with structured findings about the real business
     """
-    print("\n🔍 === BUSINESS DISCOVERY ===", file=sys.stderr)
+    log_info("Iniciando BUSINESS DISCOVERY...")
 
     # Step 1: Extract what we know from the chat
     hints = _extract_search_hints(profile)
-    print(f"  📋 Hints extraídos do chat:", file=sys.stderr)
-    print(f"     Nome: {hints['nome']}", file=sys.stderr)
-    print(f"     Instagram: {'SIM' if hints['has_instagram'] else 'NÃO'} (handle: @{hints['instagram_handle'] or '?'})", file=sys.stderr)
-    print(f"     Site: {'SIM' if hints['has_site'] else 'NÃO'} ({hints.get('site_url') or '?'})", file=sys.stderr)
-    print(f"     LinkedIn: {'SIM' if hints['has_linkedin'] else 'NÃO'} ({hints.get('linkedin_url') or '?'})", file=sys.stderr)
-    print(f"     WhatsApp: {'SIM' if hints['has_whatsapp'] else 'NÃO'} ({hints.get('whatsapp_numero') or '?'})", file=sys.stderr)
-    print(f"     Google Maps: {'SIM' if hints['has_google'] else 'NÃO'} ({hints.get('google_maps_url') or '?'})", file=sys.stderr)
-    print(f"     E-mail: {hints.get('email_contato') or '?'}", file=sys.stderr)
-    print(f"     Concorrentes: {hints['competitor_names'] or 'nenhum mencionado'}", file=sys.stderr)
-    print(f"     Dificuldade: {hints['dificuldades'] or '?'}", file=sys.stderr)
+    log_debug(f"Hints extraídos: {list(hints.keys())}")
     
     # Step 2: Build targeted queries
     queries = _build_discovery_queries(hints)
-    print(f"  🔎 {len(queries)} buscas de discovery planejadas", file=sys.stderr)
+    log_info(f"{len(queries)} buscas de discovery planejadas")
     
     # Step 3: Execute searches (sequential to avoid rate limits)
     raw_results = []
@@ -518,18 +509,17 @@ def discover_business(profile: dict, region: str = "br-pt", model_provider: str 
         result = _run_discovery_search(q, region)
         raw_results.append(result)
         
-        found_count = sum(1 for r in raw_results if r.get("found"))
-        print(f"    [{i+1}/{len(queries)}] {q['id']}: {'✅' if result.get('found') else '⚠️'}", file=sys.stderr)
+        log_debug(f"Busca discovery [{i+1}/{len(queries)}] {q['id']}: {'OK' if result.get('found') else 'FALHA'}")
         
         # Small delay between searches
         if i < len(queries) - 1:
             time.sleep(0.5)
     
     found_total = sum(1 for r in raw_results if r.get("found"))
-    print(f"  📊 {found_total}/{len(queries)} buscas com resultados", file=sys.stderr)
+    log_info(f"Discovery concluído: {found_total}/{len(queries)} buscas com sucesso")
     
     if found_total == 0:
-        print("  ⚠️ Nenhum dado de discovery encontrado", file=sys.stderr)
+        log_warning("Nenhum dado de discovery encontrado")
         return {
             "found": False,
             "hints": hints,
@@ -538,7 +528,7 @@ def discover_business(profile: dict, region: str = "br-pt", model_provider: str 
         }
     
     # Step 4: Use LLM to synthesize structured insights
-    print("  🧠 Sintetizando insights...", file=sys.stderr)
+    log_info("Sintetizando insights de discovery...")
     discovery_data = _synthesize_discovery(raw_results, hints, model_provider)
     
     # Add metadata
@@ -546,7 +536,7 @@ def discover_business(profile: dict, region: str = "br-pt", model_provider: str 
     discovery_data["queries_executadas"] = [q["id"] for q in queries]
     discovery_data["total_fontes"] = len(discovery_data.get("fontes_discovery", []))
     
-    print(f"  ✅ Discovery completo: {discovery_data.get('found', False)}", file=sys.stderr)
+    log_success("Business Discovery finalizado")
     
     return discovery_data
 
@@ -792,7 +782,7 @@ NÃO seja genérico — cada ponto deve ser diretamente aplicável a ESTE negóc
             return str(brief_text)[:2500]
         return str(result)[:2500]
     except Exception as e:
-        print(f"  ⚠️ Erro ao gerar sales brief: {e}", file=sys.stderr)
+        log_error(f"Erro ao gerar sales brief: {e}")
         # Return minimal fallback so scorer still works
         return (
             f"NEGÓCIO: {nome} ({segmento}). "

@@ -43,12 +43,18 @@ Usage Examples:
     from app.services.agents import pillar_agent, enhanced_agents
 """
 
-# Convenience imports for common services
-from .agents import *
-from .intelligence import *
-from .infrastructure import *
-from .search import *
-from .core import *
+# Lazy imports to avoid circular dependencies
+# Modules are loaded on first access instead of at import time
+def __getattr__(name):
+    """Lazy-load service functions on demand."""
+    if name == "run_pillar_agent":
+        from .agents.pillar_agent import run_pillar_agent
+        return run_pillar_agent
+    if name == "get_vector_store":
+        from .intelligence.vector_store import get_vector_store
+        return get_vector_store
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Agent services

@@ -95,4 +95,20 @@ class ActionRedoPillarRequest(BaseModel):
     analysis_id: str
     pillar_key: str
 
-# More specific schemas can be added below...
+# Typed schemas for endpoints that previously used dict
+class PillarStateRequest(BaseModel):
+    analysis_id: str
+    pillar_key: str
+
+class AnalysisTasksRequest(BaseModel):
+    analysis_id: str
+    pillar_key: str
+
+class DeleteBusinessRequest(BaseModel):
+    business_id: str
+
+class ProductionAgentRequest(BaseModel):
+    analysis_id: str
+    pillar_key: str
+    aiModel: Optional[str] = "groq"
+

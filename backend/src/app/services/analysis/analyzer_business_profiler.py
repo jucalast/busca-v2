@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from app.core.llm_router import call_llm
+from app.services.common import log_info, log_debug, log_warning, log_error, log_llm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -200,7 +201,7 @@ def identify_dynamic_categories(profile: dict) -> list:
     categories = profile.get("categorias_relevantes", [])
 
     if not categories:
-        print("  ⚠️ Nenhuma categoria no perfil. Gerando 7 pilares padrão...", file=sys.stderr)
+        log_warning("Nenhuma categoria no perfil. Gerando 7 pilares padrão...")
         # Instead of crashing, generate all 7 defaults so the pipeline can continue
         categories = []
 
@@ -218,15 +219,15 @@ def identify_dynamic_categories(profile: dict) -> list:
                         new_id = remap_val
                         break
             if new_id:
-                print(f"    🔄 Remapped category ID: '{cat_id}' → '{new_id}'", file=sys.stderr)
+                log_debug(f"Remapped category ID: '{cat_id}' → '{new_id}'")
                 cat["id"] = new_id
                 cat_id = new_id
             else:
-                print(f"    ⚠️ Unknown category ID '{cat_id}', keeping as-is", file=sys.stderr)
+                log_warning(f"Unknown category ID '{cat_id}', keeping as-is")
 
         # Prevent duplicate pillar IDs (keep highest priority)
         if cat_id in seen_ids:
-            print(f"    🗑️ Duplicate pillar ID '{cat_id}', skipping", file=sys.stderr)
+            log_debug(f"Duplicate pillar ID '{cat_id}', skipping")
             continue
         seen_ids.add(cat_id)
         fixed.append(cat)
@@ -252,7 +253,7 @@ def identify_dynamic_categories(profile: dict) -> list:
     present_ids = {c.get("id") for c in fixed}
     for pid, meta in _DEFAULT_PILLAR_META.items():
         if pid not in present_ids:
-            print(f"    ➕ Auto-adicionando pilar ausente: '{pid}'", file=sys.stderr)
+            log_debug(f"Auto-adicionando pilar ausente: '{pid}'")
             fixed.append({
                 "id": pid,
                 "nome": meta["nome"],
@@ -267,7 +268,7 @@ def identify_dynamic_categories(profile: dict) -> list:
     # Sort by priority descending
     fixed.sort(key=lambda c: c.get("prioridade", 5), reverse=True)
     cat_ids = [c.get("id", "?") for c in fixed]
-    print(f"  📋 Categorias finais ({len(fixed)}): {cat_ids}", file=sys.stderr)
+    log_info(f"Categorias identificadas: {cat_ids}")
 
     # Also fix queries_sugeridas keys to match remapped IDs
     queries = profile.get("queries_sugeridas", {})
@@ -304,7 +305,7 @@ def identify_dynamic_categories(profile: dict) -> list:
         if pid not in queries:
             template = _QUERY_TEMPLATES.get(pid, f"{pid} {segmento}")
             queries[pid] = template
-            print(f"    🔍 Query gerada para '{pid}': {template[:60]}...", file=sys.stderr)
+            log_debug(f"Query gerada para '{pid}': {template[:60]}...")
 
     # Update profile's categorias_relevantes to match the fixed list
     profile["categorias_relevantes"] = fixed
@@ -340,7 +341,7 @@ def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
             }
 
     try:
-        print("🧠 Gerando perfil de negócio...", file=sys.stderr)
+        log_info("Gerando perfil de negócio...")
         profile = generate_business_profile(onboarding_data, api_key, model_provider)
 
         # Extract restrictions for downstream components
@@ -357,7 +358,7 @@ def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
             modelo_op = restricoes.get("modelo_operacional", "não detectado")
             capital = restricoes.get("capital_disponivel", "não detectado")
             solo = restricoes.get("equipe_solo", False)
-            print(f"  📋 Restrições: modelo={modelo_op}, capital={capital}, solo={solo}", file=sys.stderr)
+            log_debug(f"Restrições: modelo={modelo_op}, capital={capital}, solo={solo}")
 
         return {
             "success": True,
@@ -368,7 +369,7 @@ def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
         }
 
     except Exception as e:
-        print(f"❌ Erro ao gerar perfil: {e}", file=sys.stderr)
+        log_error(f"Erro ao gerar perfil: {e}")
         return {
             "success": False,
             "erro": f"Erro ao gerar perfil de negócio: {str(e)[:200]}"

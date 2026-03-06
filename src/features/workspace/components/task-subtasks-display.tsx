@@ -441,6 +441,35 @@ export default function TaskSubtasksDisplay({
                             animation: 'result-block-fade-in 0.5s ease-out forwards',
                             opacity: 0
                         }}>
+                            {/* 🔄 STRATEGIC FEEDBACK LOOP INSIGHTS */}
+                            {result?.strategic_insights && (
+                                <div className="mb-4 p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 backdrop-blur-sm">
+                                    <div className="flex items-center gap-2 mb-2 text-indigo-400">
+                                        <Zap className="w-4 h-4 fill-current" />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">Descoberta Estratégica Realimentada</span>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {result.strategic_insights.score_adjustment && (
+                                            <div className="flex items-center gap-2">
+                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${result.strategic_insights.score_adjustment.delta > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                                    {result.strategic_insights.score_adjustment.delta > 0 ? '+' : ''}{result.strategic_insights.score_adjustment.delta} Score
+                                                </div>
+                                                <span className="text-[11px] text-zinc-300 italic">"{result.strategic_insights.score_adjustment.motivo}"</span>
+                                            </div>
+                                        )}
+                                        {result.strategic_insights.profile_updates && Object.keys(result.strategic_insights.profile_updates).length > 0 && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {Object.entries(result.strategic_insights.profile_updates).map(([k, v]) => (
+                                                    <div key={k} className="text-[9px] bg-zinc-800/80 px-2 py-1 rounded border border-zinc-700/50 text-zinc-400">
+                                                        <span className="font-bold uppercase opacity-60 mr-1">{k}:</span> {String(v)}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Intelligence tools visualization */}
                             <IntelligenceToolsBadges
                                 tools={result?.intelligence_tools_used}

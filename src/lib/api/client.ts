@@ -116,6 +116,7 @@ export async function runOrchestrator(
     action: string,
     inputData: any,
     optionsOrTimeout?: number | RunOrchestratorOptions,
+    authToken?: string | null
 ): Promise<any> {
     const options = normalizeOptions(optionsOrTimeout);
     const timeoutMs = options.timeoutMs ?? 300000;
@@ -132,10 +133,15 @@ export async function runOrchestrator(
     try {
         console.log(`[Growth Orchestrator Server] Fetching: ${action} via FastAPI (${url})`);
 
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
         // Using standard fetch wrapper
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify(inputData),
             // AbortController could be integrated here for timeouts
         });
@@ -157,20 +163,20 @@ export async function runOrchestrator(
     }
 }
 
-export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480000): ReadableStream {
+export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480000, authToken?: string | null): ReadableStream {
     // This previously used child_process spawn + SSE emulation from Python.
     // For now we will adapt this to proxy an actual HTTP SSE stream from FastAPI.
     return new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
             let controllerClosed = false;
-            
+
             const send = (obj: object) => {
                 if (!controllerClosed) {
-                    try { 
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); 
-                    } catch { 
-                        controllerClosed = true; /* stream closed */ 
+                    try {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+                    } catch {
+                        controllerClosed = true; /* stream closed */
                     }
                 }
             };
@@ -180,9 +186,14 @@ export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480
                 const url = `${process.env.FASTAPI_URL || 'http://127.0.0.1:8000'}/api/v1/growth/analyze`;
                 console.log(`[Growth SSE] Fetching stream from ${url}`);
 
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(inputData),
                 });
 

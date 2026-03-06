@@ -542,18 +542,22 @@ def main():
 
         # Step 1: Clear existing task data for this analysis (reanalysis support)
         if analysis_id:
-            print("🗑️ Limpando dados de tarefas anteriores (reanálise)...", file=sys.stderr)
+            logger.info("🗑️ Limpando dados de tarefas anteriores (reanálise)...")
             try:
                 # Delete specialist plans, executions, results, subtasks and KPIs for this analysis
-                db.conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
-                db.conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
-                db.conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
-                db.conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
-                db.conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
-                db.conn.commit()
-                print("  ✅ Dados de tarefas anteriores removidos", file=sys.stderr)
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM specialist_plans WHERE analysis_id = %s", (analysis_id,))
+                cursor.execute("DELETE FROM specialist_executions WHERE analysis_id = %s", (analysis_id,))
+                cursor.execute("DELETE FROM specialist_results WHERE analysis_id = %s", (analysis_id,))
+                cursor.execute("DELETE FROM specialist_subtasks WHERE analysis_id = %s", (analysis_id,))
+                cursor.execute("DELETE FROM pillar_kpis WHERE analysis_id = %s", (analysis_id,))
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info("  ✅ Dados de tarefas anteriores removidos")
             except Exception as e:
-                print(f"  ⚠️ Erro ao limpar dados anteriores: {e}", file=sys.stderr)
+                logger.error(f"  ⚠️ Erro ao limpar dados anteriores: {e}")
 
         # Step 1: Business Discovery (search for the ACTUAL business online) - only if not reanalyzing
         if not discovery_data:

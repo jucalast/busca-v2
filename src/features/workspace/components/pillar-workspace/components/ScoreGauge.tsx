@@ -100,7 +100,7 @@ export function GaugeArc({ score, size = 120 }: GaugeArcProps) {
                             strokeWidth={sw}
                             strokeLinecap="round"
                             fill="none"
-                            style={{ filter: `drop-shadow(0 0 8px ${seg.color}55)` }}
+                            style={{ filter: `drop-shadow(0 0 8px ${seg.color})` }}
                         />
                     );
                 })}
@@ -179,11 +179,15 @@ export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExpo
     const displayInt = Math.round(currentScore);
 
     const getCurrentSegmentColor = () => {
+        let lastColor = segments[0].color;
         for (const seg of segments) {
-            if (fillAngle <= seg.start) return segments[0].color;
-            if (fillAngle >= seg.start && fillAngle <= seg.end) return seg.color;
+            if (fillAngle >= seg.start) {
+                lastColor = seg.color;
+            } else {
+                break;
+            }
         }
-        return segments[segments.length - 1].color;
+        return lastColor;
     };
 
     return (
@@ -249,7 +253,7 @@ export function ScoreGauge({ score, classificacao, onExport, onRedo, loadingExpo
                                         strokeWidth={strokeWidth}
                                         strokeLinecap="round"
                                         fill="none"
-                                        style={{ filter: `drop-shadow(0 0 8px ${seg.color}44)` }}
+                                        style={{ filter: `drop-shadow(0 0 8px ${seg.color})` }}
                                     />
                                 );
                             })}

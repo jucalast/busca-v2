@@ -28,6 +28,7 @@ import re
 import sys
 import time
 from app.core.llm_router import call_llm
+from app.services.common import log_info, log_debug, log_warning, log_error, log_llm, log_success
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -128,6 +129,41 @@ DIMENSIONS = {
 # Sorted order for chain context processing
 DIMENSION_ORDER = sorted(DIMENSIONS.keys(), key=lambda k: DIMENSIONS[k]["ordem"])
 
+def get_dynamic_weights(profile: dict) -> dict:
+    """ Adjust pillar weights based on business model (B2B, B2C, Service).
+    Business logic:
+    - B2B: Focus on Sales Process (consultative) and Branding (authority). Visual Identity/Org Traffic matter less.
+    - B2C: Focus on Visual Identity, Sales Channels, and Paid Traffic (impulse).
+    - Service: Focus on Branding (social proof) and Organic Traffic (SEO/Authority).
+    """
+    from app.services.agents.pillar_config import _detect_business_model
+    model = _detect_business_model(profile)
+    
+    # Base weights (1.0 total)
+    weights = {k: v["peso"] for k, v in DIMENSIONS.items()}
+    
+    if model == "b2b":
+        weights.update({
+            "publico_alvo": 0.20, "branding": 0.20, "identidade_visual": 0.05,
+            "canais_venda": 0.10, "trafego_organico": 0.10, "trafego_pago": 0.10,
+            "processo_vendas": 0.25
+        })
+    elif model == "servico":
+        weights.update({
+            "publico_alvo": 0.15, "branding": 0.25, "identidade_visual": 0.10,
+            "canais_venda": 0.10, "trafego_organico": 0.20, "trafego_pago": 0.10,
+            "processo_vendas": 0.10
+        })
+    elif model == "b2c":
+        weights.update({
+            "publico_alvo": 0.15, "branding": 0.10, "identidade_visual": 0.15,
+            "canais_venda": 0.20, "trafego_organico": 0.15, "trafego_pago": 0.15,
+            "processo_vendas": 0.10
+        })
+        
+    total = sum(weights.values())
+    return {k: v / total for k, v in weights.items()}
+
 
 
 
@@ -226,12 +262,12 @@ def _filter_market(dim_key: str, market_data: dict) -> str:
 
     if not relevant:
         available_ids = [cat.get("id", "").lower() for cat in categories]
-        print(f"    ⚠️ No market data matched for {dim_key} (available: {available_ids})", file=sys.stderr)
+        log_warning(f"Nenhum dado de mercado correspondente para {dim_key} (disponíveis: {available_ids})")
         return ""
 
     matched_ids = [cat.get("id", "") for cat in relevant]
     matched_scores = [s for s, _ in scored[:3]]
-    print(f"    📊 Market match for {dim_key}: {list(zip(matched_ids, matched_scores))}", file=sys.stderr)
+    log_debug(f"Market match para {dim_key}: {list(zip(matched_ids, matched_scores))}")
 
     text = ""
     for cat in relevant:
@@ -299,17 +335,21 @@ def extract_restrictions(profile: dict) -> dict:
 
 def _compute_objective_score(dim_key: str, profile: dict) -> int:
     """Compute a deterministic partial score based on concrete profile data.
+    IMPROVED: Now checks for data quality/length, not just existence.
     Returns 0-100 based on what data the business has for this dimension."""
     perfil = profile.get("perfil", profile)
     score = 0
     
-    def has(field, *aliases):
-        """Check field or any alias for a non-empty, non-placeholder value."""
+    def get_quality(field, *aliases):
+        """Returns a score multiplier (0.0 to 1.0) based on value quality."""
         for f in (field,) + aliases:
-            v = perfil.get(f, "")
-            if v and str(v).strip() and str(v).strip() not in ("?", "null", "None", "não informado", ""):
-                return True
-        return False
+            v = str(perfil.get(f, "")).strip()
+            if v and v not in ("?", "null", "None", "não informado", "não sei", ""):
+                # Qualitative check: very short answers get less points
+                if len(v) < 10: return 0.4  # "Instagram" is too short
+                if len(v) < 30: return 0.7  # "Vendo no instagram e whatsapp" is better
+                return 1.0 # Detailed answer
+        return 0.0
     
     canais_raw_val = perfil.get("canais_venda", "")
     if isinstance(canais_raw_val, list):
@@ -318,95 +358,97 @@ def _compute_objective_score(dim_key: str, profile: dict) -> int:
         canais_raw = str(canais_raw_val).lower()
     
     if dim_key == "publico_alvo":
-        if has("cliente_ideal", "publico_alvo"): score += 30
-        if has("segmento"): score += 15
-        if has("localizacao"): score += 10
-        if has("maior_objecao"): score += 10
-        if has("origem_clientes"): score += 15
-        if has("modelo", "modelo_negocio"): score += 10
+        score += 35 * get_quality("cliente_ideal", "publico_alvo")
+        score += 15 * get_quality("segmento")
+        score += 15 * get_quality("localizacao")
+        score += 15 * get_quality("maior_objecao")
+        score += 20 * get_quality("origem_clientes")
         
     elif dim_key == "branding":
-        if has("diferencial"): score += 30
-        if has("concorrentes"): score += 20
-        if has("segmento"): score += 10
-        if has("maior_objecao"): score += 10
-        if has("objetivos"): score += 10
+        score += 40 * get_quality("diferencial")
+        score += 30 * get_quality("concorrentes")
+        score += 15 * get_quality("maior_objecao")
+        score += 15 * get_quality("objetivos")
         
     elif dim_key == "identidade_visual":
-        if "instagram" in canais_raw: score += 20
-        if "site" in canais_raw or "loja virtual" in canais_raw: score += 20
-        if has("instagram_handle"): score += 15
-        if has("site_url"): score += 15
-        if has("diferencial"): score += 10
+        if "instagram" in canais_raw or get_quality("instagram_handle") > 0: score += 40
+        if "site" in canais_raw or get_quality("site_url") > 0: score += 40
+        if get_quality("diferencial") > 0.5: score += 20
         
     elif dim_key == "canais_venda":
         n_canais = len([c for c in re.split(r"[,|;]", canais_raw) if c.strip()]) if canais_raw else 0
-        if n_canais >= 3: score += 30
-        elif n_canais >= 2: score += 20
+        if n_canais >= 3: score += 40
+        elif n_canais >= 2: score += 25
         elif n_canais == 1: score += 10
         has_online = any(x in canais_raw for x in ["instagram", "site", "whatsapp", "marketplace", "ifood", "online", "ecommerce"])
         has_offline = any(x in canais_raw for x in ["loja", "rua", "físic", "boca", "feira"])
-        if has_online: score += 15
-        if has_offline: score += 10
-        if has_online and has_offline: score += 10
+        if has_online: score += 30
+        if has_offline: score += 30
         
     elif dim_key == "trafego_organico":
-        if "instagram" in canais_raw: score += 15
-        if has("instagram_handle"): score += 15
-        if "site" in canais_raw or has("site_url"): score += 15
-        if has("google_maps_url"): score += 10
-        if has("origem_clientes"): score += 10
-        if not any(x in canais_raw for x in ["instagram", "site", "facebook", "google"]): score += 5
+        score += 30 * get_quality("google_maps_url")
+        score += 30 * get_quality("instagram_handle")
+        score += 20 * get_quality("site_url")
+        score += 20 * get_quality("origem_clientes")
         
     elif dim_key == "trafego_pago":
-        if has("capital_disponivel"): score += 20
-        capital_val = str(perfil.get("capital_disponivel", "")).lower()
-        if capital_val in ("zero", "baixo", "nenhum", "0"): score += 5
-        elif capital_val: score += 15
-        if has("faturamento_mensal", "faturamento_faixa"): score += 15
-        if has("cliente_ideal", "publico_alvo"): score += 15
-        if has("segmento"): score += 10
+        score += 40 * get_quality("capital_disponivel")
+        faturamento_val = str(perfil.get("faturamento_mensal", "")).lower()
+        if any(x in faturamento_val for x in ["acima", "50k", "10k", "20k", "cem mil"]):
+            score += 30
+        score += 30 * get_quality("segmento")
         
     elif dim_key == "processo_vendas":
-        if has("ticket_medio", "ticket_medio_estimado"): score += 20
-        if has("margem_lucro"): score += 20
-        if has("faturamento_mensal", "faturamento_faixa"): score += 15
-        if has("maior_objecao"): score += 15
-        if has("modelo_operacional"): score += 10
-        if has("origem_clientes"): score += 10
+        score += 30 * get_quality("maior_objecao")
+        score += 30 * get_quality("ticket_medio", "ticket_medio_estimado")
+        score += 20 * get_quality("margem_lucro")
+        score += 20 * get_quality("origem_clientes")
     
-    return min(score, 100)
+    return min(int(score), 100)
 
 
 def _build_chain_context(dim_key: str, chain_summaries: dict) -> str:
     """Build compact context from upstream pillars for this dimension.
-    Each upstream summary is ~100-150 tokens, keeping total injection small."""
+    Includes strategic alerts for low-score dependencies."""
     upstream_keys = DIMENSIONS[dim_key].get("upstream", [])
     if not upstream_keys or not chain_summaries:
         return ""
     
     lines = ["CONTEXTO DOS PILARES ANTERIORES (use para conectar sua análise):"]
     for uk in upstream_keys:
-        summary = chain_summaries.get(uk)
-        if summary:
+        data = chain_summaries.get(uk)
+        if data:
             label = DIMENSIONS[uk]["label"]
-            lines.append(f"• {label}: {summary}")
+            score = data.get("score", 50)
+            summary = data.get("summary", "")
+            
+            # Critical Logic: Strategic Alerts
+            prefix = ""
+            if score < 40:
+                prefix = "⚠️ [FRAQUEZA CRÍTICA]: "
+                if uk == "publico_alvo":
+                    prefix += "(Risco Alto) Como o público é desconhecido, esta estratégia aqui deve ser cautelosa. "
+                elif uk == "branding":
+                    prefix += "(Risco de Conversão) Sem posicionamento claro, esta ação pode não converter. "
+            
+            lines.append(f"• {label}: {prefix}{summary}")
     
     return "\n".join(lines) if len(lines) > 1 else ""
 
 
-def _extract_chain_summary(dim_key: str, result: dict) -> str:
-    """Extract a compact summary (~100 tokens) from a scored dimension
-    to pass as context to downstream pillars."""
+def _extract_chain_summary(dim_key: str, result: dict) -> dict:
+    """Extract a compact summary + score from a scored dimension
+    to pass as context/alerts to downstream pillars."""
     label = DIMENSIONS[dim_key]["label"]
     score = result.get("score", 50)
     dado_chave = result.get("dado_chave", "")
     justificativa = result.get("justificativa", "")
     
-    # Take first sentence of justificativa + dado_chave
+    # Take first sentence of justificativa
     just_short = justificativa.split(".")[0] + "." if justificativa else ""
+    summary = f"Score {score}/100. {just_short} {dado_chave}".strip()[:300]
     
-    return f"Score {score}/100. {just_short} {dado_chave}".strip()[:300]
+    return {"summary": summary, "score": score}
 
 
 def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
@@ -510,11 +552,19 @@ CONTEXTO B2B: Vende para OUTRAS EMPRESAS. Foque em vendas consultivas, LinkedIn,
     }
     escopo_text = _ESCOPO_PILAR.get(dim_key, "")
 
-    prompt = f"""Você é consultor especialista EXCLUSIVAMENTE em "{dim_cfg['label']}".
+    # Discovery fairness rules to prevent false negatives
+    discovery_fairness = ""
+    if not discovery_text.strip():
+        discovery_fairness = "\n⚠️ NOTA: NENHUM dado externo foi encontrado no Discovery para este pilar. NÃO penalize o negócio por isso (pode ser falha na nossa busca). Dê o benefício da dúvida e foque no que o usuário contou ou em sugestões proativas de melhoria."
+    else:
+        discovery_fairness = "\n⚠️ NOTA: Use os dados do Discovery como evidência, mas se algo não foi listado, não significa que não existe. Avalie o que está lá e sugira melhorias no que parece faltar."
 
+    prompt = f"""Você é consultor especialista EXCLUSIVAMENTE em "{dim_cfg['label']}".
+ 
 SEU FOCO EXCLUSIVO: {dim_cfg['foco']}{off_topic_guard}
 {escopo_text}
 Sua análise e TODAS as ações devem ser EXCLUSIVAMENTE sobre {dim_cfg['label']}.
+{discovery_fairness}
 
 NEGÓCIO: {nome} | {segmento} | {perfil.get('localizacao','?')} | Equipe: {_eq} | Capital: {_cap} | Ticket: {_tick}
 Canais: {perfil.get('canais_venda','?')} | Diferencial: {_dif_val} | Origem clientes: {_orig}
@@ -546,12 +596,11 @@ JSON:
     "meta_pilar": "Estado ideal de {dim_cfg['label']} para {nome} (NÃO sobre logística/custos)"
 }}"""
 
-    print(f"    📝 Prompt: {len(prompt)} chars", file=sys.stderr)
+    log_debug(f"Pilar {dim_key} - Prompt size: {len(prompt)} chars")
 
     try:
         result = call_llm(provider=model_provider, prompt=prompt)
-        # Log raw LLM response keys and action count
-        print(f"    📦 LLM retornou: {list(result.keys())} | acoes: {len(result.get('acoes_imediatas', []))}", file=sys.stderr)
+        log_debug(f"Pilar {dim_key} - LLM retornou: {list(result.keys())} | acoes: {len(result.get('acoes_imediatas', []))}")
         # Ensure expected fields
         result.setdefault("score", 50)
         result.setdefault("status", "atencao")
@@ -564,10 +613,7 @@ JSON:
         llm_score = result["score"]
         obj_score = _compute_objective_score(dim_key, profile)
         blended = round(llm_score * 0.6 + obj_score * 0.4)
-        result["score"] = blended
-        result["_score_llm"] = llm_score
-        result["_score_objetivo"] = obj_score
-        print(f"    📐 Score blend: LLM={llm_score} × 0.6 + OBJ={obj_score} × 0.4 = {blended}", file=sys.stderr)
+        log_debug(f"Pilar {dim_key} - Score blend: LLM={llm_score} × 0.6 + OBJ={obj_score} × 0.4 = {blended}")
         
         # Recalculate status based on blended score
         if blended >= 70:
@@ -583,7 +629,7 @@ JSON:
         result["peso"] = dim_cfg["peso"]
         return result
     except Exception as e:
-        print(f"  ⚠️ Erro no LLM para {dim_key}: {e}. Tentando prompt mínimo...", file=sys.stderr)
+        log_warning(f"Erro no LLM para {dim_key}: {e}. Tentando prompt mínimo...")
         # Retry with a minimal prompt using only profile data (no market/discovery)
         minimal_prompt = f"""Consultor de {dim_cfg['label']}. Analise este pilar para {nome} ({segmento}).
 
@@ -606,10 +652,10 @@ Retorne JSON: {{"score": 0-100, "status": "critico/atencao/forte", "justificativ
             result["_score_objetivo"] = obj_score
             result["peso"] = dim_cfg["peso"]
             result["fontes_utilizadas"] = list(dict.fromkeys(result.get("fontes_utilizadas", []) + dim_sources[:5]))
-            print(f"  ✅ Retry {dim_key} OK: {blended}/100", file=sys.stderr)
+            log_success(f"Retry {dim_key} OK: {blended}/100")
             return result
         except Exception as e2:
-            print(f"  ❌ Retry também falhou para {dim_key}: {e2}", file=sys.stderr)
+            log_error(f"Retry também falhou para {dim_key}: {e2}")
             raise RuntimeError(f"Não foi possível scorar o pilar '{dim_cfg['label']}': {e2}") from e2
 
 
@@ -657,14 +703,14 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
             seen_word_sets.append(title_words)
             seen_normalized_strs.append(title_norm)
         else:
-            print(f"    🗑️ Dedup removeu [{task.get('categoria','')}]: {task.get('titulo','')[:60]}", file=sys.stderr)
+            log_debug(f"Dedup removeu [{task.get('categoria','')}] duplicado: {task.get('titulo','')[:60]}")
     
     removed = len(all_tasks) - len(deduped)
     if removed > 0:
         # Log kept tasks per dimension
         from collections import Counter
         kept_per_dim = Counter(t.get("categoria", "") for t in deduped)
-        print(f"  🔄 Dedup: {removed} removidas de {len(all_tasks)} | Mantidas: {dict(kept_per_dim)}", file=sys.stderr)
+        log_info(f"Dedup de ações: {removed} removidas | Mantidas: {dict(kept_per_dim)}")
     return deduped
 
 
@@ -689,13 +735,13 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
     # Sales Intelligence Brief — contexto orientado a "vender mais", gerado antes do scorer
     sales_brief = profile.get("_sales_brief", "")
     if sales_brief:
+        log_info("Sales brief injetado no contexto do scorer")
         contexto_dinamico = (
             "🎯 INTELIGÊNCIA DE VENDAS — use este contexto para orientar TODO o diagnóstico e ações:\n"
             + sales_brief.strip()
             + "\n\n"
             + contexto_dinamico
         )
-        print(f"  💡 Sales brief injetado: {len(sales_brief)} chars", file=sys.stderr)
     
     # Check for appropriate API key based on provider
     if model_provider == "gemini":
@@ -708,17 +754,25 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
             return {"success": False, "erro": "Chave da API Groq não configurada."}
 
     restricoes = extract_restrictions(profile)
+    
+    # ── DINAMIC WEIGHTS INJECTION ──
+    # Adjust weights before starting the loop so the summary/consolidation is correct
+    dynamic_weights = get_dynamic_weights(profile)
+    log_info(f"Pesos estratégicos aplicados (Modelo detectado): { {k: round(v, 2) for k, v in dynamic_weights.items()} }")
+    
     dimensoes = {}
     all_tasks = []
     previous_action_titles = []
     chain_summaries = {}  # compact summaries for chain context
 
     n_pillars = len(DIMENSION_ORDER)
-    print(f"📊 Calculando score por pilar de vendas ({n_pillars} pilares)...", file=sys.stderr)
+    log_info(f"Calculando score para {n_pillars} pilares de vendas...")
 
     for i, dim_key in enumerate(DIMENSION_ORDER):
-        dim_cfg = DIMENSIONS[dim_key]
-        print(f"  [{i+1}/{n_pillars}] {dim_cfg['label']}...", file=sys.stderr)
+        dim_cfg = dict(DIMENSIONS[dim_key]) # copy
+        dim_cfg["peso"] = dynamic_weights.get(dim_key, dim_cfg["peso"])
+        
+        log_debug(f"Processando pilar [{i+1}/{n_pillars}]: {dim_cfg['label']} (Peso: {dim_cfg['peso']})")
 
         market_text = _filter_market(dim_key, market_data)
         dim_sources = _get_all_sources_for_dimension(dim_key, market_data)
@@ -727,12 +781,12 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
         if discovery_data and discovery_data.get("found"):
             disc_text = format_discovery_for_scorer(discovery_data, dim_key=dim_key)
             if disc_text:
-                print(f"    📋 Discovery: {len(disc_text)} chars", file=sys.stderr)
+                log_debug(f"Dados de Discovery injetados para {dim_key}")
 
         # Build chain context from upstream pillars
         chain_ctx = _build_chain_context(dim_key, chain_summaries)
         if chain_ctx:
-            print(f"    🔗 Chain context de: {', '.join(DIMENSIONS[dim_key]['upstream'])}", file=sys.stderr)
+            log_debug(f"Chain context injetado para {dim_key}")
 
         result = _score_dimension(
             dim_key, dim_cfg, profile, market_text, dim_sources, restricoes, api_key,
@@ -782,14 +836,12 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, mo
         s = result.get("score", "?")
         acoes = result.get("acoes_imediatas", [])
         meta = result.get("meta_pilar", "")
-        print(f"    → {s}/100 | {len(acoes)} ações | Meta: {meta[:60]}", file=sys.stderr)
-        for ai, a in enumerate(acoes[:5]):
-            a_title = a.get("acao", a) if isinstance(a, dict) else str(a)
-            print(f"      [{ai+1}] {str(a_title)[:70]}", file=sys.stderr)
+        log_success(f"Pilar {dim_cfg['label']} finalizado: Score {s}/100 | {len(acoes)} ações")
+        log_debug(f"Meta {dim_key}: {meta}")
 
-        # Delay between calls to stay within rate limits
+        # Delay between calls to stay within rate limits (optimized for Groq/TPD)
         if i < n_pillars - 1:
-            time.sleep(3)
+            time.sleep(1)
     
     # Post-processing: cross-dimension dedup
     all_tasks = _dedup_actions_cross_dimension(all_tasks)

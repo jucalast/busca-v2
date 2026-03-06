@@ -1,0 +1,237 @@
+supply_chain_detection:
+  prompt: |
+    Classifique a posição deste negócio na cadeia produtiva do setor.
+
+    NEGÓCIO: {nome}
+    SEGMENTO: {segmento}
+    MODELO: {modelo}
+    CONCORRENTES INFORMADOS: {concorrentes}
+    DIFERENCIAL: {diferencial}{fornecedores_info}{clientes_info}
+
+    Responda APENAS com este JSON:
+    {{
+        "posicao": "FABRICANTE_MATERIA_PRIMA | TRANSFORMADOR | DISTRIBUIDOR | VAREJISTA | SERVICO | OUTRO",
+        "descricao_curta": "O que este negócio faz na cadeia (1 frase)",
+        "fornecedores_tipicos": "Quem fornece insumos/matéria-prima para este negócio (NÃO são concorrentes)",
+        "concorrentes_reais": "Quem compete diretamente com este negócio (vendem o MESMO produto/serviço para os MESMOS clientes)",
+        "clientes_tipicos": "Quem compra o produto/serviço deste negócio",
+        "risco_confusao": true ou false (se há risco de confundir fornecedores com concorrentes neste segmento)
+    }}
+
+    REGRAS:
+    - Baseie-se no segmento real do negócio, não invente.
+    - Se o negócio TRANSFORMA matéria-prima em produto (ex: cartonagem compra chapa e faz caixa), marque risco_confusao=true.
+    - Se o negócio é varejista ou serviço puro, risco_confusao geralmente é false.
+    - Seja específico para o segmento "{segmento}" no Brasil.
+
+pillar_plan_generation:
+  prompt_template: |
+    {persona}
+
+    Seu cargo: {cargo}
+    Pilar: {label}
+
+    ⛔ FRONTEIRAS ENTRE PILARES — Crie ações APENAS dentro do SEU escopo:
+    - Público-Alvo: mapeamento de quem compra, personas, jornada, dores, critérios
+    - Branding: posicionamento de marca, proposta de valor, diferenciação
+    - Identidade Visual: cores, tipografia, logo, templates visuais
+    - Canais de Venda: onde vender, canais de distribuição
+    - Tráfego Orgânico: SEO, conteúdo, redes sociais
+    - Tráfego Pago: anúncios pagos, Google/Meta/LinkedIn Ads
+    - Processo de Vendas: funil de vendas, scripts, fechamento
+    NÃO proponha ações que pertencem a OUTRO pilar. Cada pilar faz o MELHOR da SUA função.
+
+    {brief_text}
+
+    {diag_text}
+
+    {cross_pillar}
+
+    {exec_history}
+    {restr_text}
+
+    PESQUISA ESPECIALIZADA:
+    {specialist_research}
+
+    COMO {cargo_upper}, crie um PLANO DE AÇÃO PROFISSIONAL para este pilar.
+
+    REGRAS:
+    1. O plano deve ter 3-6 ações CONCRETAS e SEQUENCIAIS
+    2. Cada ação deve ter: o que fazer, como fazer, ferramenta específica, tempo, resultado esperado
+    3. Inclua KPIs mensuráveis para cada ação
+    4. Considere o que JÁ FOI FEITO (não repita ações concluídas)
+    5. Conecte com insights dos outros especialistas
+    6. Se capital zero: apenas ferramentas gratuitas
+    7. Responda em português
+
+    JSON OBRIGATÓRIO:
+    {{
+        "titulo_plano": "Nome profissional do plano",
+        "objetivo": "O que este plano vai alcançar em 1 frase",
+        "prazo_total": "X semanas",
+        "acoes": [
+            {{
+                "id": "a1",
+                "titulo": "Ação concreta e específica",
+                "descricao": "Explicação detalhada de COMO fazer",
+                "ferramenta": "Nome da ferramenta (grátis/pago)",
+                "ferramenta_url": "URL da ferramenta",
+                "tempo_estimado": "2-4h",
+                "resultado_esperado": "O que muda ao completar",
+                "kpi": "Métrica mensurável (ex: +30% engajamento)",
+                "prioridade": "critica/alta/media",
+                "depende_de": null
+            }}
+        ],
+        "kpis_pilar": [
+            {{
+                "nome": "Nome do KPI",
+                "valor_atual": "Estimativa baseada no diagnóstico",
+                "meta": "Meta realista para 30 dias",
+                "como_medir": "Como o usuário mede isso"
+            }}
+        ],
+        "resultado_final": "O que o negócio terá de NOVO ao completar este plano",
+        "conexao_proximos_pilares": "Como este plano alimenta os próximos pilares"
+    }}
+
+    Retorne APENAS o JSON.
+
+subtask_expansion:
+  prompt_template: |
+    {persona}
+
+    {brief_text}
+
+    {exec_history}
+
+    ═══ SEU ESCOPO (ESTRITAMENTE LIMITADO) ═══
+    {escopo}
+
+    🚫 PROIBIDO — NÃO FAÇA NADA DISTO:
+    {nao_fazer}
+
+    ⛔ FRONTEIRAS ENTRE PILARES (CRÍTICO — RESPEITE):
+    Cada pilar do sistema tem responsabilidade EXCLUSIVA. NÃO invada o escopo de outros pilares:
+    - Público-Alvo: APENAS mapeamento de quem compra, personas, jornada de compra, dores, critérios de seleção
+    - Branding: APENAS posicionamento de marca, proposta de valor, diferenciação, análise competitiva
+    - Identidade Visual: APENAS cores, tipografia, logo, templates visuais
+    - Canais de Venda: APENAS onde vender e como chegar ao cliente (canais de distribuição)
+    - Tráfego Orgânico: APENAS SEO, conteúdo, redes sociais, Google Meu Negócio
+    - Tráfego Pago: APENAS anúncios pagos, Google Ads, Meta Ads, LinkedIn Ads
+    - Processo de Vendas: APENAS funil de vendas, scripts, contorno de objeções, fechamento
+    Se uma subtarefa cair no escopo de OUTRO pilar listado acima, REMOVA-A. Cada pilar faz o MELHOR da SUA função.
+
+    {sibling_tasks_text}
+
+    {completed_deliverables_text}
+
+    TAREFA PRINCIPAL: {task_title}
+    DESCRIÇÃO: {task_desc}
+    ENTREGÁVEL FINAL: {entregavel_final}
+
+    {all_research}
+
+    ═══ QUEBRE ESTA TAREFA EM 3-6 SUBTAREFAS EXECUTÁVEIS ═══
+
+    ⛔ REGRA CRÍTICA DE DIFERENCIAÇÃO — CADA SUBTAREFA PRODUZ ENTREGÁVEL ÚNICO:
+    Cada subtarefa DEVE produzir um documento/artefato DIFERENTE. NÃO repita conteúdo entre subtarefas!
+
+    📋 DISTRIBUIÇÃO OBRIGATÓRIA DE CONTEÚDO:
+    - Subtarefa 1 (PESQUISA): Coleta APENAS dados brutos (números, estatísticas, nomes de empresas, fontes) DENTRO do escopo deste pilar
+    - Subtarefa 2 (ANÁLISE): INTERPRETAÇÃO dos dados (tendências, padrões, insights) — NÃO repita os dados brutos
+    - Subtarefa 3 (ARTEFATO PRINCIPAL): Documento central do pilar (ex: persona para Público-Alvo, guia visual para Identidade Visual, plano de SEO para Tráfego Orgânico) — crie o artefato que é responsabilidade DESTE pilar
+    - Subtarefa 4 (APROFUNDAMENTO): Artefato COMPLEMENTAR dentro do MESMO escopo — NÃO crie recomendações que pertencem a OUTROS pilares
+    - Subtarefa FINAL: Consolidação em documento profissional ÚNICO integrando tudo — SEM adicionar estratégias de outros pilares
+
+    ⚠️ VALIDAÇÃO ANTI-REPETIÇÃO:
+    Antes de criar cada subtarefa, pergunte: "Isso já foi coberto por outra subtarefa?"
+    → SIM → Remova ou reformule com escopo DIFERENTE
+    → NÃO → Inclua
+
+    PRINCÍPIO FUNDAMENTAL — TESTE DE FACTIBILIDADE:
+    Antes de incluir qualquer subtarefa, pergunte: "A IA consegue executar isso com dados da web + perfil do negócio?"
+    → SIM → inclua como subtarefa
+    → NÃO → remova. Não existe essa subtarefa.
+
+    DOIS TIPOS DE SUBTAREFA (use ambos, nesta proporção):
+
+    📚 TIPO PESQUISA (máximo 2 subtarefas):
+    - A IA faz busca web real e extrai dados concretos do setor
+    - Produz análise/insights baseada no que foi encontrado na internet
+    - Exemplos VÁLIDOS: "Pesquisar perfil e comportamento de compradores de {segmento}", "Analisar concorrentes de {segmento} com dados reais", "Levantar benchmarks e tendências do mercado de {segmento}"
+    - Exemplos INVÁLIDOS (⛔ PROIBIDO ABSOLUTO): "Realizar pesquisa com clientes" (requer humanos reais), "Coletar respostas do formulário" (impossível — exige ação humana), "Analisar dados coletados" sem dados reais, "Aplicar questionário com participantes", "Aguardar respostas dos clientes", "Enviar pesquisa e coletar feedback", "Tabular respostas recebidas"
+
+    🏭 TIPO PRODUCAO (mínimo 2 subtarefas, máximo 4):
+    - A IA cria um artefato REAL e COMPLETO usando os dados da pesquisa
+    - Cada subtarefa produz algo utilizável imediatamente
+
+    REGRAS OBRIGATÓRIAS:
+    1. ANTI-DUPLICAÇÃO ENTRE TAREFAS (PRIORIDADE ABSOLUTA): Leia com atenção as seções "SUBTAREFAS JÁ GERADAS" e "OUTRAS TAREFAS DO PILAR" acima. Se uma subtarefa similar JÁ EXISTE em outra tarefa, você NÃO DEVE criar outra igual.
+    2. CASCATA: Use personas, tom de voz e estratégias já definidos pelos pilares anteriores — NÃO os recrie.
+    3. ENTREGÁVEL FINAL: A última subtarefa DEVE criar o artefato final: "{entregavel_final}".
+    4. SEQUÊNCIA LÓGICA: subtarefas PESQUISA primeiro, subtarefas PRODUCAO depois.
+    5. ESCOPO DO PILAR (CRÍTICO): TODAS as subtarefas devem estar DENTRO do escopo deste pilar.
+
+    JSON OBRIGATÓRIO:
+    {{
+        "task_id": "{task_id}",
+        "titulo_tarefa": "{task_title}",
+        "subtarefas": [
+            {{
+                "id": "st1",
+                "titulo": "Nome concreto e específico da subtarefa",
+                "descricao": "Exatamente o que será feito, com detalhes do setor",
+                "tipo": "pesquisa",
+                "executavel_por_ia": true,
+                "entregavel_ia": "O que a IA vai produzir",
+                "ferramenta": "nome_ferramenta_se_houver",
+                "tempo_estimado": "30min"
+            }}
+        ],
+        "ordem_execucao": "Pesquisa web primeiro → produção de artefatos com base nos dados",
+        "resultado_combinado": "O que teremos ao completar todas as subtarefas"
+    }}
+
+    Retorne APENAS o JSON.
+
+ai_user_task_execution:
+  prompt_template: |
+    {persona}
+
+    {brief_text}
+    {cross_pillar}
+
+    TAREFA (originalmente marcada como ação do usuário): {task_title}
+    DESCRIÇÃO: {task_desc}
+    INSTRUÇÕES ORIGINAIS: {instrucoes}
+
+    {all_research}
+
+    O usuário pediu para a IA TENTAR realizar esta tarefa. Embora originalmente ela exija ação humana,
+    faça O MÁXIMO que puder:
+
+    1. Se a tarefa é "criar conteúdo para publicar" → crie o conteúdo completo, o usuário só publica
+    2. Se a tarefa é "configurar ferramenta" → gere um guia passo-a-passo com screenshots descritos
+    3. Se a tarefa é "pesquisar/analisar" → faça a pesquisa e apresente os resultados
+    4. Se a tarefa é "design" → descreva o briefing criativo completo e especificações técnicas
+
+    Seja claro sobre:
+    - O que a IA CONSEGUIU fazer (entregável)
+    - O que o usuário AINDA precisa fazer manualmente (passos restantes)
+
+    JSON:
+    {{
+        "entregavel_titulo": "O que a IA produziu",
+        "entregavel_tipo": "texto|guia|pesquisa|briefing|plano|template",
+        "opiniao": "Seu pensamento analítico sobre o que foi extraído/gerado. Tom conversacional e pessoal. CITE dados concretos encontrados. Mínimo 4 linhas.",
+        "conteudo": "ENTREGÁVEL COMPLETO — o máximo que a IA consegue fazer",
+        "passos_restantes_usuario": [
+            "Passo 1 que o usuário precisa fazer manualmente"
+        ],
+        "como_aplicar": "Como usar o que a IA gerou + completar os passos restantes",
+        "percentual_completado_ia": 70,
+        "impacto_estimado": "Impacto no negócio"
+    }}
+
+    Retorne APENAS o JSON.

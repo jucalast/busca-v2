@@ -78,43 +78,19 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
             restriction_instructions += "\n- O negócio JÁ usa Instagram. Não sugira 'criar presença'. Sugira OTIMIZAÇÃO."
 
     try:
-        prompt = f"""Você é um consultor sênior de negócios. Analise dados reais da internet e gere um relatório ÚTIL e VIÁVEL.
-
-O CLIENTE: {description}
-RESTRIÇÕES E CONTEXTO: {restricoes}
-
-SEU FOCO NESTA SEÇÃO: {foco}
-
-REGRAS DE VIABILIDADE (CRÍTICO):
-1. Se o cliente tem "capital zero" ou pouco investimento, NÃO recomende ferramentas pagas caras. Sugira alternativas gratuitas ou manuais.
-2. Se a equipe for pequena (1 pessoa), NÃO sugira estratégias complexas que exigem um time.
-3. As recomendações DEVEM resolver as "Dificuldades" listadas nas restrições.
-{restriction_instructions}
-
-REGRAS CRÍTICAS:
-1. Retorne APENAS JSON válido.
-2. {nao_falar}
-3. NÃO REPITA o que o cliente já disse sobre o próprio negócio.
-4. Fale em SEGUNDA PESSOA.
-5. Cite nomes reais, valores em R$, percentuais — dados CONCRETOS.
-6. Se um dado não existir, simplesmente NÃO inclua esse campo.
-
-REGRAS ANTI-GENÉRICO:
-- PROIBIDO dizer "pesquise", "avalie", "considere", "analise opções".
-- Cada recomendação deve ser uma frase completa com: a ação específica, a ferramenta/plataforma real, e o dado concreto que justifica.
-- Cite nomes de ferramentas, fornecedores, plataformas REAIS encontrados nos dados.
-- NUNCA use colchetes ou placeholders. Preencha com dados REAIS.
-
-JSON:
-{{
-    "visao_geral": "Análise profunda e detalhada (Deep Dive) do cenário de mercado. Explore o contexto, oportunidades e ameaças de forma extensa e rigorosa.",
-    "pontos_chave": ["fato concreto extenso, com números, contexto ou nomes reais encontrados na pesquisa que embasem a visão geral"],
-    "recomendacoes": ["frase completa com ação + ferramenta real + justificativa baseada em dados"],
-    "dados_relevantes": {{"nome_da_metrica": "valor numerico ou textual real"}}
-}}
-
-DADOS DA INTERNET:
-{aggregated_text[:12000]}"""
+        # Load prompt from YAML
+        from app.core.prompt_loader import load_prompt_file
+        prompt_config = load_prompt_file("explorer.yaml")
+        template = prompt_config.get("market_analysis", {}).get("prompt_template", "")
+        
+        prompt = template.format(
+            description=description,
+            restricoes=restricoes,
+            foco=foco,
+            restriction_instructions=restriction_instructions,
+            nao_falar=nao_falar,
+            aggregated_text=aggregated_text[:12000]
+        )
 
         resumo = call_llm(provider=model_provider, prompt=prompt, temperature=0.3)
     except Exception as e:
@@ -186,44 +162,27 @@ def run_dimension_chat(input_data: dict) -> dict:
         role = "Usuario" if m.get("role") == "user" else "Assistente"
         history_text += f"{role}: {m.get('content', '')}\n"
 
-    prompt = f"""Voce e um consultor especialista em {dim_label} para pequenos e medios negocios.
-
-CONTEXTO DO NEGOCIO:
-- Nome: {nome}
-- Segmento: {segmento}
-- Modelo: {modelo}
-- Localizacao: {localizacao}
-- Score atual em {dim_label}: {dim_data.get('score', 'N/A')}/100
-- Status: {dim_data.get('status', 'N/A')}
-- Diagnostico: {dim_data.get('justificativa', 'N/A')}
-- Acoes imediatas ja sugeridas: {json.dumps(dim_data.get('acoes_imediatas', []), ensure_ascii=False)}
-
-PERFIL COMPLETO:
-{json.dumps(perfil, ensure_ascii=False)[:3000]}
-
-SCORE GERAL DO NEGOCIO:
-{json.dumps(score, ensure_ascii=False)[:2000]}
-
-DADOS DA PESQUISA NA INTERNET (use como base):
-{search_context[:8000] if search_context else "Nenhum dado encontrado."}
-
-HISTORICO DA CONVERSA:
-{history_text if history_text else "Primeira mensagem."}
-
-REGRAS:
-1. Responda em portugues, de forma direta e acionavel.
-2. SEMPRE cite dados concretos e fontes da pesquisa quando disponivel.
-3. De recomendacoes ESPECIFICAS para este negocio, nao genericas.
-4. Considere as limitacoes do negocio (capital, equipe, modelo).
-5. NAO use emojis.
-6. Foque em {dim_label}.
-7. Se o usuario pedir algo fora do escopo de {dim_label}, responda brevemente e redirecione.
-8. Seja conciso mas completo. Use paragrafos curtos.
-9. Cite ferramentas, plataformas e valores REAIS encontrados na pesquisa.
-
-PERGUNTA DO USUARIO: {user_message}
-
-Responda de forma direta e util:"""
+    # Load prompt from YAML
+    from app.core.prompt_loader import load_prompt_file
+    prompt_config = load_prompt_file("explorer.yaml")
+    template = prompt_config.get("dimension_chat", {}).get("prompt_template", "")
+    
+    prompt = template.format(
+        dim_label=dim_label,
+        nome=nome,
+        segmento=segmento,
+        modelo=modelo,
+        localizacao=localizacao,
+        score_dim=dim_data.get('score', 'N/A'),
+        status=dim_data.get('status', 'N/A'),
+        justificativa=dim_data.get('justificativa', 'N/A'),
+        acoes_imediatas=json.dumps(dim_data.get('acoes_imediatas', []), ensure_ascii=False),
+        perfil=json.dumps(perfil, ensure_ascii=False)[:3000],
+        score_geral=json.dumps(score, ensure_ascii=False)[:2000],
+        search_context=search_context[:8000] if search_context else "Nenhum dado encontrado.",
+        history_text=history_text if history_text else "Primeira mensagem.",
+        user_message=user_message
+    )
 
     try:
         reply = call_llm(provider=model_provider, prompt=prompt, temperature=0.4, json_mode=False)

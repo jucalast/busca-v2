@@ -39,8 +39,6 @@ from app.services.agents.agent_pillar import run_pillar_agent, get_pillar_status
 from app.services.agents.agent_pillar_unified import UnifiedPillarAgent
 from typing import Dict, Any, List
 
-ACTIVE_BACKGROUND_TASKS = set()
-
 import json
 
 # Minimum fields the profiler MUST have for a useful analysis
@@ -129,7 +127,7 @@ def do_profile(data: dict) -> dict:
     onboarding = data.get("onboardingData", {})
     
     # Debug: log do perfil recebido
-    print(f"🔍 Service Growth - onboarding received:", json.dumps(onboarding, ensure_ascii=False, indent=2))
+    log_debug(f"Service Growth - onboarding recebido (total keys: {len(onboarding.keys())})")
     
     # Validate minimum fields — profiler cannot produce useful results without these
     perfil_sub = onboarding.get("perfil", {})
@@ -145,12 +143,12 @@ def do_profile(data: dict) -> dict:
     for label, sources in _PROFILE_CRITICAL_SOURCES.items():
         found = any(onboarding.get(s) or perfil_sub.get(s) for s in sources)
         if not found:
-            print(f"⚠️ Campo crítico ausente: {label} — profiler vai tentar inferir", file=sys.stderr)
+            log_warning(f"Campo crítico ausente: {label} — profiler vai tentar inferir")
     
     result = run_profiler(onboarding, model_provider=data.get("aiModel", "groq"))
     
     # Debug: log do resultado
-    print(f"🔍 Service Growth - profiler result:", json.dumps(result, ensure_ascii=False, indent=2))
+    log_debug(f"Service Growth - resultado do profiler ({result.get('success')})")
     
     return result
 
@@ -230,8 +228,8 @@ def do_expand_subtasks(data: dict) -> dict:
 
     return result
 
-def do_execute_all_subtasks(data: dict, background_tasks) -> dict:
-    """Trigger background execution of all subtasks."""
+def do_execute_all_subtasks(data: dict) -> dict:
+    """Trigger background execution of all subtasks via Celery."""
     analysis_id = data.get("analysis_id")
     pillar_key = data.get("pillar_key")
     task_id = data.get("task_id")
@@ -241,32 +239,31 @@ def do_execute_all_subtasks(data: dict, background_tasks) -> dict:
 
     from app.core import database as db
 
-    # PREVENT DUPLICATE EXECUTIONS: If task is already running, don't start another
-    task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
-    if task_identifier in ACTIVE_BACKGROUND_TASKS:
-        print(f"  ⚠️ Task {task_id} already running, ignoring duplicate execution request.", file=sys.stderr)
+    # PREVENT DUPLICATE EXECUTIONS using DB state (stateless across workers)
+    current_status = db.get_background_task_progress(analysis_id, task_id)
+    if current_status and current_status.get("status") == "running":
+        log_warning(f"Tarefa {task_id} já está em execução no DB, ignorando requisição duplicada.")
         return {"success": True, "message": "Task already running"}
 
     # CLEANUP OLD EXECUTIONS: Clear any previous subtask executions for this task so the UI doesn't see old data while running
     db.delete_specialist_executions(analysis_id, pillar_key, task_id)
 
-    # Pre-register the task as running synchronously so the frontend's immediate poll doesn't miss it or kill the UI loop
+    # Pre-register the task as running synchronously so the frontend's immediate poll doesn't miss it
     db.save_background_task_progress(analysis_id, task_id, pillar_key, "running", current_step=0, total_steps=0)
-    task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
-    ACTIVE_BACKGROUND_TASKS.add(task_identifier)
 
-    # Start background process
-    background_tasks.add_task(
-        run_subtasks_background,
-        analysis_id=analysis_id,
-        pillar_key=pillar_key,
-        task_id=task_id,
-        task_data=data.get("task_data", {}),
-        profile=data.get("profile", {}),
-        model_provider=data.get("aiModel", "groq")
+    # Start background process via Celery
+    from app.tasks import run_analysis_subtasks
+
+    run_analysis_subtasks.delay(
+        analysis_id,
+        pillar_key,
+        task_id,
+        data.get("task_data", {}),
+        data.get("profile", {}),
+        data.get("aiModel", "groq")
     )
     
-    return {"success": True, "message": "Background execution started"}
+    return {"success": True, "message": "Background Celery execution started"}
 
 def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile, model_provider):
     """The actual sequential execution loop running in background."""
@@ -276,13 +273,9 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
     if profile and "dna" not in profile:
         try:
             profile = generate_business_brief(profile)
-            print(f"  📋 Generated business brief from raw profile (segmento: {profile.get('dna', {}).get('segmento', '?')})", file=sys.stderr)
+            log_info(f"Brief gerado a partir do perfil bruto (segmento: {profile.get('dna', {}).get('segmento', '?')})")
         except Exception as e:
-            print(f"  ⚠️ Failed to generate brief from profile: {e}", file=sys.stderr)
-    
-    # Track as an actively running background task
-    task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
-    ACTIVE_BACKGROUND_TASKS.add(task_identifier)
+            log_error(f"Falha ao gerar brief a partir do perfil: {e}")
     
     def check_cancelled():
         """Helper function to check if task was cancelled"""
@@ -300,7 +293,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
     try:
         # Check for cancellation at the very beginning
         if check_cancelled():
-            print(f"  🛑 Task {task_id} was cancelled before background execution started.", file=sys.stderr)
+            log_warning(f"Tarefa {task_id} foi cancelada antes do início da execução em background")
             return
         # Step 1: Ensure we have subtasks
         subtasks_dict = db.get_subtasks(analysis_id, pillar_key, task_id)
@@ -336,7 +329,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             # Check for cancellation again before executing the subtask
             check_cancelled_aggressive()
             
-            print(f"  🔄 Executing subtask {i+1}/{len(subtasks_list)}: {st.get('titulo', 'No title')[:50]}...", file=sys.stderr)
+            log_info(f"Executando subtarefa {i+1}/{len(subtasks_list)}: {st.get('titulo', 'Sem título')[:50]}...")
             
             exec_res = agent_execute_task(
                 analysis_id=analysis_id,
@@ -351,7 +344,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             
             # Check if the task was cancelled during execution
             if exec_res and exec_res.get("error") == "Task cancelled by user":
-                print(f"  🛑 Task {task_id} was cancelled during subtask {i+1} execution.", file=sys.stderr)
+                log_warning(f"Tarefa {task_id} cancelada durante a execução da subtarefa {i+1}")
                 return
             
             # Aggressive cancellation check after each subtask
@@ -359,9 +352,9 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             
             if exec_res.get("success") and exec_res.get("execution"):
                 results.append(exec_res["execution"])
-                print(f"  ✅ Subtask {i+1} completed successfully", file=sys.stderr)
+                log_success(f"Subtarefa {i+1} concluída com sucesso")
             else:
-                print(f"  ⚠️ Subtask {i+1} failed or returned no data: {exec_res.get('error')}", file=sys.stderr)
+                log_warning(f"Subtarefa {i+1} falhou ou retornou sem dados: {exec_res.get('error')}")
                 # We continue but mark step as failed? For now, just continue
                 pass
 
@@ -371,7 +364,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # ═══ MELHORIA: Usar deduplicação antes de combinar conteúdo ═══
         # Aplica deduplicação para remover parágrafos repetidos entre subtarefas
         deduplicated_content = deduplicate_subtask_results(results, subtasks_list)
-        print(f"  🧹 Deduplicação aplicada: conteúdo processado", file=sys.stderr)
+        log_info("Deduplicação aplicada: conteúdo processado")
 
         # Separate PESQUISA (research context) from PRODUCAO (real deliverables)
         pesquisa_content = ""
@@ -426,8 +419,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         # Update progress to show we're working on finalization
         db.save_background_task_progress(analysis_id, task_id, pillar_key, "running", current_step=total, total_steps=total_steps)
         
-        print(f"  🔄 Executing finalization subtask: {finalization_task['titulo']}", file=sys.stderr)
-        print(f"  📊 Finalization input: {len(combined_content)} chars content + {len(accumulated_research)} chars research", file=sys.stderr)
+        log_info(f"Executando subtarefa de finalização: {finalization_task.get('titulo', '')}")
+        log_debug(f"Input da finalização: {len(combined_content)} chars de conteúdo + {len(accumulated_research)} chars de pesquisa")
 
         # Build rich previous_results for finalization:
         # Include subtask content + original research data
@@ -456,13 +449,13 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         
         # Check for cancellation during finalization
         if finalization_res and finalization_res.get("error") == "Task cancelled by user":
-            print(f"  🛑 Task {task_id} was cancelled during finalization.", file=sys.stderr)
+            log_warning(f"Tarefa {task_id} cancelada durante a finalização.")
             return
         
         # Add finalization result to results
         if finalization_res.get("success") and finalization_res.get("execution"):
             results.append(finalization_res["execution"])
-            print(f"  ✅ Finalization subtask completed successfully", file=sys.stderr)
+            log_success("Subtarefa de finalização concluída com sucesso")
             
             # Save finalization subtask execution result
             db.save_execution_result(
@@ -472,7 +465,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
                 result_data=finalization_res["execution"]
             )
         else:
-            print(f"  ⚠️ Finalization subtask failed: {finalization_res.get('error')}", file=sys.stderr)
+            log_warning(f"Subtarefa de finalização falhou: {finalization_res.get('error')}")
             # Use basic combined content as fallback
             finalization_res = {"execution": {"conteudo": combined_content, "entregavel_titulo": "Documento Consolidado"}}
 
@@ -485,7 +478,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             if len(str(fin_content)) > min_acceptable:
                 final_content = fin_content
             else:
-                print(f"  ⚠️ Finalization content too short ({len(str(fin_content))} chars vs {len(combined_content)} combined). Using combined content.", file=sys.stderr)
+                log_warning(f"O conteúdo da finalização ficou muito curto. Usando o conteúdo combinado de fallback.")
                 final_content = combined_content
         
         combined_sources = []
@@ -516,33 +509,20 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
     except Exception as e:
         # Check for cancellation exception
         if "Task cancelled by user" in str(e):
-            print(f"  🛑 Task {task_id} was cancelled - stopping execution.", file=sys.stderr)
+            log_warning(f"Tarefa {task_id} cancelada - interrompendo execução.")
             return
         
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
         db.save_background_task_progress(analysis_id, task_id, pillar_key, "error", error_message=error_msg)
-    finally:
-        task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
-        if task_identifier in ACTIVE_BACKGROUND_TASKS:
-            ACTIVE_BACKGROUND_TASKS.remove(task_identifier)
 
 def do_get_background_status(analysis_id: str, task_id: str) -> dict:
     """Get the current progress of a background task."""
     from app.core import database as db
     status = db.get_background_task_progress(analysis_id, task_id)
     if status:
-        # Detect ghost "running" states after server restarts
-        if status.get("status") == "running":
-            task_identifier = f"{analysis_id}:{status['pillar_key']}:{task_id}"
-            if task_identifier not in ACTIVE_BACKGROUND_TASKS:
-                # Task is marked running in DB but process isn't tracking it
-                db.save_background_task_progress(
-                    analysis_id, task_id, status["pillar_key"], 
-                    "error", error_message="A execução foi interrompida ou o servidor foi reiniciado enquanto a tarefa estava rodando."
-                )
-                status["status"] = "error"
-                status["error_message"] = "A execução foi interrompida ou o servidor foi reiniciado enquanto a tarefa estava rodando."
+        # TODO: Detect crashed Celery jobs if they get stuck in running forever.
+        # For now, rely on Celery to mark the DB status as error if it fails.
         
         # Fetch individual subtask results to show live in frontend
         sub_res = db.get_subtask_executions(analysis_id, status["pillar_key"], task_id)
@@ -589,16 +569,10 @@ def do_cancel_task(data: dict) -> dict:
     from app.core import database as db
     
     # Mark the task as cancelled in the database
-    print(f"  🛑 CANCELLING TASK: {task_id} for analysis {analysis_id}", file=sys.stderr)
+    log_warning(f"CANCELANDO TAREFA: {task_id} para a análise {analysis_id}")
     db.save_background_task_progress(analysis_id, task_id, pillar_key, "cancelled")
     
-    # Remove from active background tasks set if present
-    task_identifier = f"{analysis_id}:{pillar_key}:{task_id}"
-    if task_identifier in ACTIVE_BACKGROUND_TASKS:
-        ACTIVE_BACKGROUND_TASKS.remove(task_identifier)
-        print(f"  🛑 Removed {task_identifier} from ACTIVE_BACKGROUND_TASKS", file=sys.stderr)
-    
-    print(f"  🛑 Task {task_id} marked as cancelled by user request.", file=sys.stderr)
+    log_warning(f"Tarefa {task_id} marcada como cancelada por requisição do usuário.")
     
     return {"success": True, "message": "Task marked as cancelled"}
 
@@ -638,7 +612,7 @@ def do_analyze(data: dict):
     import json
     import sys
     
-    print(f"🚀 Starting analysis using Growth Orchestrator", file=sys.stderr)
+    log_info("Iniciando análise usando o Orchestrator")
     
     def stream_generator():
         try:
@@ -712,9 +686,9 @@ def do_analyze(data: dict):
                     previous_analysis = db.get_analysis(existing_analysis_id)
                     if previous_analysis and previous_analysis.get("profile_data"):
                         profile = normalize_profile_struct(previous_analysis["profile_data"])
-                        print("  ✅ Perfil enriquecido carregado da análise anterior", file=sys.stderr)
+                        log_success("Perfil enriquecido carregado da análise anterior")
                 except Exception as e:
-                    print(f"  ⚠️ Erro ao carregar perfil anterior ({existing_analysis_id}): {e}", file=sys.stderr)
+                    log_error(f"Erro ao carregar perfil anterior ({existing_analysis_id}): {e}")
 
             # If analysis_id not provided but we have a business_id, reuse the latest analysis automatically
             if not analysis_id and business_id:
@@ -723,9 +697,9 @@ def do_analyze(data: dict):
                     if latest_analysis and latest_analysis.get("profile_data"):
                         analysis_id = latest_analysis["id"]
                         profile = normalize_profile_struct(latest_analysis["profile_data"])
-                        print(f"  ♻️ Perfil reutilizado do último analysis_id={analysis_id}", file=sys.stderr)
+                        log_info(f"Perfil reutilizado do último analysis_id={analysis_id}")
                 except Exception as e:
-                    print(f"  ⚠️ Não foi possível carregar a última análise do negócio {business_id}: {e}", file=sys.stderr)
+                    log_error(f"Não foi possível carregar a última análise do negócio {business_id}: {e}")
 
             _load_previous_profile(analysis_id)
 
@@ -748,15 +722,17 @@ def do_analyze(data: dict):
             if analysis_id:
                 try:
                     conn = db.get_connection()
-                    conn.execute("DELETE FROM specialist_plans WHERE analysis_id = ?", (analysis_id,))
-                    conn.execute("DELETE FROM specialist_executions WHERE analysis_id = ?", (analysis_id,))
-                    conn.execute("DELETE FROM specialist_results WHERE analysis_id = ?", (analysis_id,))
-                    conn.execute("DELETE FROM specialist_subtasks WHERE analysis_id = ?", (analysis_id,))
-                    conn.execute("DELETE FROM pillar_kpis WHERE analysis_id = ?", (analysis_id,))
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM specialist_plans WHERE analysis_id = %s", (analysis_id,))
+                    cursor.execute("DELETE FROM specialist_executions WHERE analysis_id = %s", (analysis_id,))
+                    cursor.execute("DELETE FROM specialist_results WHERE analysis_id = %s", (analysis_id,))
+                    cursor.execute("DELETE FROM specialist_subtasks WHERE analysis_id = %s", (analysis_id,))
+                    cursor.execute("DELETE FROM pillar_kpis WHERE analysis_id = %s", (analysis_id,))
                     conn.commit()
+                    cursor.close()
                     conn.close()
                 except Exception as e:
-                    print(f"  ⚠️ Clear old data failed (non-blocking): {e}", file=sys.stderr)
+                    log_warning(f"Falha ao limpar dados antigos (não bloqueante): {e}")
 
             # Step 1: Business Discovery
             log_research("🔍 Executando discovery...")
