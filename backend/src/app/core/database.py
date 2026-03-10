@@ -37,8 +37,47 @@ def get_connection():
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set. A valid PostgreSQL connection string is required.")
-    conn = psycopg2.connect(db_url)
-    return conn
+    
+    # Try multiple times to establish connection initially if it fails
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(db_url)
+            return conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            if attempt == max_retries - 1:
+                raise e
+            logger.warning(f"Erro ao conectar ao banco (tentativa {attempt + 1}/{max_retries}): {e}")
+            time.sleep(1)
+
+def with_db_retry(max_retries=3, delay=1.0):
+    """Decorator to retry database operations on connection errors."""
+    import functools
+    import time
+    
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                    last_error = e
+                    logger.warning(f"Erro de conexão no banco em {func.__name__} (tentativa {attempt+1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                    continue
+                except Exception as e:
+                    # Don't retry logic errors, only connection ones
+                    raise e
+            
+            logger.error(f"Falha crítica após {max_retries} tentativas em {func.__name__}: {last_error}")
+            raise last_error
+        return wrapper
+    return decorator
+
+
 
 
 def init_db():
@@ -353,6 +392,7 @@ def generate_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+@with_db_retry()
 def create_session(user_id: str, duration_days: int = 30) -> Dict:
     """Create a new session for a user."""
     conn = get_connection()
@@ -377,6 +417,7 @@ def create_session(user_id: str, duration_days: int = 30) -> Dict:
     }
 
 
+@with_db_retry()
 def validate_session(token: str) -> Optional[Dict]:
     """Validate a session token and return user data if valid."""
     conn = get_connection()
@@ -421,6 +462,7 @@ def validate_session(token: str) -> Optional[Dict]:
     }
 
 
+@with_db_retry()
 def delete_session(token: str) -> bool:
     """Delete a session (logout)."""
     conn = get_connection()
@@ -435,6 +477,7 @@ def delete_session(token: str) -> bool:
     return success
 
 
+@with_db_retry()
 def cleanup_expired_sessions():
     """Remove all expired sessions."""
     conn = get_connection()
@@ -454,6 +497,7 @@ def cleanup_expired_sessions():
 # User Operations
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def register_user(email: str, password: str, name: Optional[str] = None) -> Dict:
     """Register a new user with email and password."""
     import uuid
@@ -539,6 +583,7 @@ def login_user(email: str, password: str) -> Optional[Dict]:
     }
 
 
+@with_db_retry()
 def create_user(user_id: str, email: Optional[str] = None, name: Optional[str] = None, metadata: Optional[Dict] = None) -> Dict:
     """Create a new user (legacy function for backward compatibility)."""
     conn = get_connection()
@@ -652,6 +697,7 @@ def verify_jwt_token(token: str) -> Optional[Dict]:
 # SESSIONS (Legacy - to be replaced by JWT completely)
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
     """Create a new business for a user."""
     import uuid
@@ -777,6 +823,7 @@ def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
     return businesses
 
 
+@with_db_retry()
 def update_business(business_id: str, profile_data: Dict) -> bool:
     """Update business profile data."""
     conn = get_connection()
@@ -804,6 +851,7 @@ def update_business(business_id: str, profile_data: Dict) -> bool:
     return success
 
 
+@with_db_retry()
 def delete_business(business_id: str) -> bool:
     """Soft delete a business (set status to 'deleted')."""
     conn = get_connection()
@@ -824,6 +872,7 @@ def delete_business(business_id: str) -> bool:
     return success
 
 
+@with_db_retry()
 def hard_delete_business(business_id: str) -> bool:
     """Permanently delete a business and all its analyses."""
     conn = get_connection()
@@ -996,6 +1045,7 @@ def ensure_analysis_discovery_column(cursor):
     _analysis_discovery_column_checked = True
 
 
+@with_db_retry()
 def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_data: Dict, profile_data: Optional[Dict] = None, discovery_data: Optional[Dict] = None) -> Dict:
     """Create a new analysis result."""
     import uuid
@@ -1129,6 +1179,7 @@ def get_analysis(analysis_id: str) -> Optional[Dict]:
 
 
 
+@with_db_retry()
 def update_analysis_profile(analysis_id: str, profile_data: Dict) -> bool:
     """Update profile data stored within an analysis."""
     conn = get_connection()
@@ -1144,6 +1195,7 @@ def update_analysis_profile(analysis_id: str, profile_data: Dict) -> bool:
     finally:
         conn.close()
 
+@with_db_retry()
 def update_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
     """Update diagnostic results (score, status, etc.) for a specific pillar."""
     conn = get_connection()
@@ -1186,6 +1238,7 @@ def get_pillar_diagnostic(analysis_id: str, pillar_key: str) -> Optional[Dict]:
 # Dimension Chat Operations
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) -> Dict:
     """Save or update dimension chat history."""
     import uuid
@@ -1261,6 +1314,7 @@ def get_dimension_chat(analysis_id: str, dimension: str) -> Optional[Dict]:
 # Pillar Data Operations (structured output from pillar agents)
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict, sources: list = None, user_command: str = "") -> bool:
     """Save or update structured output for a pillar."""
     import uuid
@@ -1404,14 +1458,34 @@ def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[st
 # Pillar Diagnostic Operations
 # ═══════════════════════════════════════════════════════════════════
 
-def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
+@with_db_retry()
+def save_pillar_diagnostic(analysis_id: str, pillar_key: str, score: float = 0, status: str = "unknown", 
+                          justificativa: str = "", dado_chave: str = "", justificativa_maturidade: str = "",
+                          diagnostic_data: Optional[Dict] = None) -> bool:
     """Save or update diagnostic data for a pillar."""
     import uuid
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
+    
+    # Extract data from dict if provided, otherwise use individual fields
+    if diagnostic_data:
+        score = diagnostic_data.get("score", score)
+        status = diagnostic_data.get("status", status)
+        justificativa = diagnostic_data.get("justificativa", justificativa)
+        dado_chave = diagnostic_data.get("dado_chave", dado_chave)
+        justificativa_maturidade = diagnostic_data.get("justificativa_maturidade", justificativa_maturidade)
+    
+    # Build complete diagnostic object
+    full_diag = {
+        "score": score,
+        "status": status,
+        "justificativa": justificativa,
+        "dado_chave": dado_chave,
+        "justificativa_maturidade": justificativa_maturidade
+    }
+    diag_json = json.dumps(full_diag, ensure_ascii=False)
     
     cursor.execute('''
         INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
@@ -1473,6 +1547,7 @@ def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
         return None
 
 
+@with_db_retry()
 def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
     """Approve a specialist plan for a pillar."""
     conn = get_connection()
@@ -1492,207 +1567,14 @@ def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "")
     
     return success
 
-
-# ═══════════════════════════════════════════════════════════════════
-# Business Brief Operations
-# ═══════════════════════════════════════════════════════════════════
-
-def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> bool:
-    """Save or update a business brief for a given analysis."""
-    import uuid
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    now = datetime.now(timezone.utc).isoformat()
-    brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
-    
-    cursor.execute('''
-        INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT(business_id, analysis_id) DO UPDATE SET
-            brief_data = excluded.brief_data
-    ''', (str(uuid.uuid4()), business_id, analysis_id, brief_json, now))
-    
-    conn.commit()
-    conn.close()
-    return True
-
-
-def get_business_brief(business_id_or_analysis_id: str, analysis_id: Optional[str] = None) -> Optional[Dict]:
-    """Get business brief. Supports two call signatures:
-    - get_business_brief(business_id, analysis_id) — lookup by both keys
-    - get_business_brief(analysis_id) — lookup by analysis_id only
-    """
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    if analysis_id is not None:
-        # Called as get_business_brief(business_id, analysis_id)
-        cursor.execute('''
-            SELECT * FROM business_briefs
-            WHERE business_id = %s AND analysis_id = %s
-        ''', (business_id_or_analysis_id, analysis_id))
-    else:
-        # Called as get_business_brief(analysis_id)
-        cursor.execute('''
-            SELECT * FROM business_briefs
-            WHERE analysis_id = %s
-        ''', (business_id_or_analysis_id,))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-    
-    brief_raw = row["brief_data"]
-    try:
-        brief_data = json.loads(brief_raw)
-    except (json.JSONDecodeError, TypeError):
-        brief_data = brief_raw
-    
-    return {
-        "id": row["id"],
-        "business_id": row["business_id"],
-        "analysis_id": row["analysis_id"],
-        "brief_data": brief_data,
-        "created_at": row["created_at"]
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Pillar Diagnostic Operations
-# ═══════════════════════════════════════════════════════════════════
-
-def save_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data: Dict) -> bool:
-    """Save or update diagnostic data for a pillar."""
-    import uuid
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    now = datetime.now(timezone.utc).isoformat()
-    diag_json = json.dumps(diagnostic_data, ensure_ascii=False)
-    
-    cursor.execute('''
-        INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT(analysis_id, pillar_key) DO UPDATE SET
-            diagnostic_data = excluded.diagnostic_data,
-            updated_at = excluded.updated_at
-    ''', (str(uuid.uuid4()), analysis_id, pillar_key, diag_json, now, now))
-    
-    conn.commit()
-    conn.close()
-    return True
-
-
-def get_all_diagnostics(analysis_id: str) -> List[Dict]:
-    """Get all pillar diagnostics for an analysis."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    cursor.execute('''
-        SELECT * FROM pillar_diagnostics
-        WHERE analysis_id = %s
-    ''', (analysis_id,))
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    results = []
-    for row in rows:
-        try:
-            diag = json.loads(row["diagnostic_data"])
-        except (json.JSONDecodeError, TypeError):
-            diag = {}
-        results.append({
-            "id": row["id"],
-            "analysis_id": row["analysis_id"],
-            "pillar_key": row["pillar_key"],
-            "diagnostic_data": diag,
-            **diag,  # Spread diagnostic data at top level for easy access
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"]
-        })
-    
-    return results
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Analysis Market Data Operations
-# ═══════════════════════════════════════════════════════════════════
-
-def get_analysis_market_data(analysis_id: str) -> Optional[Dict]:
-    """Get market data from a saved analysis."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    cursor.execute('''
-        SELECT market_data FROM analyses
-        WHERE id = %s
-    ''', (analysis_id,))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-    
-    try:
-        return json.loads(row["market_data"])
-    except (json.JSONDecodeError, TypeError):
-        return None
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Specialist Plan Operations
 # ═══════════════════════════════════════════════════════════════════
 
-def approve_pillar_plan(analysis_id: str, pillar_key: str, user_notes: str = "") -> bool:
-    """Approve a specialist plan for a pillar."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    cursor.execute('''
-        UPDATE specialist_plans
-        SET status = 'approved', user_notes = %s, updated_at = %s
-        WHERE analysis_id = %s AND pillar_key = %s
-    ''', (user_notes, now, analysis_id, pillar_key))
-    
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    
-    return success
 
-
-def get_pillar_diagnostic(analysis_id: str, pillar_key: str) -> Optional[Dict]:
-    """Get diagnostic data for a single pillar."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    cursor.execute('''
-        SELECT diagnostic_data, created_at, updated_at
-        FROM pillar_diagnostics
-        WHERE analysis_id = %s AND pillar_key = %s
-    ''', (analysis_id, pillar_key))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-    
-    try:
-        diag = json.loads(row["diagnostic_data"])
-    except (json.JSONDecodeError, TypeError):
-        diag = {}
-    
-    return diag
-
-
+@with_db_retry()
 def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: str = "draft") -> bool:
     """Save or update a specialist plan for a pillar."""
     import uuid
@@ -1747,6 +1629,7 @@ def get_pillar_plan(analysis_id: str, pillar_key: str) -> Optional[Dict]:
     }
 
 
+@with_db_retry()
 def save_execution_result(
     analysis_id: str, pillar_key: str, task_id: str, action_title: str,
     status: str = "completed", outcome: str = "", business_impact: str = "",
@@ -1821,6 +1704,7 @@ def get_pillar_results(analysis_id: str, pillar_key: str) -> Optional[List[Dict]
     } for row in rows]
 
 
+@with_db_retry()
 def save_pillar_kpi(
     analysis_id: str, pillar_key: str,
     kpi_name: str, kpi_value: str, kpi_target: str = ""
@@ -1874,6 +1758,7 @@ def get_pillar_kpis(analysis_id: str, pillar_key: str) -> Optional[List[Dict]]:
 # Subtask Persistence
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data: Any) -> bool:
     """Save or update expanded subtasks for a task."""
     import uuid
@@ -1993,6 +1878,7 @@ def get_subtask_executions(analysis_id: str, pillar_key: str, parent_task_id: st
     return results
 
 
+@with_db_retry()
 def delete_subtasks(analysis_id: str, pillar_key: str, task_id: str = None):
     """Delete subtasks for a task or entire pillar."""
     conn = get_connection()
@@ -2014,6 +1900,7 @@ def delete_subtasks(analysis_id: str, pillar_key: str, task_id: str = None):
         conn.close()
 
 
+@with_db_retry()
 def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str):
     """Delete specialist execution data for a specific task."""
     conn = get_connection()
@@ -2031,6 +1918,7 @@ def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str)
         conn.close()
 
 
+@with_db_retry()
 def delete_specialist_result(analysis_id: str, pillar_key: str, task_id: str):
     """Delete specialist result data for a specific task."""
     conn = get_connection()
@@ -2159,6 +2047,7 @@ def delete_pillar_data(analysis_id: str, pillar_key: str):
         conn.close()
 
 
+@with_db_retry()
 def save_background_task_progress(
     analysis_id: str, 
     task_id: str, 
@@ -2237,6 +2126,7 @@ def get_background_task_progress(analysis_id: str, task_id: str) -> Optional[Dic
 # RESEARCH CACHE FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
 
+@with_db_retry()
 def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
     """Salva entrada de cache no banco."""
     try:
@@ -2303,6 +2193,7 @@ def get_research_cache(cache_key: str) -> Optional[dict]:
         return None
 
 
+@with_db_retry()
 def save_research_result(research_type: str, cache_key: str, data: dict) -> bool:
     """Salva resultado de pesquisa no banco."""
     try:

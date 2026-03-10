@@ -11,9 +11,10 @@ from pydantic import BaseModel, Field
 class BasePillarSchema(BaseModel):
     """Base class for all pillar output schemas."""
     
-    class Config:
-        extra = "forbid"  # Prevents additional fields
-        validate_assignment = True
+    model_config = {
+        "extra": "forbid",  # Prevents additional fields
+        "validate_assignment": True
+    }
 
 
 class BaseSegmentoSchema(BaseModel):
@@ -53,7 +54,7 @@ class SchemaValidator:
         """Validate data against a schema class."""
         try:
             validated = schema_class(**data)
-            return validated.dict()
+            return validated.model_dump()
         except Exception as e:
             raise ValueError(f"Schema validation failed: {str(e)}")
     

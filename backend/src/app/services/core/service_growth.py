@@ -752,15 +752,12 @@ def do_analyze(data: dict):
             discovery_found = discovery_data.get("found", False)
             
             if discovery_found:
-                yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'success', 'detail': f'Encontradas {discovery_data.get("total_fontes", 0)} fontes de discovery'})}\n\n"
+                total_fontes = discovery_data.get('total_fontes', 0)
+                yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'success', 'detail': f'Encontradas {total_fontes} fontes de discovery'})}\n\n"
                 yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_extractor', 'status': 'success', 'detail': 'Dados da empresa sintetizados com sucesso'})}\n\n"
-                yield f"data: {json.dumps({
-                    'type': 'step_result', 
-                    'step': 'discovery', 
-                    'title': 'Análise de Presença Digital',
-                    'opiniao': discovery_data.get("resumo_executivo", "Discovery finalizado."),
-                    'sources': discovery_data.get("fontes_discovery", [])
-                })}\n\n"
+                resumo = discovery_data.get('resumo_executivo', 'Discovery finalizado.')
+                fontes = discovery_data.get('fontes_discovery', [])
+                yield f"data: {json.dumps({'type': 'step_result', 'step': 'discovery', 'title': 'Análise de Presença Digital', 'opiniao': resumo, 'sources': fontes})}\n\n"
             else:
                 yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'warning', 'detail': 'Nenhum dado público detalhado encontrado'})}\n\n"
 
@@ -812,13 +809,9 @@ def do_analyze(data: dict):
             else:
                 opiniao_text += " Pesquisa de mercado finalizada."
             
-            yield f"data: {json.dumps({
-                'type': 'step_result', 
-                'step': 'market', 
-                'title': 'Inteligência de Mercado',
-                'opiniao': opiniao_text,
-                'sources': market_data.get("allSources", [])[:5]  # Show first 5 sources
-            })}\n\n"
+            opiniao_text_val = str(opiniao_text)
+            market_sources_val = market_data.get('allSources', [])[:5]
+            yield f"data: {json.dumps({'type': 'step_result', 'step': 'market', 'title': 'Inteligência de Mercado', 'opiniao': opiniao_text_val, 'sources': market_sources_val})}\n\n"
 
             # Step 3: Synthesis & Profile Enrichment
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Sintetizando inteligência coletada e gerando Briefing Estratégico...'})}\n\n"
@@ -875,20 +868,9 @@ def do_analyze(data: dict):
             else:
                 opiniao_text = f"Análise de maturidade concluída. Score: {total_score}/100."
             
-            yield f"data: {json.dumps({
-                'type': 'step_result', 
-                'step': 'scoring', 
-                'title': 'Análise de Maturidade',
-                'opiniao': opiniao_text,
-                'sources': []
-            })}\n\n"
+            yield f"data: {json.dumps({'type': 'step_result', 'step': 'scoring', 'title': 'Análise de Maturidade', 'opiniao': opiniao_text, 'sources': []})}\n\n"
             
             # Save to database
-            if not business_id:
-                business_id = f"biz_{user_id}_{int(time.time())}"
-            if not analysis_id:
-                analysis_id = f"analysis_{business_id}_{int(time.time())}"
-            
             business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
             try:
                 biz_rec = db.create_business(
@@ -896,9 +878,17 @@ def do_analyze(data: dict):
                     name=business_name,
                     profile_data={"profile": enriched_profile, "discovery_data": discovery_data, "created_at": time.time()}
                 )
-                business_id = biz_rec.get('id', business_id)
+                business_id = biz_rec.get('id')
+                if not business_id:
+                     raise ValueError("Business ID not returned from database")
             except Exception as e:
-                log_warning(f"Erro ao salvar negócio: {e}")
+                error_msg = f"Falha crítica ao salvar negócio no banco: {e}"
+                log_error(error_msg)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Não foi possível salvar os dados do negócio. Por favor, tente novamente.'})}\n\n"
+                return  # Stop execution, cannot proceed without a valid business record (FK constraint)
+            
+            if not analysis_id:
+                analysis_id = f"analysis_{business_id}_{int(time.time())}"
             
             # Save analysis
             analysis_record = db.create_analysis(

@@ -7,8 +7,8 @@ router = APIRouter()
 @router.post("/simple")
 def do_simple_search(req: SearchRequest):
     # Pass dict representation
-    return search_simple(req.dict())
+    return search_simple(req.model_dump())
 
 @router.post("/business")
 def do_business_search(req: SearchRequest):
-    return search_business(req.dict())
+    return search_business(req.model_dump())

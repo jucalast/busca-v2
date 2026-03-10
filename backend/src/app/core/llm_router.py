@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 from app.services.intelligence.usage_tracker import usage_tracker
 
 # Load .env from project root (2 levels up from backend/src/app/core/)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,

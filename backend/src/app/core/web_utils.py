@@ -23,6 +23,24 @@ def _get_trafilatura():
         _trafilatura_checked = True
     return _trafilatura
 
+# ═══════════════════════════════════════════════════════════════════
+# PYPDF — Extração de conteúdo de PDFs
+# ═══════════════════════════════════════════════════════════════════
+_pypdf = None
+_pypdf_checked = False
+
+def _get_pypdf():
+    """Lazy import do pypdf."""
+    global _pypdf, _pypdf_checked
+    if not _pypdf_checked:
+        try:
+            import pypdf
+            _pypdf = pypdf
+        except ImportError:
+            _pypdf = None
+        _pypdf_checked = True
+    return _pypdf
+
 def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', cancellation_check=None) -> list:
     """Perform a web search using DuckDuckGo with cancellation support."""
     # Validate query
@@ -69,32 +87,61 @@ def scrape_page(url: str, timeout: int = 5, cancellation_check=None) -> str:
     for blocked in _SCRAPE_BLOCKLIST:
         if blocked in url_lower:
             return ""
+    
     try:
-        # Tentar trafilatura primeiro (extração cirúrgica)
-        traf = _get_trafilatura()
-        if traf:
-            downloaded = traf.fetch_url(url)
-            if downloaded:
-                text = traf.extract(
-                    downloaded,
-                    include_comments=False,
-                    include_tables=True,
-                    favor_recall=True,
-                    deduplicate=True,
-                )
-                if text:
-                    return text[:5000]
-        
-        # Fallback: BS4 clássico
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
-        # Silenciar avisos de SSL se necessário (opcional, mas limpa o log)
+        # Silenciar avisos de SSL
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
+        # Fazer o request primeiro para checar o Content-Type ou PDF magic number
         response = requests.get(url, headers=headers, timeout=timeout, verify=False)
         response.raise_for_status()
         
+        content_type = response.headers.get('Content-Type', '').lower()
+        is_pdf = 'application/pdf' in content_type or url_lower.endswith('.pdf')
+        
+        # Check for PDF magic number %PDF-
+        if not is_pdf and len(response.content) > 4:
+            if response.content[:4] == b'%PDF':
+                is_pdf = True
+
+        if is_pdf:
+            pdf_lib = _get_pypdf()
+            if pdf_lib:
+                import io
+                try:
+                    f = io.BytesIO(response.content)
+                    reader = pdf_lib.PdfReader(f)
+                    text = ""
+                    # Extrair até 10 páginas para não sobrecarregar
+                    for i, page in enumerate(reader.pages[:10]):
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                    
+                    if text.strip():
+                        return f"[CONTEÚDO EXTRAÍDO DE PDF]\n{text[:5000]}"
+                    return "[PDF sem texto extraível]"
+                except Exception as e:
+                    return f"[Erro ao ler PDF: {str(e)}]"
+            return "[Suporte a PDF não disponível]"
+
+        # Tentar trafilatura primeiro para HTML (extração cirúrgica)
+        traf = _get_trafilatura()
+        if traf:
+            text = traf.extract(
+                response.text,
+                include_comments=False,
+                include_tables=True,
+                favor_recall=True,
+                deduplicate=True,
+            )
+            if text:
+                return text[:5000]
+        
+        # Fallback: BS4 clássico
         soup = BeautifulSoup(response.text, 'html.parser')
         
         for script in soup(["script", "style", "nav", "footer", "header"]):

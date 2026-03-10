@@ -462,7 +462,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                             color: input.trim() ? 'white' : 'var(--color-text-muted)',
                                         }}
                                     >
-                                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} className={input.trim() ? 'translate-x-0.5 -translate-y-0.5' : ''} />}
+                                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                                     </button>
                                 </div>
                             </div>

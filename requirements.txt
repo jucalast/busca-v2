@@ -1,7 +1,13 @@
+fastapi
+uvicorn[standard]
+celery
+redis
+python-dotenv
+bcrypt
+psycopg2-binary
 requests
 beautifulsoup4
 ddgs
-python-dotenv
 groq
 openai
 google-genai
@@ -9,6 +15,9 @@ langgraph
 langgraph-checkpoint-sqlite
 chromadb
 pydantic
+PyJWT
+python-jose[cryptography]
+python-multipart
 trafilatura
 pytrends
 gnews

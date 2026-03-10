@@ -2,7 +2,7 @@ import os
 from celery import Celery
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 

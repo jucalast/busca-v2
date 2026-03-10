@@ -370,7 +370,8 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         )
         
         for key, value in extracted.items():
-            if value is not None:
+            # Only allow keys that are in the official schema
+            if key in json_schema["properties"] and value is not None:
                 val_str = str(value).lower().strip().rstrip('.,;!')
                 if val_str not in PLACEHOLDER_VALUES and val_str != "":
                     # Only update if we have a real value
