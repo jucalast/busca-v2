@@ -41,7 +41,7 @@ export default function LLMUsageIndicator({ provider }: { provider: string }) {
         };
 
         fetchUsage();
-        const interval = setInterval(fetchUsage, 3000); // 3s
+        const interval = setInterval(fetchUsage, 30000); // 30s (Otimizado: era 3s)
         return () => clearInterval(interval);
     }, [provider]);
 

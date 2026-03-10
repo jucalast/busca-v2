@@ -26,9 +26,9 @@ class PillarConfig:
             "forbidden": ["scripts", "vendas", "diferencial", "proposta_valor", "estratégia_marketing", "SEO", "email_marketing", "anúncios", "tráfego", "campanha", "conteúdo_digital", "identidade_visual", "posicionamento", "canais_venda"],
             "output_schema": PUBLICO_ALVO_SCHEMA,
             "search_queries_template": [
-                "{segmento} perfil cliente ideal quem compra",
-                "{segmento} {localizacao} público-alvo personas",
-                "{segmento} comportamento consumidor tendências 2025",
+                "{segmento} {localizacao} perfil cliente ideal dores desejos reais",
+                "{segmento} {localizacao} fóruns reclamações o que os clientes odeiam",
+                "comportamento de compra {segmento} tendências 2025",
             ],
         },
         "branding": {
@@ -39,9 +39,9 @@ class PillarConfig:
             "forbidden": ["scripts", "comunicação", "visual", "vendas"],
             "output_schema": BRANDING_SCHEMA,
             "search_queries_template": [
-                "{segmento} {localizacao} concorrentes principais",
-                "{segmento} posicionamento marca diferencial",
-                "{segmento} proposta de valor cases sucesso",
+                "{nome_negocio} {localizacao} análise de concorrentes reais",
+                "{segmento} {localizacao} o que os clientes mais elogiam nos rivais",
+                "proposta de valor única exemplos para {segmento}",
             ],
         },
         "identidade_visual": {
@@ -52,8 +52,8 @@ class PillarConfig:
             "forbidden": ["estratégia", "marketing", "vendas", "conteúdo"],
             "output_schema": IDENTIDADE_VISUAL_SCHEMA,
             "search_queries_template": [
-                "{segmento} identidade visual tendências 2025",
-                "{segmento} design marca exemplos",
+                "{segmento} {localizacao} referências visuais instagram fotos",
+                "{segmento} design moderno tendências 2025 premium",
             ],
         },
         "canais_venda": {
@@ -64,9 +64,9 @@ class PillarConfig:
             "forbidden": ["conversão", "fechamento", "scripts", "estratégias"],
             "output_schema": CANAIS_VENDA_SCHEMA,
             "search_queries_template": [
-                "{segmento} canais de venda mais eficientes",
-                "{segmento} {localizacao} como vender mais onde encontrar clientes",
-                "{segmento} marketplace ecommerce canais digitais",
+                "{nome_negocio} {localizacao} cardápio menu digital preços",
+                "{segmento} {localizacao} como vender online taxas delivery",
+                "jornada de compra do cliente {segmento} digital",
             ],
         },
         "trafego_organico": {
@@ -77,9 +77,9 @@ class PillarConfig:
             "forbidden": ["anúncios", "pagos", "scripts", "vendas"],
             "output_schema": TRAFEGO_ORGANICO_SCHEMA,
             "search_queries_template": [
-                "{segmento} SEO local como aparecer Google",
-                "{segmento} marketing conteúdo orgânico redes sociais estratégia",
-                "{segmento} Google Meu Negócio otimização",
+                "{segmento} {localizacao} palavras-chave SEO Google Maps",
+                "{segmento} {localizacao} hashtags instagram engajamento",
+                "ideias de conteúdo que viralizam para {segmento}",
             ],
         },
         "trafego_pago": {
@@ -90,8 +90,9 @@ class PillarConfig:
             "forbidden": ["fechamento", "scripts", "vendas", "conversão"],
             "output_schema": TRAFEGO_PAGO_SCHEMA,
             "search_queries_template": [
-                "{segmento} Meta Ads Google Ads estratégia anúncios",
-                "{segmento} custo aquisição cliente anúncios pagos ROI",
+                "anúncios Meta Ads {segmento} exemplos criativos 2025",
+                "públicos de interesse para {segmento} facebook ads",
+                "estratégia tráfego pago local para {segmento}",
             ],
         },
         "processo_vendas": {
@@ -102,9 +103,9 @@ class PillarConfig:
             "forbidden": [],  # Este pilar TEM scripts e estratégias
             "output_schema": PROCESSO_VENDAS_SCHEMA,
             "search_queries_template": [
-                "{segmento} processo vendas funil conversão",
-                "{segmento} precificação margem lucro ticket médio",
-                "{segmento} scripts vendas contorno objeções",
+                "{segmento} scripts vendas whatsapp contorno objeções",
+                "como aumentar ticket médio em {segmento} técnicas",
+                "estratégias de fidelização e recompra para {segmento}",
             ],
         },
     }

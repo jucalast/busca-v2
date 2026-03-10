@@ -44,6 +44,7 @@ interface ExtractedProfile {
 
 interface GrowthChatProps {
     onProfileReady: (profile: ExtractedProfile) => void;
+    onProfileUpdate?: (profile: ExtractedProfile) => void;
     loading?: boolean;
 }
 
@@ -57,7 +58,7 @@ const ShimmerRow: React.FC<{ label?: string }> = ({ label }) => (
     </div>
 );
 
-const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false }) => {
+const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate, loading = false }) => {
     const { aiModel, setAiModel } = useAuth();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
@@ -69,6 +70,13 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    // Notify parent of profile updates
+    useEffect(() => {
+        if (onProfileUpdate) {
+            onProfileUpdate(extractedProfile);
+        }
+    }, [extractedProfile, onProfileUpdate]);
 
     // Initial message
     useEffect(() => {
@@ -253,11 +261,11 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     const currentBusinessName = extractedProfile.nome_negocio || 'Seu Negócio';
 
     return (
-        <div className="w-full h-full flex flex-col pt-0 relative z-10 overflow-hidden bg-white rounded-3xl p-6 border border-gray-200">
+        <div className="w-full h-full flex flex-col pt-0 relative z-10 overflow-hidden bg-transparent">
             {/* Standard Header - Matches Task Chat */}
 
             {/* Progress bar */}
-            <div className="w-full h-[2px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
+            <div className="w-full h-[1px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
                 <div
                     className="h-full transition-all duration-700 ease-out"
                     style={{ width: `${Math.min(progressValue, 100)}%`, backgroundColor: 'var(--color-accent)' }}
@@ -269,7 +277,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
             {/* Content Area - Using AutoScrollContainer */}
             <div className="flex-1 relative overflow-hidden w-full">
                 <AutoScrollContainer>
-                    <div className="w-full space-y-8 px-8 pt-8 pb-64 max-w-4xl mx-auto text-start">
+                    <div className="w-full space-y-8 px-6 pt-8 pb-48 max-w-3xl mx-auto text-start">
                         {messages.map((msg, i) => {
                             const isThinking = msg.content === '...' && !msg.streamTarget;
                             const isStreaming = streamingIdx === i && !!msg.streamTarget;
@@ -283,12 +291,12 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                     <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
                                         <div className="flex-1 text-right">
                                             <div
-                                                className="inline-block text-left rounded-2xl rounded-tr-md px-4 py-2"
+                                                className="inline-block text-left rounded-xl rounded-tr-sm px-4 py-2 shadow-sm border border-gray-100"
                                                 style={{
-                                                    backgroundColor: '#f3f4f6',
+                                                    backgroundColor: '#ffffff',
                                                 }}
                                             >
-                                                <p className="text-[14px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
+                                                <p className="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-gray-700">{msg.content}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -312,9 +320,9 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
 
                                     <div className="flex items-center justify-between gap-2">
                                         {((msg.tokens ?? 0) > 0 || msg.actual_provider) && (
-                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100/50 backdrop-blur-sm border border-slate-200 font-sans">
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-gray-100 bg-white font-sans shadow-sm">
                                                 {msg.actual_provider && (
-                                                    <div className="flex items-center gap-1.5 mr-1 border-r border-slate-200 pr-2">
+                                                    <div className="flex items-center gap-1.5 mr-1 border-r border-gray-100 pr-2">
                                                         <img
                                                             src={
                                                                 msg.actual_provider === 'gemini' ? '/gemini.png' :
@@ -328,11 +336,11 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                                             alt={msg.actual_provider}
                                                             style={{ filter: 'none' }}
                                                         />
-                                                        <span className="text-[10px] font-bold text-slate-700 capitalize">{msg.actual_provider}</span>
+                                                        <span className="text-[9px] font-bold text-gray-600 capitalize tracking-tight">{msg.actual_provider}</span>
                                                     </div>
                                                 )}
                                                 <Zap className="w-3 h-3 text-amber-500" />
-                                                <span className="text-[10px] font-mono font-bold text-slate-500">{msg.tokens || 0} unit</span>
+                                                <span className="text-[9px] font-mono font-bold text-gray-400">{msg.tokens || 0}</span>
                                             </div>
                                         )}
                                     </div>
@@ -347,11 +355,11 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                             <StreamingText
                                                 text={contentToRender}
                                                 speed={6}
-                                                className="text-[14px] leading-relaxed"
+                                                className="text-[13px] leading-relaxed text-gray-800"
                                                 onDone={() => finalizeStreaming(i)}
                                             />
                                         ) : (
-                                            <div className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
+                                            <div className="text-[13px] leading-relaxed text-gray-800 font-medium">
                                                 <MarkdownContent content={msg.content} />
                                             </div>
                                         )}
@@ -361,15 +369,13 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                         <div className="flex flex-wrap items-center gap-2 mt-4">
                                             <button
                                                 onClick={handleConfirmResearch}
-                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 shadow-sm"
-                                                style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-150 active:scale-95 shadow-sm bg-blue-600 text-white hover:bg-blue-700"
                                             >
                                                 <Check className="w-3.5 h-3.5" />Concordo, pesquisar
                                             </button>
                                             <button
                                                 onClick={handleRejectResearch}
-                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 border border-slate-200"
-                                                style={{ backgroundColor: 'white', color: 'var(--color-text-secondary)' }}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-150 active:scale-95 border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                                             >
                                                 <X className="w-3.5 h-3.5" />Definir eu mesmo
                                             </button>
@@ -377,7 +383,7 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                                     )}
 
                                     {i < messages.length - 1 && (
-                                        <div className="h-px w-full bg-slate-100 mt-8" />
+                                        <div className="h-px w-full bg-gray-100 mt-8" />
                                     )}
                                 </div>
                             );
@@ -386,97 +392,74 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
                 </AutoScrollContainer>
             </div>
 
-            {/* Simplified Floating Input Card - Matches Task Card style */}
-            <div
-                className="absolute bottom-6 left-6 right-6 flex flex-col gap-0 backdrop-blur-3xl rounded-[32px] overflow-hidden z-[100] border-2 border-gray-200 shadow-xl"
-                style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)' }}
-            >
-                <div className="w-full p-4 flex flex-col gap-2">
-                    <div className="flex items-start justify-between gap-3 w-full">
-                        <div className="flex flex-col gap-1 flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-[14px] font-bold tracking-tight leading-tight line-clamp-1" style={{ color: 'var(--color-text-primary)' }}>
-                                    {sending ? 'IA Processando...' : currentBusinessName}
-                                </h1>
-                                {readyForAnalysis && <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={9} className="text-white" strokeWidth={4} /></div>}
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
-                                <span className="opacity-40">#{messages.length} Passos</span>
-                                <div className="w-1 h-1 rounded-full bg-black/10" />
-                                <span>Agente Estratégico</span>
-                            </div>
+            {/* Sticky Input Area - SaaS minimal */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#fdfdfd] via-[#fdfdfd] to-transparent pt-12">
+                <div className="max-w-3xl mx-auto flex flex-col gap-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-3">
+                    <div className="flex items-center justify-between gap-3 px-1 mb-1">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <h1 className="text-[12px] font-bold text-gray-700 tracking-tight leading-none">
+                                {sending ? 'Processando resposta...' : currentBusinessName}
+                            </h1>
                         </div>
-
-                        {/* Right side icons/actions */}
-                        <div className="flex items-center gap-2 shrink-0">
-                            <div className="flex items-center gap-1.5 bg-black/5 hover:bg-black/10 transition-colors px-1.5 py-1.5 rounded-xl border border-black/5 group cursor-pointer">
-                                <Search size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
-                                <Zap size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
-                                <X size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
-                            </div>
-                        </div>
+                        {readyForAnalysis && <div className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">Pronto</div>}
                     </div>
 
-                    <div className="flex flex-col gap-3 pt-2 border-t border-black/5">
-                        {readyForAnalysis ? (
-                            <div className="flex flex-col gap-3">
-                                <p className="text-[12px] text-gray-500 font-medium">Todos os dados necessários foram coletados. Deseja iniciar a análise profunda?</p>
+                    {readyForAnalysis ? (
+                        <div className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl p-2 border border-gray-100">
+                            <p className="text-[11px] text-gray-500 font-medium px-2">DNA mapeado. Inicie a análise estratégica profunda.</p>
+                            <button
+                                onClick={startAnalysis}
+                                className="flex items-center justify-center gap-1.5 h-8 px-4 rounded-lg bg-gray-900 text-white text-[11px] font-bold shadow-sm hover:bg-black transition-all active:scale-95"
+                            >
+                                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Iniciar</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="relative group">
+                            <textarea
+                                ref={inputRef}
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        sendMessage();
+                                    }
+                                }}
+                                placeholder="Descreva seu negócio ou responda à pergunta..."
+                                className="w-full bg-transparent border-0 ring-0 focus:ring-0 focus:ring-transparent focus:ring-offset-0 outline-none focus:outline-none text-[13px] font-medium placeholder:text-gray-400 text-gray-800 min-h-[40px] max-h-32 py-2 resize-none transition-all pr-20 shadow-none border-transparent focus:border-transparent appearance-none"
+                                style={{ outline: 'none !important', boxShadow: 'none !important' } as any}
+                                rows={1}
+                            />
+                            <div className="absolute right-0 bottom-0 top-0 flex items-center gap-1 p-1">
+                                <VoiceButton
+                                    state={voiceState}
+                                    interimText={interimText}
+                                    isSupported={voiceSupported}
+                                    onToggle={toggleVoice}
+                                />
                                 <button
-                                    onClick={startAnalysis}
-                                    className="flex items-center justify-center gap-2 h-11 px-6 rounded-2xl bg-black text-white text-[14px] font-bold shadow-xl shadow-black/20 hover:-translate-y-0.5 transition-all active:scale-95 group"
+                                    onClick={() => sendMessage()}
+                                    disabled={!input.trim() || sending}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 disabled:opacity-40"
+                                    style={{
+                                        backgroundColor: input.trim() ? '#2563eb' : '#f1f5f9',
+                                        color: input.trim() ? 'white' : '#94a3b8',
+                                    }}
                                 >
-                                    <Zap className="w-4 h-4 fill-amber-400 text-amber-400 group-hover:scale-125 transition-transform" />
-                                    <span>Iniciar Análise Estratégica</span>
+                                    {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                                 </button>
                             </div>
-                        ) : (
-                            <div className="relative group">
-                                <textarea
-                                    ref={inputRef}
-                                    value={input}
-                                    onChange={e => setInput(e.target.value)}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
-                                            sendMessage();
-                                        }
-                                    }}
-                                    placeholder="Descreva seu negócio ou responda à pergunta acima..."
-                                    className="w-full bg-transparent border-0 ring-0 focus:ring-0 focus:ring-transparent focus:ring-offset-0 outline-none focus:outline-none text-[14px] placeholder:text-gray-400 text-gray-700 min-h-[44px] max-h-32 py-2 resize-none transition-all pr-24 shadow-none border-transparent focus:border-transparent appearance-none"
-                                    style={{ outline: 'none !important', boxShadow: 'none !important' } as any}
-                                    rows={1}
-                                />
-                                <div className="absolute right-0 bottom-0 flex items-center gap-1 p-1">
-                                    <VoiceButton
-                                        state={voiceState}
-                                        interimText={interimText}
-                                        isSupported={voiceSupported}
-                                        onToggle={toggleVoice}
-                                    />
-                                    <button
-                                        onClick={() => sendMessage()}
-                                        disabled={!input.trim() || sending}
-                                        className="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 disabled:opacity-30 shadow-sm"
-                                        style={{
-                                            backgroundColor: input.trim() ? 'var(--color-accent)' : 'var(--color-surface-hover)',
-                                            color: input.trim() ? 'white' : 'var(--color-text-muted)',
-                                        }}
-                                    >
-                                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                        </div>
+                    )}
 
-                        <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 scale-90 origin-left shadow-sm">
-                                <ModelSelector value={aiModel} onChange={setAiModel} />
-                                <div className="w-[1px] h-3 bg-black/10" />
-                                <LLMUsageIndicator provider={aiModel} />
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <VoiceInterimBadge text={interimText} />
-                            </div>
+                    <div className="flex items-center justify-between px-1 mt-1">
+                        <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded border border-gray-100 scale-[0.85] origin-left">
+                            <ModelSelector value={aiModel} onChange={setAiModel} />
+                            <div className="w-px h-3 bg-gray-300" />
+                            <LLMUsageIndicator provider={aiModel} />
                         </div>
                     </div>
                 </div>

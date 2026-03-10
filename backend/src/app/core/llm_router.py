@@ -32,9 +32,10 @@ class LLMResponse(str):
 
 from dotenv import load_dotenv
 from app.services.intelligence.usage_tracker import usage_tracker
+from app.services.common import log_info, log_error, log_debug
 
-# Load .env from project root (2 levels up from backend/src/app/core/)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
+# Load .env from project root (4 levels up from backend/src/app/core/)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,
@@ -746,21 +747,21 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
     # ── Context-Aware Fallback optimization ────────────────────
     # For large prompts, we MUST skip small-context models (Cerebras/Samba/OpenRouter-Free)
     if estimated_tokens > 15000:
-        # Giant prompt: ONLY use high-context masters (Gemini 1M, Groq 128k)
-        fallback_chain = ["gemini", "groq"]
+        # Giant prompt: ONLY use high-context masters (Gemini 1M, Groq 128k, SambaNova 64k)
+        fallback_chain = ["gemini", "groq", "sambanova"]
         print(f"  � Prompt GIGANTE (~{estimated_tokens} tokens). Usando apenas Gemini/Groq.", file=sys.stderr)
         if actual_provider not in fallback_chain:
             actual_provider = "gemini"
-    elif estimated_tokens > 8000:
-        # Large prompt: Cerebras/Samba (8k-32k) are likely to fail or be slow
-        fallback_chain = ["gemini", "groq"]
+    elif estimated_tokens > 4000:
+        # Mid-size prompt: SambaNova Llama 3.3 70B is elite and free
+        fallback_chain = ["sambanova", "gemini", "cerebras", "groq"]
         print(f"  🔍 Prompt grande (~{estimated_tokens} tokens). Pulando modelos pequenos.", file=sys.stderr)
         if actual_provider not in fallback_chain:
             actual_provider = "gemini"
     else:
         # Normal/Short prompt: Elite/Balanced priority chain
-        # User requested: OpenRouter, SambaNova, Cerebras first, then Groq, Gemini.
-        fallback_chain = ["openrouter", "sambanova", "cerebras", "groq", "gemini"]
+        # Prioritize SambaNova for intelligence, Cerebras for speed, Groq as absolute fallback
+        fallback_chain = ["sambanova", "cerebras", "gemini", "openrouter", "groq"]
     
     chain = fallback_chain.copy()
     
@@ -776,23 +777,33 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
         elif actual_provider:
             # If we reach here, it's a short prompt but actual_provider (ex: custom) isn't in chain
             chain.insert(0, actual_provider)
-    
-    # Ensure OpenRouter is NEVER the final fallback if others were tried
-    # (Matches user requirement: "não é pra terminar com openrouter")
-    if len(chain) > 1 and chain[-1] == "openrouter":
-        # Swap last two if needed
-        chain[-1], chain[-2] = chain[-2], chain[-1]
+            
+    # Guarantee Groq is the absolute final fallback if it's in the chain
+    if "groq" in chain and chain[-1] != "groq":
+        chain.remove("groq")
+        chain.append("groq")
     
     errors = []
     now = time.time()
+    
+    # DEBUG: Verificar carregamento de chaves (log silencioso em produção)
+    keys_found = []
+    if os.environ.get("GROQ_API_KEY"): keys_found.append("Groq")
+    if os.environ.get("SAMBANOVA_API_KEY"): keys_found.append("SambaNova")
+    if os.environ.get("CEREBRAS_API_KEY"): keys_found.append("Cerebras")
+    if os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY"): keys_found.append("Gemini")
+    if os.environ.get("OPENROUTER_API_KEY"): keys_found.append("OpenRouter")
+    
+    if not keys_found:
+        log_error("CRÍTICO: Nenhuma chave de API de LLM foi encontrada no ambiente!")
+    else:
+        log_debug(f"Chaves de API carregadas: {', '.join(keys_found)}")
+
     for provider in chain:
         # Check if provider is in cooldown
         if provider in _PROVIDER_COOLDOWN:
             if now < _PROVIDER_COOLDOWN[provider]:
-                # Skip cooled down provider unless it's the only one left OR explicitly requested
-                if len(chain) > 1 and provider != actual_provider:
-                     # print(f"  ⏭️ Provedor {provider} em cooldown. Pulando...", file=sys.stderr)
-                     continue
+                continue
             else:
                 del _PROVIDER_COOLDOWN[provider]
 
@@ -801,62 +812,69 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
             
             if provider == "sambanova":
                 api_key = os.environ.get("SAMBANOVA_API_KEY")
-                if not api_key: continue
+                if not api_key: 
+                    errors.append("SambaNova: Chave ausente")
+                    continue
                 can_call, _ = usage_tracker.can_make_request("sambanova", estimated_tokens=len(cache_prompt)//4)
-                if not can_call: continue
+                if not can_call and len(keys_found) > 1: continue # Only skip if we have other options
                 res, tokens, used_model = _call_sambanova_engine(api_key, prompt, temperature, max_retries, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "cerebras":
                 api_key = os.environ.get("CEREBRAS_API_KEY")
-                if not api_key: continue
+                if not api_key:
+                    errors.append("Cerebras: Chave ausente")
+                    continue
                 can_call, _ = usage_tracker.can_make_request("cerebras", estimated_tokens=len(cache_prompt)//4)
-                if not can_call: continue
+                if not can_call and len(keys_found) > 1: continue
                 res, tokens, used_model = _call_cerebras_engine(api_key, prompt, temperature, max_retries, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "gemini":
                 api_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-                if not api_key: continue
+                if not api_key:
+                    errors.append("Gemini: Chave ausente")
+                    continue
                 can_call, _ = usage_tracker.can_make_request("gemini", estimated_tokens=len(cache_prompt)//4)
-                if not can_call: continue
+                if not can_call and len(keys_found) > 1: continue
                 res, tokens, used_model = call_gemini(api_key, prompt, temperature, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "groq":
                 api_key = os.environ.get("GROQ_API_KEY")
-                if not api_key: continue
+                if not api_key:
+                    errors.append("Groq: Chave ausente")
+                    continue
                 can_call, _ = usage_tracker.can_make_request("groq", estimated_tokens=len(cache_prompt)//4)
-                if not can_call: continue
+                if not can_call and len(keys_found) > 1: continue
                 eff_prefer_small = prefer_small if tier != 2 else False
                 res, tokens, used_model = _call_groq_engine(api_key, prompt, temperature, max_retries, json_mode, messages, eff_prefer_small, cancellation_check=cancellation_check)
 
             elif provider == "openrouter":
                 api_key = os.environ.get("OPENROUTER_API_KEY")
-                if not api_key: continue
+                if not api_key:
+                    errors.append("OpenRouter: Chave ausente")
+                    continue
                 can_call, _ = usage_tracker.can_make_request("openrouter", estimated_tokens=len(cache_prompt)//4)
-                if not can_call: continue
+                if not can_call and len(keys_found) > 1: continue
                 res, tokens, used_model = call_openrouter(api_key, prompt, temperature, json_mode, messages, cancellation_check=cancellation_check)
 
             # SUCCESS: Clear cooldown if it was set
-            if provider in _PROVIDER_COOLDOWN:
-                del _PROVIDER_COOLDOWN[provider]
-            
             if res:
+                if provider in _PROVIDER_COOLDOWN:
+                    del _PROVIDER_COOLDOWN[provider]
                 return _process_llm_response(res, tokens, used_model, provider, provider != original_provider, json_mode)
 
         except Exception as e:
              err_msg = str(e)
-             errors.append(f"{provider} failed: {err_msg}")
+             errors.append(f"{provider}: {err_msg}")
              
-             # If provider failed all internal retries, put it on cooldown (2 minutes for OpenRouter, 5 for others)
-             # but only for transient/rate-limit errors, not for bad prompts
              is_rate_limit = "429" in err_msg or "rate" in err_msg.lower() or "limit" in err_msg.lower() or "quota" in err_msg.lower()
              if is_rate_limit or "Todos os modelos" in err_msg:
-                 cooldown_duration = 120 if provider == "openrouter" else 300  # 2 minutes for OpenRouter, 5 for others
-                 print(f"  🛑 Provedor {provider} falhou criticamente. Entrando em cooldown de {cooldown_duration//60} min.", file=sys.stderr)
+                 cooldown_duration = 120 if provider == "openrouter" else 300
+                 print(f"  🛑 Provedor {provider} falhou criticamente. Entrando em cooldown.", file=sys.stderr)
                  _PROVIDER_COOLDOWN[provider] = time.time() + cooldown_duration
-             
              continue
     
-    raise Exception(f"Todos os provedores de LLM falharam: {' | '.join(errors)}")
+    final_error_msg = " | ".join(errors) if errors else "Nenhum provedor disponível (verifique as chaves de API no .env)"
+    raise Exception(f"Todos os provedores de LLM falharam: {final_error_msg}")
 
 def _process_llm_response(res, tokens, used_model, provider_name, is_fallback, json_mode):
     """Processes raw LLM response into final format."""

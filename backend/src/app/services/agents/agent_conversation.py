@@ -263,6 +263,10 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
             research_data = _perform_web_research(business_name, current_profile, yield_callback)
             if research_data:
                 cnpj_data.update(research_data)
+        
+        # INJEÇÃO CRÍTICA: Mesclar dados do CNPJ no perfil atual antes da extração via LLM
+        # Isso ajuda o LLM a entender o contexto e não pedir dados que já temos.
+        current_profile.update(cnpj_data)
     
     # Schema JSON para forçar estrutura correta (30 campos — inclui todos que o pipeline consome)
     json_schema = {
@@ -378,6 +382,24 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
                     updated_profile[key] = value
                     new_fields += 1
         
+        # ── Email Safety Net ──
+        if not updated_profile.get('email_contato'):
+            email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', message)
+            if email_match:
+                updated_profile['email_contato'] = email_match.group(0)
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected email_contato = '{updated_profile['email_contato']}'")
+
+        # ── WhatsApp / Phone Safety Net ──
+        if not updated_profile.get('whatsapp'):
+            # Look for phone-like patterns if the context mentions phone or attendance
+            if any(kw in message.lower() for kw in ['telefone', 'contato', 'whats', 'celular', 'atendimento']):
+                phone_match = re.search(r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}', message)
+                if phone_match:
+                    updated_profile['whatsapp'] = phone_match.group(0)
+                    new_fields += 1
+                    log_info(f"🔧 Safety net: detected whatsapp = '{updated_profile['whatsapp']}'")
+
         # ── Post-extraction safety net ──
         # If nome_negocio is still empty, check for explicit name-giving patterns
         if not updated_profile.get('nome_negocio'):
@@ -431,10 +453,20 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         # If problemas/dificuldades is still empty but message mentions common challenges
         if not updated_profile.get('problemas') and not updated_profile.get('dificuldades'):
             msg_lower = message.lower()
-            if any(kw in msg_lower for kw in ['conseguir mais', 'dificuldade', 'problema', 'desafio', 'falta de', 'preciso de mais']):
+            # CRITICAL FILTER: Don't put "I don't have X" into problems
+            is_negative_confirmation = any(kw in msg_lower for kw in ['não tenho', 'não possuo', 'não tem', 'nao tenho', 'nao tem', 'não uso'])
+            if any(kw in msg_lower for kw in ['conseguir mais', 'dificuldade', 'problema', 'desafio', 'falta de', 'preciso de mais']) and not is_negative_confirmation:
                 updated_profile['problemas'] = message.strip()
                 new_fields += 1
                 log_info(f"🔧 Safety net: detected problemas from message")
+        
+        # ── LinkedIn Safety Net ──
+        if not updated_profile.get('linkedin'):
+            msg_lower = message.lower()
+            if 'linkedin' in msg_lower and any(kw in msg_lower for kw in ['não tem', 'nao tem', 'não possui', 'não possuo', 'não uso']):
+                updated_profile['linkedin'] = "Não possui"
+                new_fields += 1
+                log_info(f"🔧 Safety net: detected NO LinkedIn")
         
         # If modelo is still empty but message mentions selling to companies/consumers
         if not updated_profile.get('modelo'):
@@ -680,16 +712,15 @@ def _compute_missing_fields(profile: dict) -> tuple:
         val_str = str(value).strip()
         
         # Empty or meaningless responses
-        if len(val_str) < 3:
+        if len(val_str) < 2:
             return False
             
-        # Common negative responses that don't count as filled
-        negative_responses = ["não possui", "não tem", "nao possui", "nao tem", "sem", "nenhum"]
-        if val_str.lower() in negative_responses:
+        # "Não informado" still counts as missing because it's a placeholder for unknown
+        if val_str.lower() in ["não informado", "nao informado"]:
             return False
             
-        # Any other response with meaningful content counts as filled
-        # This includes: numbers, text with specific details, URLs, ranges, etc.
+        # "Não possui", "Não tem", etc. are VALID ANSWERS (confirmed negatives)
+        # They count as filled because we now know the state of that field.
         return True
     
     filled = {k for k, v in profile.items() if _is_field_filled(v)}
@@ -771,45 +802,43 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     
     gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}.\n" if discovery_gaps else ""
     
-    # Logic for ready_now: All critical must be filled, and we need at least some minimal bonus info
+    # Logic for ready_now: STRICT 100% COMPLETION REQUIRED
+    # User requested all data without exception before analysis
     has_critical = len(missing_critical) == 0
+    has_all_bonus = len(missing_bonus) == 0
     
     # Check if we have enough "real" data (not just empty/null values)
     def _is_valid_data(value):
         if not value or str(value).lower() in ("null", "none", "", "desconhecido"):
             return False
-        # Generic logic: any meaningful data counts as valid
         val_str = str(value).strip()
+        if len(val_str) < 2: return False
         
-        # Empty or meaningless responses
-        if len(val_str) < 3:
+        # "Não informado" is a placeholder for missing data
+        if val_str.lower() in ["não informado", "nao informado"]: 
             return False
             
-        # Common negative responses that don't count as valid data
-        negative_responses = ["não possui", "não tem", "nao possui", "nao tem", "sem", "nenhum"]
-        if val_str.lower() in negative_responses:
-            return False
-            
-        # Any other response with meaningful content counts as valid
-        # This includes: numbers, text with specific details, URLs, ranges, etc.
+        # "Não possui", "Não tem", etc. are VALID diagnostic data points
+        # (They indicate a gap that the strategy will address)
         return True
     
-    real_data_count = len([k for k, v in updated_profile.items() if _is_valid_data(v)])
+    total_required = len(set(CRITICAL_FIELDS + BONUS_FIELDS))
+    actual_filled = len([k for k, v in updated_profile.items() if _is_valid_data(v) and k in _FIELD_LABELS_PT])
     
-    # We want at least some bonus fields to be filled OR all groups to have some progress
-    groups_with_progress = len([g for g in group_status.values() if not g["is_complete"] and g["count_missing"] < g["total"]])
+    # ready_now is true ONLY if 100% of defined fields are filled with valid data
+    ready_now = has_critical and has_all_bonus and (actual_filled >= total_required)
     
-    ready_now = has_critical and (bonus_count >= 5 or groups_with_progress >= 2)
-    
-    # Logic for status_instruction
+    # Logic for status_instruction: STRICT FOCUS ON MAPPED GAPS
     if ready_now:
-        status_instruction = "ESTADO: ✅ TENHO TUDO. Resuma e ofereça análise."
+        status_instruction = "ESTADO: ✅ DNA 100% MAPEADO. Resuma brevemente a prontidão e convide o usuário a clicar no botão 'Iniciar Análise Estratégica' para gerar o plano completo."
     elif missing_critical:
         campo_label = _FIELD_LABELS_PT.get(missing_critical[0], missing_critical[0])
-        status_instruction = f"ESTADO: ⚠️ Falta {campo_label}. Peça de forma amigável."
+        status_instruction = f"ESTADO: ⚠️ Bloqueado. Falta campo CRÍTICO: {campo_label}. Peça imediatamente. NÃO peça nada fora desta lista: {', '.join([_FIELD_LABELS_PT.get(c, c) for c in missing_critical[:2]])}."
     else:
-        current_group = next((n for n, s in group_status.items() if not s["is_complete"]), "Geral")
-        status_instruction = f"ESTADO: ⚠️ Coletando detalhe do grupo {current_group}. Peça o próximo campo."
+        # Get the first missing field from any group
+        first_missing = all_missing[0] if all_missing else "dados extras"
+        campo_label = _FIELD_LABELS_PT.get(first_missing, first_missing)
+        status_instruction = f"ESTADO: ⚠️ Coletando indicadores. Próximo alvo: {campo_label}. Peça apenas UM dado por vez da lista de campos faltantes. PROIBIDO perguntar sobre gestão interna, RH ou rotinas que não estejam nos 30 campos oficiais."
 
     from app.core.prompt_loader import load_prompt_file
     prompt_config = load_prompt_file("chat_consultant.yaml")

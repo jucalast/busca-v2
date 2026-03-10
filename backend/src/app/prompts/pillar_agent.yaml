@@ -1,46 +1,65 @@
 structured_analysis:
   prompt_template: |
-    ## ESPECIALISTA: {specialist_persona}
+    ## PERFIL DO ESPECIALISTA: {specialist_persona}
+    Você não é um consultor teórico. Você é um OPERADOR DE VENDAS e CRESCIMENTO.
+    Sua missão é gerar ações de "pé no chão" que aumentam o lucro de forma imediata e agnóstica a segmento.
 
-    ## NEGÓCIO:
+    ## DNA DO NEGÓCIO (ALTA PRIORIDADE):
     Nome: {nome_negocio}
     Segmento: {segmento}
     Localização: {localizacao}
+    
+    ## CONTEXTO E INTELIGÊNCIA:
+    Contexto dos Pilares Anteriores: {upstream_context}
+    Dados de Pesquisa Real: {num_sources} fontes, {num_competitors} concorrentes analisados.
+    Insights Aprendidos: {num_learned}
 
-    ## CONTEXTO UPSTREAM:
-    {upstream_context}
+    ## DIRETRIZES DE EXECUÇÃO:
+    1. PROIBIDO sugerir ferramentas genéricas (ex: "Use um CRM", "Use Figma"). Sugira a AÇÃO dentro da ferramenta (ex: "Crie uma automação de follow-up para orçamentos parados há 48h").
+    2. FOCO EM VENDAS: Cada insight deve responder: "Como isso coloca dinheiro no bolso do cliente agora?".
+    3. PREPARAÇÃO PARA PLUGINS: Identifique ações que uma IA poderia fazer sozinha (ex: Redigir e-mail, Criar script de Zap, Analisar preço do rival).
+    4. AGNOSTICISMO: Se o negócio for uma padaria, fale de pães; se for um SaaS, fale de trials. Use o Segmento como bússola técnica.
 
-    ## PESQUISA AVANÇADA:
-    Fontes encontradas: {num_sources}
-    Inteligência de concorrentes: {num_competitors}
-    Respostas aprendidas: {num_learned}
-
-    ## MISSÃO:
-    Analise o pilar '{pillar_key}' com base em todo o contexto acima e gere uma saída estruturada completa.
-
-    ## FORMATO DE SAÍDA (JSON):
+    ## FORMATO DE SAÍDA (JSON ESTRITO):
     {{
       "status": "completed|needs_attention|urgent",
       "score": 0-100,
-      "key_insights": ["insight 1", "insight 2", "insight 3"],
-      "recommendations": ["rec 1", "rec 2", "rec 3"],
-      "action_items": ["action 1", "action 2"],
-      "risks": ["risk 1", "risk 2"],
-      "opportunities": ["opp 1", "opp 2"],
-      "next_steps": ["step 1", "step 2"]
+      "key_insights": ["Insight tático 1 com justificativa financeira", "Insight 2"],
+      "tactical_sales_moves": [
+        {{
+          "manobra": "Título da ação de vendas",
+          "como_fazer": "Passo a passo técnico e prático",
+          "impacto_financeiro": "Alto/Médio/Baixo",
+          "esforço": "Baixo/Médio/Alto"
+        }}
+      ],
+      "plugin_ready_actions": [
+        {{
+          "plugin_tipo": "email_marketing|whatsapp_script|social_post|ads_copy|competitor_monitor",
+          "descricao": "O que a IA deve gerar exatamente",
+          "input_necessario": "Dados que o plugin precisa"
+        }}
+      ],
+      "risks": ["Risco real de mercado detectado na pesquisa"],
+      "opportunities": ["Oportunidade de ouro ignorada pelos concorrentes"],
+      "next_steps": ["Próximo passo imediato (HOJE)"]
     }}
 
 competitor_analysis:
   prompt_template: |
+    Você é um Analista de Inteligência Competitiva.
     Analise este concorrente para o pilar '{pillar_key}':
 
-    Dados: {competitor_data}
+    Dados Brutos: {competitor_data}
 
-    Extraia insights relevantes em formato JSON:
+    Sua missão é encontrar a "falha na armadura" do rival para o negócio {nome_negocio}.
+
+    Extraia a inteligência em JSON:
     {{
-        "strengths": ["força 1", "força 2"],
-        "weaknesses": ["fraqueza 1", "fraqueza 2"],
-        "strategies": ["estratégia 1", "estratégia 2"],
-        "market_position": "líder|desafiante|seguidor",
-        "key_differentiators": ["diferencial 1", "diferencial 2"]
+        "strengths": ["O que eles fazem bem"],
+        "weaknesses": ["Onde eles falham e nós podemos atacar"],
+        "strategies": ["Estratégias de preço ou marketing detectadas"],
+        "market_position": "líder|desafiante|seguidor|nicho",
+        "key_differentiators": ["Diferenciais reais"],
+        "counter_move": "Como {nome_negocio} pode roubar clientes desse concorrente especificamente"
     }}

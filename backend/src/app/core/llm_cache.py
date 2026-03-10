@@ -27,6 +27,7 @@ DEFAULT_TTL_SECONDS = 6 * 60 * 60
 def _get_cache_conn():
     """Get cache database connection."""
     conn = sqlite3.connect(str(_CACHE_DB), timeout=10)
+    # LLM Cache Table
     conn.execute('''
         CREATE TABLE IF NOT EXISTS llm_cache (
             cache_key TEXT PRIMARY KEY,
@@ -38,11 +39,53 @@ def _get_cache_conn():
             hit_count INTEGER DEFAULT 0
         )
     ''')
+    # Web Scraping Cache Table (Otimização de Performance)
     conn.execute('''
-        CREATE INDEX IF NOT EXISTS idx_cache_created 
-        ON llm_cache(created_at)
+        CREATE TABLE IF NOT EXISTS web_cache (
+            url_hash TEXT PRIMARY KEY,
+            url TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            ttl_seconds REAL NOT NULL
+        )
     ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_cache_created ON llm_cache(created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_web_cache_created ON web_cache(created_at)')
     return conn
+
+# --- WEB SCRAPING CACHE (24h default) ---
+def get_web_cache(url: str, ttl_seconds: float = 24 * 60 * 60) -> Optional[str]:
+    """Look up a cached web page content."""
+    url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+    try:
+        conn = _get_cache_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT content, created_at, ttl_seconds FROM web_cache WHERE url_hash = ?', (url_hash,))
+        row = cursor.fetchone()
+        if row:
+            content, created_at, stored_ttl = row
+            if time.time() - created_at < min(stored_ttl, ttl_seconds):
+                conn.close()
+                return content
+            cursor.execute('DELETE FROM web_cache WHERE url_hash = ?', (url_hash,))
+            conn.commit()
+        conn.close()
+    except Exception: pass
+    return None
+
+def set_web_cache(url: str, content: str, ttl_seconds: float = 24 * 60 * 60):
+    """Store web page content in cache."""
+    if not content or len(content) < 50: return
+    url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+    try:
+        conn = _get_cache_conn()
+        conn.execute(
+            'INSERT OR REPLACE INTO web_cache (url_hash, url, content, created_at, ttl_seconds) VALUES (?, ?, ?, ?, ?)',
+            (url_hash, url, content, time.time(), ttl_seconds)
+        )
+        conn.commit()
+        conn.close()
+    except Exception: pass
 
 
 def _make_cache_key(prompt: str, temperature: float, json_mode: bool, provider: str = "") -> str:

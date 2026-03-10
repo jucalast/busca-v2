@@ -165,33 +165,46 @@ def run_production_agent(req: ProductionAgentRequest):
 @router.get("/metrics")
 def get_dashboard_metrics(current_user: dict = Depends(get_current_user)):
     from app.core import database as db
+    import time
+    
+    # Simple process-level cache (60s)
+    global _METRICS_CACHE
+    if not hasattr(sys.modules[__name__], '_METRICS_CACHE'):
+        setattr(sys.modules[__name__], '_METRICS_CACHE', {"data": None, "ts": 0})
+    
+    cache = getattr(sys.modules[__name__], '_METRICS_CACHE')
+    if time.time() - cache["ts"] < 60 and cache["data"]:
+        return cache["data"]
+
     conn = db.get_connection()
     c = conn.cursor()
     
-    # Safe counting logic
-    c.execute("SELECT COUNT(*) as cnt FROM users")
-    users = c.fetchone()[0]
-    
-    c.execute("SELECT COUNT(*) as cnt FROM businesses")
-    businesses = c.fetchone()[0]
-    
-    c.execute("SELECT COUNT(*) as cnt FROM analyses")
-    analyses = c.fetchone()[0]
-    
-    c.execute("SELECT COUNT(*) as cnt FROM background_tasks WHERE status = 'failed'")
-    failed_tasks = c.fetchone()[0]
-    
-    conn.close()
-    
-    return {
-        "success": True,
-        "metrics": {
-            "total_users": users,
-            "total_businesses": businesses,
-            "total_analyses": analyses,
-            "failed_tasks": failed_tasks
+    try:
+        # Unified query for performance
+        c.execute("""
+            SELECT 
+                (SELECT COUNT(*) FROM users) as users,
+                (SELECT COUNT(*) FROM businesses) as businesses,
+                (SELECT COUNT(*) FROM analyses) as analyses,
+                (SELECT COUNT(*) FROM background_tasks WHERE status = 'failed') as failed
+        """)
+        row = c.fetchone()
+        
+        result = {
+            "success": True,
+            "metrics": {
+                "total_users": row[0],
+                "total_businesses": row[1],
+                "total_analyses": row[2],
+                "failed_tasks": row[3]
+            }
         }
-    }
+        # Update cache
+        cache["data"] = result
+        cache["ts"] = time.time()
+        return result
+    finally:
+        conn.close()
 
 @router.get("/usage-metrics")
 def get_llm_usage_metrics():

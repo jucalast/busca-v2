@@ -79,79 +79,73 @@ _SCRAPE_BLOCKLIST = [
 ]
 
 def scrape_page(url: str, timeout: int = 5, cancellation_check=None) -> str:
-    """Scrape text content from a webpage URL with cancellation support.
-    Uses trafilatura for high-quality extraction, falls back to BS4.
-    Skips social media sites that require API access."""
-    # Skip social media sites that never return useful content via scraping
+    """Scrape text content from a webpage URL with cancellation support and caching."""
+    from app.core.llm_cache import get_web_cache, set_web_cache
+    
+    # Check cache first (24h TTL)
+    cached = get_web_cache(url)
+    if cached:
+        return cached
+
+    # Skip social media sites
     url_lower = url.lower()
     for blocked in _SCRAPE_BLOCKLIST:
         if blocked in url_lower:
             return ""
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        
-        # Silenciar avisos de SSL
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
-        # Fazer o request primeiro para checar o Content-Type ou PDF magic number
-        response = requests.get(url, headers=headers, timeout=timeout, verify=False)
-        response.raise_for_status()
-        
-        content_type = response.headers.get('Content-Type', '').lower()
-        is_pdf = 'application/pdf' in content_type or url_lower.endswith('.pdf')
-        
-        # Check for PDF magic number %PDF-
-        if not is_pdf and len(response.content) > 4:
-            if response.content[:4] == b'%PDF':
-                is_pdf = True
-
-        if is_pdf:
-            pdf_lib = _get_pypdf()
-            if pdf_lib:
-                import io
-                try:
-                    f = io.BytesIO(response.content)
-                    reader = pdf_lib.PdfReader(f)
-                    text = ""
-                    # Extrair até 10 páginas para não sobrecarregar
-                    for i, page in enumerate(reader.pages[:10]):
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-                    
-                    if text.strip():
-                        return f"[CONTEÚDO EXTRAÍDO DE PDF]\n{text[:5000]}"
-                    return "[PDF sem texto extraível]"
-                except Exception as e:
-                    return f"[Erro ao ler PDF: {str(e)}]"
-            return "[Suporte a PDF não disponível]"
-
-        # Tentar trafilatura primeiro para HTML (extração cirúrgica)
-        traf = _get_trafilatura()
-        if traf:
-            text = traf.extract(
-                response.text,
-                include_comments=False,
-                include_tables=True,
-                favor_recall=True,
-                deduplicate=True,
-            )
-            if text:
-                return text[:5000]
-        
-        # Fallback: BS4 clássico
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.decompose()
-            
-        text = soup.get_text()
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = '\n'.join(chunk for chunk in chunks if chunk)
-        
-        return text[:5000]
+        # (resto da lógica original de request e extração ...)
+        content = _perform_scrape(url, timeout) # Helper para não repetir código
+        if content:
+            set_web_cache(url, content)
+        return content
     except Exception:
         return ""
+
+def _perform_scrape(url: str, timeout: int) -> str:
+    """Internal helper to perform the actual scraping logic."""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    response = requests.get(url, headers=headers, timeout=timeout, verify=False)
+    response.raise_for_status()
+    
+    url_lower = url.lower()
+    content_type = response.headers.get('Content-Type', '').lower()
+    is_pdf = 'application/pdf' in content_type or url_lower.endswith('.pdf')
+    
+    if not is_pdf and len(response.content) > 4:
+        if response.content[:4] == b'%PDF':
+            is_pdf = True
+
+    if is_pdf:
+        pdf_lib = _get_pypdf()
+        if pdf_lib:
+            import io
+            try:
+                f = io.BytesIO(response.content)
+                reader = pdf_lib.PdfReader(f)
+                text = ""
+                for i, page in enumerate(reader.pages[:10]):
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                return text[:5000].strip() or "[PDF sem texto extraível]"
+            except Exception: return ""
+        return ""
+
+    # Tentar trafilatura primeiro
+    traf = _get_trafilatura()
+    if traf:
+        text = traf.extract(response.text, include_comments=False, include_tables=True, favor_recall=True, deduplicate=True)
+        if text: return text[:5000]
+    
+    # Fallback BS4
+    soup = BeautifulSoup(response.text, 'html.parser')
+    for script in soup(["script", "style", "nav", "footer", "header"]):
+        script.decompose()
+    text = soup.get_text()
+    lines = (line.strip() for line in text.splitlines())
+    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+    return '\n'.join(chunk for chunk in chunks if chunk)[:5000]

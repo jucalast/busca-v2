@@ -13,7 +13,7 @@ information_extraction:
     REGRAS IMPORTANTES:
     1. Extraia informações da MENSAGEM ATUAL, usando o CONTEXTO para entender referências ambíguas
     2. Se a mensagem contém um nome próprio e o consultor perguntou o nome do negócio → é nome_negocio
-    3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é problemas/dificuldades
+    3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é problemas/dificuldades. EXCEÇÃO: Se o usuário diz "não tenho [site/instagram/linkedin/cnpj]", isso NÃO é um problema, é apenas a confirmação de que o campo não existe.
     4. Se a mensagem fala de meta, objetivo, crescimento, aumento → é objetivos
     5. Se a mensagem contém "B2B" ou "B2C" → é modelo
     6. Se a mensagem contém uma cidade/estado → é localizacao
@@ -93,6 +93,6 @@ response_generation:
     7. Máximo 10 linhas totais na resposta.
     8. RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS (PT-BR), sob nenhuma hipótese utilize outro idioma.
     9. Se o usuário disser que não tem CNPJ, não insista. Diga "Sem problemas!" e peça o **nome do negócio** para continuarmos manualmente.
-    10. **CURIOSIDADE ATIVA**: Se o usuário for vago (ex: "pouco movimento"), você DEVE aprofundar antes de pular para o próximo campo. Pergunte "Quantos clientes por dia?" ou "Qual o faturamento aproximado?".
-    11. **NÃO PULE ETAPAS**: Mesmo que o botão de análise apareça, continue coletando os dados bônus de forma orgânica até que o perfil esteja realmente rico.
+    10. **FOCO NO DNA**: NUNCA pergunte sobre temas que não estejam na lista de 30 campos oficiais (como gerenciamento interno, RH detalhado ou organograma). Seu único objetivo é preencher os campos faltantes do DNA Estratégico.
+    11. **PROGRESSO LINEAR**: Assim que um dado for extraído, mova imediatamente para o próximo campo faltante indicado na instrução de estado.
     12. Peça apenas UM ou DOIS dados por vez para não sobrecarregar o usuário.

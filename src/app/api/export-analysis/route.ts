@@ -253,38 +253,45 @@ export async function POST(req: NextRequest) {
 
 function generateFullAnalysisContent(data: any): string {
     const { profile, score, specialists, marketData, taskPlan } = data;
-    
+
     let content = '';
-    
+
     // Cabeçalho
     content += '# ANALISE COMPLETA DE NEGOCIO\n\n';
-    
+
     // Informações do Perfil
     if (profile) {
         content += '## DADOS DO NEGOCIO\n\n';
-        
-        // Try multiple field names for robustness
-        const nome = profile.nome_negocio || profile.nome || profile.perfil?.nome || 'N/A';
-        const segmento = profile.segmento || profile.perfil?.segmento || 'N/A';
-        const modelo = profile.modelo || profile.modelo_negocio || profile.perfil?.modelo || profile.perfil?.modelo_negocio || 'N/A';
-        const localizacao = profile.localizacao || profile.perfil?.localizacao || 'N/A';
-        const faturamento = profile.faturamento_mensal || profile.faturamento_faixa || profile.perfil?.faturamento_mensal || profile.perfil?.faturamento_faixa || 'N/A';
-        const equipe = profile.num_funcionarios || profile.equipe || profile.perfil?.num_funcionarios || profile.perfil?.equipe || 'N/A';
-        const diferencial = profile.diferencial || profile.diferenciais || profile.perfil?.diferencial || profile.perfil?.diferenciais || 'N/A';
-        const dificuldades = profile.dificuldades || profile.dificuldade || profile.perfil?.dificuldades || profile.perfil?.dificuldade || 'N/A';
-        const objetivos = profile.objetivos || profile.perfil?.objetivos || 'N/A';
-        
+
+        // Try multiple field names for robustness, checking both root and .perfil
+        const getField = (keys: string[]) => {
+            for (const key of keys) {
+                if (profile[key] && profile[key] !== 'N/A') return profile[key];
+                if (profile.perfil?.[key] && profile.perfil[key] !== 'N/A') return profile.perfil[key];
+            }
+            return 'N/A';
+        };
+
+        const nome = getField(['nome_negocio', 'nome', 'business_name']);
+        const segmento = getField(['segmento', 'area_atuacao']);
+        const modelo = getField(['modelo', 'modelo_negocio']);
+        const localizacao = getField(['localizacao', 'cidade_estado']);
+        const faturamento = getField(['faturamento_mensal', 'faturamento', 'faturamento_faixa']);
+        const equipe = getField(['num_funcionarios', 'equipe', 'tamanho_equipe']);
+        const diferencial = getField(['diferencial', 'diferenciais']);
+        const dificuldades = getField(['dificuldades', 'problemas', 'principal_gargalo']);
+        const objetivos = getField(['objetivos', 'metas']);
+
         content += `**Nome:** ${nome}\n`;
         content += `**Segmento:** ${segmento}\n`;
         content += `**Modelo de Negocio:** ${modelo}\n`;
         content += `**Localizacao:** ${localizacao}\n`;
         content += `**Faturamento Mensal:** ${faturamento}\n`;
-        content += `**Equipe:** ${equipe} colaboradores\n`;
+        content += `**Equipe:** ${equipe}\n`;
         content += `**Diferenciais:** ${diferencial}\n`;
         content += `**Principais Desafios:** ${dificuldades}\n`;
         content += `**Objetivos:** ${objetivos}\n\n`;
     }
-    
     // Score Geral
     if (score) {
         content += '## PONTUACAO GERAL\n\n';

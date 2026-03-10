@@ -158,13 +158,22 @@ def _build_discovery_queries(hints: dict) -> list:
     is_b2b = hints.get("modelo", "").upper() == "B2B"
     queries = []
 
-    # 1. Find the business online — always do this
+    # Block domains that often produce noise for common business names
+    NOISY_DOMAINS = [
+        "imovelweb.com.br", "chavesnamao.com.br", "airbnb.com.br", "tripadvisor.com.br",
+        "vivareal.com.br", "zapimoveis.com.br", "quintoandar.com.br", "linkedin.com/jobs",
+        "catho.com.br", "infojobs.com.br", "cnpj.biz", "casa-dos-dados", "transparencia.cc"
+    ]
+
+    # 1. Find the business online — always do this with high specificity
     if nome and nome != "?":
+        # Force name + segment + city to avoid common name noise
         queries.append({
             "id": "presenca_real",
-            "query": f'"{nome}" {segmento} {loc}',
+            "query": f'"{nome}" {segmento} em {loc}',
             "purpose": "Encontrar presença real do negócio na internet",
             "extract": ["site", "redes_sociais", "avaliacoes", "mencoes"],
+            "exclude_domains": NOISY_DOMAINS
         })
 
     # 2. Instagram — SKIP: scraping Instagram never works without API
@@ -362,47 +371,38 @@ def _synthesize_discovery(raw_results: list, hints: dict, model_provider: str = 
     if hints.get('email_contato'): canais_conhecidos.append(f"E-mail ({hints['email_contato']})")
     if hints.get('google_maps_url'): canais_conhecidos.append("Google Maps")
 
-    prompt = f"""Analise dados REAIS encontrados sobre "{nome}" ({segmento}, {loc}). Extraia APENAS o que existir nos dados — se não encontrar, use null.
+    prompt = f"""Você é um Analista de Inteligência de Mercado. Sua missão é validar a presença digital de "{nome}" ({segmento}, {loc}) cruzando dados da web com o que o usuário informou.
 
-DADOS:
+DADOS DA WEB (podem conter ruído):
 {raw_block[:2500]}
 
-CONTEXTO: Modelo={hints.get('modelo', '?')} | Canais={', '.join(canais_conhecidos) or '?'} | Concorrentes={', '.join(hints.get('competitor_names', [])) or 'nenhum'} | Dificuldade={hints.get('dificuldades', '?')}
+O QUE O USUÁRIO JÁ CONFIRMOU (Prioridade Absoluta):
+- Canais confirmados: {', '.join(canais_conhecidos) or 'Nenhum informado'}
+- Diferencial: {hints.get('diferencial', '?')}
+- Concorrentes citados: {', '.join(hints.get('competitor_names', [])) or 'Nenhum'}
 
-REGRAS: Apenas dados REAIS dos textos. Cite fontes (URL). Não invente.
-RETORNE APENAS JSON VÁLIDO, sem texto adicional.
+REGRAS CRÍTICAS:
+1. SOBERANIA DO USUÁRIO: Se o usuário disse que tem Instagram/Site, considere "encontrado: true" mesmo que o link na busca esteja quebrado ou seja de um homônimo.
+2. FILTRO DE RUÍDO: Ignore resultados de imobiliárias (Imovelweb, etc), classificados ou currículos, a menos que o negócio SEJA desse ramo.
+3. CITAÇÃO: Apenas dados REAIS. Se não achar algo novo na web, use o que o usuário forneceu para preencher o JSON.
+4. NÃO DIGA "DADOS LIMITADOS": Se você tem o contexto do usuário, você tem dados suficientes para uma opinião estratégica.
 
 JSON:
 {{
   "presenca_digital": {{
-    "instagram": {{ "encontrado": false, "handle": null, "bio": null, "seguidores": null, "frequencia_posts": null, "tipo_conteudo": null, "engajamento_estimado": null, "observacoes": null, "fonte": null }},
-    "site": {{ "encontrado": false, "url": null, "produtos_listados": [], "tem_preco_visivel": false, "tem_cta": false, "qualidade_seo": null, "observacoes": null, "fonte": null }},
-    "linkedin": {{ "encontrado": false, "url": null, "seguidores": null, "descricao": null, "posts_recentes": false, "observacoes": null, "fonte": null }},
-    "whatsapp": {{ "encontrado": false, "numero": null, "tem_catalogo": false, "usa_whatsapp_business": false, "observacoes": null }},
-    "google_maps": {{ "encontrado": false, "nota": null, "num_avaliacoes": null, "principais_comentarios": [], "fonte": null }},
-    "email": {{ "encontrado": false, "endereco": null, "fonte": null }},
+    "instagram": {{ "encontrado": boolean, "handle": string, "bio": string, "seguidores": string, "frequencia_posts": string, "tipo_conteudo": string, "engajamento_estimado": string, "observacoes": string, "fonte": string }},
+    "site": {{ "encontrado": boolean, "url": string, "produtos_listados": [], "tem_preco_visivel": boolean, "tem_cta": boolean, "qualidade_seo": string, "observacoes": string, "fonte": string }},
+    "linkedin": {{ "encontrado": boolean, "url": string, "seguidores": string, "descricao": string, "posts_recentes": boolean, "observacoes": string, "fonte": string }},
+    "whatsapp": {{ "encontrado": boolean, "numero": string, "tem_catalogo": boolean, "usa_whatsapp_business": boolean, "observacoes": string }},
+    "google_maps": {{ "encontrado": boolean, "nota": number, "num_avaliacoes": number, "principais_comentarios": [], "fonte": string }},
+    "email": {{ "encontrado": boolean, "endereco": string, "fonte": string }},
     "outras_plataformas": []
   }},
-  "concorrentes_encontrados": [
-    {{
-      "nome": "Nome do concorrente",
-      "tipo": "direto_regional ou referencia_nacional",
-      "porte": "micro/pequeno/medio/grande",
-      "site": "url ou null",
-      "instagram": "@handle ou null",
-      "preco_referencia": "faixa de preço ou null",
-      "diferencial": "principal vantagem competitiva identificada",
-      "ponto_fraco": "vulnerabilidade, reclamação ou gap identificado",
-      "canais_digitais": ["lista de canais digitais ativos"],
-      "gap_vs_negocio": "o que este concorrente faz que {nome} NÃO faz",
-      "oportunidade": "como {nome} pode superar ou se diferenciar deste concorrente",
-      "fonte": "url da fonte"
-    }}
-  ],
-  "analise_competitiva_resumo": "Síntese em 2-3 frases: posicionamento competitivo de {nome}, principal vulnerabilidade e maior oportunidade de diferenciação para vender mais",
-  "dados_mercado_local": {{ "preco_medio_regiao": null, "tendencias": [], "oportunidades": [] }},
+  "concorrentes_encontrados": [],
+  "analise_competitiva_resumo": "Síntese baseada nos dados confirmados",
+  "dados_mercado_local": {{ "preco_medio_regiao": string, "tendencias": [], "oportunidades": [] }},
   "problemas_detectados": [],
-  "resumo_executivo": "Análise baseada nos dados encontrados"
+  "resumo_executivo": "Sua opinião estratégica REAL sobre o negócio"
 }}"""
 
     # Use the central balancer with requested priority (OpenRouter, SambaNova, Cerebras first)
@@ -424,27 +424,30 @@ JSON:
             result["dados_mercado_local"] = {}
         if "problemas_detectados" not in result:
             result["problemas_detectados"] = []
-        # Generate better summary based on what was actually found
+        # Generate better summary based on what was actually found + what we already knew
         pd = result.get("presenca_digital", {})
         concorrentes = result.get("concorrentes_encontrados", [])
         
+        # Consider both web-found items AND chat-provided items (hints)
         found_items = []
-        for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
-            if pd.get(canal, {}).get("encontrado"):
-                found_items.append(canal)
+        if pd.get("instagram", {}).get("encontrado") or hints.get("has_instagram"): found_items.append("Instagram")
+        if pd.get("site", {}).get("encontrado") or hints.get("has_site"): found_items.append("Website")
+        if pd.get("whatsapp", {}).get("encontrado") or hints.get("has_whatsapp"): found_items.append("WhatsApp")
+        if pd.get("google_maps", {}).get("encontrado") or hints.get("google_maps_url"): found_items.append("Google Maps")
+        if pd.get("email", {}).get("encontrado") or hints.get("email_contato"): found_items.append("E-mail")
         
-        n_comp = len(concorrentes)
+        n_comp = len(concorrentes) or len(hints.get("competitor_names", []))
         
-        # Let AI generate the summary based on actual findings
-        if found_items or n_comp > 0:
+        # If we have EITHER web results OR rich chat data, don't say "limited"
+        if found_items or n_comp > 0 or len([k for k,v in hints.items() if v]) > 10:
             # Build context for AI to generate opinion
             context_parts = []
             if found_items:
-                context_parts.append(f"presença digital em {len(found_items)} canais: {', '.join(found_items)}")
+                context_parts.append(f"presença digital confirmada em: {', '.join(found_items)}")
             if n_comp > 0:
-                context_parts.append(f"{n_comp} concorrentes identificados")
+                context_parts.append(f"{n_comp} concorrentes mapeados")
             
-            context = f"Baseado nos dados encontrados: {', '.join(context_parts)}."
+            context = f"Baseado nos dados validados: {', '.join(context_parts)}."
             
             # Use AI to generate opinion
             ai_prompt = f"""Com base nesta análise de negócios para "{nome}" ({segmento}, {loc}), gere uma opinião direta e concisa:

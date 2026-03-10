@@ -251,6 +251,14 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
                 if info.get("engajamento_estimado"): summary_parts.append(f"eng: {info['engajamento_estimado']}")
                 if info.get("qualidade_seo"): summary_parts.append(f"SEO: {info['qualidade_seo']}")
                 footprint[canal] = " | ".join(summary_parts) if summary_parts else "presente"
+                
+                # ENRIQUECIMENTO AGRESSIVO: Se achamos algo no discovery, injetamos no DNA
+                if canal == "site" and dna["site"] in ["?", "N/A", ""]:
+                    dna["site"] = info.get("url")
+                elif canal == "instagram" and dna["instagram"] in ["?", "N/A", ""]:
+                    dna["instagram"] = info.get("handle") or info.get("url")
+                elif canal == "whatsapp" and dna["whatsapp"] in ["?", "N/A", ""]:
+                    dna["whatsapp"] = info.get("handle") or info.get("url")
 
     # ── Market Intel Digest (from research) ──
     # Include visao_geral + top pontos_chave for richer specialist context
