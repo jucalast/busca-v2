@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { PILLAR_META } from '../constants';
 import { TaskItem } from '../types';
-import { SourceBadgeList } from './SourceBadgeList';
+import { SourceBadgeList } from '@/features/shared/components/SourceBadgeList';
 
 interface TaskActionsProps {
     task: TaskItem;

@@ -5,6 +5,7 @@ import {
     AlertCircle, Loader2, RotateCcw
 } from 'lucide-react';
 import { PILLAR_META } from '../constants';
+import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 
 interface LoadingErrorStateProps {
     selectedPillar: string;
@@ -65,17 +66,16 @@ export function LoadingErrorState({
                         </div>
                     </>
                 ) : (
-                    <>
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: meta?.color }} />
-                        <p className="text-sm font-medium" style={{ color: 'var(--color-text-tertiary)' }}>O especialista está analisando e criando tarefas...</p>
-                        <p className="text-xs mt-2 leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-                            Pesquisando dados reais + cruzando com outros pilares para gerar recomendações personalizadas.
-                        </p>
-                        <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--color-border)' }}>
-                            <p className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: 'var(--color-text-ghost)' }}>Status</p>
-                            <p className="text-xs animate-pulse" style={{ color: 'var(--color-text-muted)' }}>Iniciando protocolo de análise profunda...</p>
-                        </div>
-                    </>
+                    <div className="absolute inset-0 bg-white/80 backdrop-blur-2xl rounded-3xl overflow-hidden">
+                        <AnalysisExecutionLoader
+                            subtasks={[]}
+                            statuses={{}}
+                            results={{}}
+                            businessName=""
+                            isExecuting={true}
+                            currentStep={0}
+                        />
+                    </div>
                 )}
             </div>
         </div>

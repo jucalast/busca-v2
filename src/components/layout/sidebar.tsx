@@ -1,11 +1,32 @@
 'use client';
 
-import Link from 'next/link';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Building2, Plus, LogOut, Trash2, MoreVertical, Search } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
+import {
+  Building2, Plus, LogOut, Trash2, MoreVertical, Search,
+  Settings, Folder, Star, Users, Hash, Sparkles
+} from 'lucide-react';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
 import { HotzoneMapButton } from './HotzoneMapButton';
 import UserAvatar from '@/components/ui/UserAvatar';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
+
+// --- SVGs Personalizados para Ícones Específicos da Marca ---
+const VercelIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path fillRule="evenodd" clipRule="evenodd" d="M12 2L24 22H0L12 2Z" fill="currentColor" />
+  </svg>
+);
+
+const LinearIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2L22 7.5L12 13L2 7.5L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M2 12.5L12 18L22 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M2 17.5L12 23L22 17.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 interface Business {
   id: string;
@@ -52,6 +73,8 @@ export default function SidebarLayout({
   const [isPinned, setIsPinned] = useState(false);
   const isExpanded = isHovered || isPinned;
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const { user, nextSession } = useAuth();
+  const { data: session } = useSession();
 
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; businessId: string; businessName: string }>({ isOpen: false, businessId: '', businessName: '' });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -140,270 +163,224 @@ export default function SidebarLayout({
   };
 
   return (
-    <div className="relative h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
-      <div className="absolute inset-0 flex">
-
-        {/* ── LEFT SIDEBAR ──────────────────────────────────────────── */}
+    <div className="relative h-screen overflow-hidden">
+      <div className="flex h-screen w-full transition-all duration-300">
+        {/* --- SIDEBAR --- */}
         <aside
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="flex-shrink-0 flex flex-col overflow-hidden relative z-30"
+          className="flex flex-col relative z-20 transition-all duration-300 overflow-hidden"
           style={{
-            width: isExpanded ? 256 : 52,
-            background: 'var(--color-bg)',
-            borderRight: '1px solid var(--color-border)',
-            transition: `width var(--duration-slow) var(--ease-out)`,
+            width: isExpanded ? 320 : 57,
+            background: 'transparent',
+            backdropFilter: 'blur(30px)',
+            WebkitBackdropFilter: 'blur(30px)',
           }}
         >
-          {/* Logo */}
-          <div
-            className="flex-shrink-0 flex items-center justify-center"
-            style={{
-              height: 56,
-              position: 'relative',
-              borderBottom: '1px solid var(--color-border)',
-            }}
-          >
-            <img
-              src="/logo_icon.png"
-              alt="Logo"
-              className="object-contain"
-              style={{ width: 24, height: 24, position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }}
-            />
+          {/* Brand Logo Replacement for Window Controls */}
+          <div className="flex px-4 pt-6 pb-2 justify-start sm:justify-start">
+            <div className={`w-12 h-12 flex items-center justify-center overflow-hidden transition-all duration-300 ${!isExpanded ? 'mx-auto' : ''}`}>
+              <Image
+                src="/logo_icon.png"
+                alt="Logo"
+                width={32}
+                height={32}
+                className="grayscale"
+                style={{ filter: 'brightness(0)' }}
+              />
+            </div>
           </div>
 
-          {/* New Business */}
-          <div className="flex-shrink-0 px-2 py-3">
-            <button
-              onClick={onCreateNew}
-              title="Novo Negócio"
-              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
-              style={{
-                height: 36,
-                paddingLeft: 10,
-                paddingRight: 10,
-                color: 'var(--color-text-tertiary)',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-                e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              <Plus className="w-4 h-4 flex-shrink-0" />
-              <span
-                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
-                style={{
-                  opacity: isExpanded ? 1 : 0,
-                  maxWidth: isExpanded ? 160 : 0,
-                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
-                }}
+
+          {/* New Business Button */}
+          {isExpanded && (
+            <div className="px-4 py-2" style={{ animation: 'fade-in 0.3s ease-out' }}>
+              <Link
+                href="/"
+                onClick={onCreateNew}
+                className="w-full h-9 flex items-center gap-2 bg-white/40 hover:bg-white/50 text-gray-800 rounded-xl px-3 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-all border border-white/40 group active:scale-95"
               >
-                Novo Negócio
-              </span>
-            </button>
-          </div>
+                <Plus size={16} className="text-gray-600 group-hover:rotate-90 transition-transform" />
+                <span className="flex-1 text-left text-[13px]">Novo Negócio</span>
+                <span className="text-[10px] text-gray-400 font-mono bg-white/50 px-1.5 py-0.5 rounded border border-white/20">⌘N</span>
+              </Link>
+            </div>
+          )}
 
-          {/* Businesses section toggle */}
-          <div className="flex-shrink-0 px-2 pb-1">
-            <button
-              onClick={() => setIsPinned(!isPinned)}
-              title="Negócios"
-              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
-              style={{
-                height: 36,
-                paddingLeft: 10,
-                paddingRight: 10,
-                color: isPinned ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                backgroundColor: isPinned ? 'var(--color-surface-active)' : 'transparent',
-              }}
-              onMouseEnter={e => {
-                if (!isPinned) {
-                  e.currentTarget.style.color = 'var(--color-text-secondary)';
-                  e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isPinned) {
-                  e.currentTarget.style.color = 'var(--color-text-muted)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }
-              }}
-            >
-              <Building2 className="w-4 h-4 flex-shrink-0" />
-              <span
-                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
-                style={{
-                  opacity: isExpanded ? 1 : 0,
-                  maxWidth: isExpanded ? 160 : 0,
-                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
-                }}
-              >
-                Negócios
-              </span>
-            </button>
-          </div>
+          {/* Sidebar Content (Scrollable) */}
+          <div className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-0.5 custom-scrollbar" style={{ scrollbarWidth: 'none' }}>
 
-          {/* Business List */}
-          <div className="flex-1 overflow-y-auto pb-4 flex flex-col gap-0.5 px-2" style={{ scrollbarWidth: 'none' }}>
+            {/* Smart Folders */}
             {isExpanded && (
-              loading ? (
-                <div className="flex justify-center py-6">
-                  <div
-                    className="w-5 h-5 rounded-full border-2 animate-spin"
-                    style={{ borderColor: 'var(--color-border-strong)', borderTopColor: 'var(--color-accent)' }}
-                  />
-                </div>
-              ) : businesses.length === 0 ? (
-                <div className="flex items-center gap-2 px-2 py-3">
-                  <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Nenhum negócio cadastrado</p>
-                </div>
-              ) : (
-                businesses.map((business) => {
-                  const profileRoot = business.profile_data?.profile || business.profile_data || {};
-                  const perfil = profileRoot.perfil || profileRoot || {};
-                  const displaySegment = business.segment || perfil.segmento || perfil.segmento_principal || perfil.industria || profileRoot.segmento || '—';
-                  const isActive = currentBusinessId === business.id;
+              <div className="mt-2 flex flex-col gap-0.5">
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Smart Folders</div>
 
-                  return (
-                    <div key={business.id} className="relative group">
-                      <Link
-                        href={`/analysis/${business.id}`}
-                        scroll={false}
-                        title={business.name}
-                        className="flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
-                        style={{
-                          height: 36,
-                          paddingLeft: 8,
-                          paddingRight: 32,
-                          backgroundColor: isActive ? 'var(--color-surface-active)' : 'transparent',
-                        }}
-                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
-                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                      >
-                        <div
-                          className="flex-shrink-0 flex items-center justify-center rounded-md"
-                          style={{ width: 24, height: 24, background: 'var(--color-surface-hover)', minWidth: 24 }}
-                        >
-                          <Building2 className="w-3 h-3" style={{ color: 'var(--color-text-muted)' }} />
-                        </div>
-                        <div className="flex-1 min-w-0 flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-medium truncate leading-none" style={{ color: 'var(--color-text-secondary)' }}>{business.name}</p>
-                            <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{displaySegment}</p>
-                          </div>
-                          {business.latest_analysis && (
-                            <span
-                              className="text-[10px] font-bold ml-2 flex-shrink-0 tabular-nums"
-                              style={{ color: getScoreColor(business.latest_analysis.score_geral) }}
-                            >
-                              {business.latest_analysis.score_geral}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                      <div className="absolute right-1 top-0 bottom-0 flex items-center" ref={openMenuId === business.id ? menuRef : null}>
-                        <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(openMenuId === business.id ? null : business.id); }}
-                          className={`p-1 rounded-md transition-all duration-150 ${openMenuId === business.id ? '' : 'opacity-0 group-hover:opacity-100'}`}
-                          style={{
-                            color: 'var(--color-text-muted)',
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                        >
-                          <MoreVertical className="w-3 h-3" />
-                        </button>
-                        {openMenuId === business.id && (
-                          <div
-                            className="absolute right-0 bottom-full mb-1 w-40 rounded-lg overflow-hidden z-50"
-                            style={{
-                              backgroundColor: 'var(--color-surface-1)',
-                              border: '1px solid var(--color-border)',
-                              boxShadow: 'var(--shadow-popover)',
-                              animation: 'fade-in-up 0.1s ease-out',
-                            }}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <button
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(null); handleDeleteBusiness(business.id, business.name, e); }}
-                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors text-left"
-                              style={{ color: 'var(--color-destructive)' }}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-destructive-muted)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Excluir negócio</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )
-            )}
-          </div>
+                <Link href="/dashboard" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/50 text-blue-600 font-bold shadow-sm border border-blue-500/10 cursor-pointer transition active:scale-[0.98]">
+                  <Star size={16} className="text-blue-500 fill-blue-500/10" />
+                  <span className="flex-1 text-[13px]">Paineis Hoje</span>
+                  <span className="text-[11px] font-bold">{businesses.length}</span>
+                </Link>
 
-          {/* Footer — Cmd+K hint + logout */}
-          <div className="flex-shrink-0 px-2 py-3" style={{ borderTop: '1px solid var(--color-border)' }}>
-            {/* Cmd+K shortcut hint */}
-            {isExpanded && (
-              <div
-                className="flex items-center gap-2 px-2.5 py-2 mb-2 rounded-lg cursor-default"
-                style={{
-                  backgroundColor: 'var(--color-surface-hover)',
-                  animation: 'fade-in 0.2s ease-out',
-                }}
-              >
-                <Search className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />
-                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Buscar...</span>
-                <kbd
-                  className="ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    color: 'var(--color-text-muted)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  ⌘K
-                </kbd>
+                <Link href="/insights" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer group transition active:scale-[0.98]">
+                  <div className="w-4 h-4 flex items-center justify-center bg-gradient-to-br from-pink-400 to-purple-400 rounded-sm text-white text-[10px]">
+                    <Sparkles size={10} />
+                  </div>
+                  <span className="flex-1 text-[13px] font-semibold">Insights</span>
+                </Link>
+
+                <Link href="/contacts" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
+                  <Users size={16} className="text-gray-600" />
+                  <span className="flex-1 text-[13px] font-semibold">Contatos</span>
+                </Link>
               </div>
             )}
 
+            {/* Business List */}
+            {isExpanded && (
+              <div className="mt-4 flex flex-col gap-0.5">
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Seus Negócios</div>
+
+                {loading ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400 animate-pulse">Carregando...</div>
+                ) : businesses.length === 0 ? (
+                  <div className="px-3 py-2 text-[11px] text-gray-400 italic">Nenhum negócio ainda.</div>
+                ) : (
+                  businesses.map((business: Business) => {
+                    const isActive = currentBusinessId === business.id;
+                    return (
+                      <div key={business.id} className="group relative">
+                        <Link
+                          href={`/analysis/${business.id}`}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-150 cursor-pointer"
+                          style={{
+                            backgroundColor: isActive ? 'rgba(0,0,0,0.8)' : 'transparent',
+                            color: isActive ? 'white' : 'inherit',
+                            boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.1)' : 'none',
+                          }}
+                          onClick={() => onSelectBusiness(business.id)}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${isActive ? 'bg-white/20' : 'bg-black/5 text-gray-600'}`}
+                          >
+                            {business.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className={`flex-1 text-[13px] font-bold truncate ${isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-900 font-semibold'}`}>
+                            {business.name}
+                          </span>
+                        </Link>
+
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center z-30">
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setOpenMenuId(openMenuId === business.id ? null : business.id);
+                            }}
+                            className={`w-6 h-6 flex items-center justify-center rounded-lg transition-all ${isActive ? 'hover:bg-white/10 text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'} ${isActive || openMenuId === business.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                          >
+                            <MoreVertical size={14} />
+                          </button>
+
+                          {openMenuId === business.id && (
+                            <div
+                              ref={menuRef}
+                              className="absolute right-0 top-full mt-1 w-44 rounded-xl overflow-hidden z-[100] shadow-2xl border border-gray-100 bg-white p-1"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setOpenMenuId(null);
+                                  handleDeleteBusiness(business.id, business.name, e);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left"
+                              >
+                                <Trash2 size={14} />
+                                <span>Excluir negócio</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Tech Stack Section */}
+            {isExpanded && (
+              <div className="mt-4 flex flex-col gap-0.5">
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Tech Stack</div>
+
+                <Link href="https://vercel.com" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
+                  <div className="w-5 h-5 bg-black rounded flex items-center justify-center text-white shadow-sm ring-1 ring-white/10">
+                    <VercelIcon />
+                  </div>
+                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Vercel</span>
+                </Link>
+
+                <Link href="https://linear.app" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
+                  <div className="w-5 h-5 bg-white rounded border border-gray-100 flex items-center justify-center text-black shadow-sm">
+                    <LinearIcon />
+                  </div>
+                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Linear</span>
+                </Link>
+
+                <Link href="https://slack.com" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
+                  <div className="w-5 h-5 bg-white rounded flex items-center justify-center text-[#ff4500] shadow-sm border border-gray-50">
+                    <Hash size={12} strokeWidth={3} />
+                  </div>
+                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Slack</span>
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar Footer Controls */}
+          <div className="px-2 pb-2">
+            <Link href="/profile" className="flex items-center justify-between px-1 py-2 cursor-pointer hover:bg-white/20 rounded-lg transition group">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="flex-shrink-0">
+                  <UserAvatar isExpanded={isExpanded} />
+                </div>
+                {isExpanded && (
+                  <div className="flex flex-col min-w-0" style={{ animation: 'fade-in 0.3s ease-out' }}>
+                    <span className="text-[13px] font-bold text-gray-800 truncate leading-tight">
+                      {nextSession?.user?.name || user?.name || 'Consultor'}
+                    </span>
+                    <span className="text-[10px] text-gray-700 font-medium truncate">Mastermind AI</span>
+                  </div>
+                )}
+              </div>
+              {isExpanded && <Search size={14} className="text-gray-600 group-hover:text-gray-900 ml-2 flex-shrink-0" />}
+            </Link>
+          </div>
+
+          <div className={`flex items-center justify-between mt-0 border-t border-white/20 ${isExpanded ? 'p-4' : 'p-2'}`}>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/settings"
+                className="p-1.5 rounded-lg hover:bg-white/40 text-gray-700 hover:text-gray-900 transition shadow-sm border border-transparent hover:border-white/20"
+              >
+                <Settings size={18} />
+              </Link>
+              <Link
+                href="/"
+                className="p-1.5 rounded-lg hover:bg-white/40 text-gray-700 hover:text-gray-900 transition shadow-sm border border-transparent hover:border-white/20"
+                onClick={onCreateNew}
+              >
+                <Plus size={18} />
+              </Link>
+            </div>
+
             <button
               onClick={onLogout}
-              title="Sair"
-              className="w-full flex items-center gap-2.5 rounded-lg overflow-hidden transition-all duration-150"
-              style={{
-                height: 36,
-                paddingLeft: 10,
-                paddingRight: 10,
-                color: 'var(--color-text-muted)',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-                e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.color = 'var(--color-text-muted)';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
+              className={`flex items-center gap-2 h-9 rounded-xl hover:bg-red-50 text-red-500 transition-all font-bold text-[13px] ${isExpanded ? 'px-3' : 'px-2'}`}
             >
-              <LogOut className="w-4 h-4 flex-shrink-0" />
-              <span
-                className="text-[12px] font-medium whitespace-nowrap overflow-hidden"
-                style={{
-                  opacity: isExpanded ? 1 : 0,
-                  maxWidth: isExpanded ? 160 : 0,
-                  transition: `opacity var(--duration-slow) var(--ease-out), max-width var(--duration-slow) var(--ease-out)`,
-                }}
-              >
-                Sair da Conta
-              </span>
+              <LogOut size={16} />
+              {isExpanded && <span>Sair</span>}
             </button>
           </div>
         </aside>
@@ -422,19 +399,8 @@ export default function SidebarLayout({
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Top Header Bar */}
-          <header
-            className="flex-shrink-0 flex items-center justify-end px-4 z-[60]"
-            style={{
-              height: 56,
-              borderBottom: '1px solid var(--color-border)',
-            }}
-          >
-            <UserAvatar />
-          </header>
-
           {/* Content */}
-          <main className="flex-1 overflow-hidden" style={{ height: 'calc(100% - 56px)' }}>
+          <main className="flex-1 overflow-hidden h-full pt-6">
             {error && (
               <div
                 className="m-6 p-4 rounded-lg text-sm"
@@ -456,7 +422,7 @@ export default function SidebarLayout({
           <>
             {rightSidebarOpen && (
               <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[60]"
+                className="fixed inset-0 bg-black/60 z-[60]"
                 style={{ animation: 'fade-in 0.2s ease-out' }}
                 onClick={() => setRightSidebarOpen(false)}
               />

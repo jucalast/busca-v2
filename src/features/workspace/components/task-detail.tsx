@@ -104,8 +104,8 @@ export default function TaskDetail({
     const progress = subtarefas.length > 0 ? (completedCount / subtarefas.length) * 100 : 0;
 
     return (
-        <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
-            <div className="max-w-3xl mx-auto px-6 py-8">
+        <div className="min-h-screen overflow-hidden" style={{ backgroundColor: 'var(--color-bg)' }}>
+            <div className="max-w-5xl mx-auto px-6 py-8 relative">
 
                 {/* Back */}
                 <button

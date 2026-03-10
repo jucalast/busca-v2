@@ -2,13 +2,15 @@
 
 import React from 'react';
 import {
-    Loader2, Play, ListTree, Wand2, RefreshCw, Square, Check
+    Loader2, Play, ListTree, Wand2, RefreshCw, Square, Check, Edit3, Copy, X
 } from 'lucide-react';
 import { PILLAR_META } from '../constants';
+import { AutoScrollContainer } from '@/features/shared/components/AutoScrollContainer';
 import { TaskItem } from '../types';
-import { AutoScrollContainer } from './AutoScrollContainer';
 import TaskSubtasksDisplay from '@/features/workspace/components/task-subtasks-display';
-import ModelSelector from '@/features/shared/components/model-selector';
+import ModelBadge from '@/features/shared/components/ModelBadge';
+import LLMUsageIndicator from '@/features/shared/components/llm-usage-indicator';
+import TaskErrorBanner from '@/features/shared/components/task-error-banner';
 import { safeRender } from '../utils';
 
 interface FocusedTaskViewProps {
@@ -36,6 +38,9 @@ interface FocusedTaskViewProps {
     handleRedoSubtasks: (pillarKey: string, tid: string, task: TaskItem) => void;
     handleStopExecution: (tid: string) => void;
     handleAITryUserTask: (pillarKey: string, task: TaskItem) => void;
+    rateLimitError: string | null;
+    showRateLimitWarning: boolean;
+    handleCloseRateLimit: () => void;
 }
 
 export function FocusedTaskView({
@@ -63,6 +68,9 @@ export function FocusedTaskView({
     handleRedoSubtasks,
     handleStopExecution,
     handleAITryUserTask,
+    rateLimitError,
+    showRateLimitWarning,
+    handleCloseRateLimit,
 }: FocusedTaskViewProps) {
     const task = visibleTasks.find(t => `${selectedPillar}_${t.id}` === focusedTaskId);
     if (!task) return null;
@@ -103,15 +111,13 @@ export function FocusedTaskView({
                     </div>
 
                     <div
-                        className="absolute bottom-6 left-4 right-4 max-w-4xl mx-auto flex flex-col gap-3 p-3 backdrop-blur-md rounded-xl overflow-hidden z-50"
+                        className="absolute bottom-1 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col gap-0 backdrop-blur-3xl rounded-[28px] overflow-hidden z-[100] border-2 border-gray-300"
                         style={{
-                            backgroundColor: 'rgba(9,9,11,0.92)',
-                            border: '1px solid var(--color-border)',
-                            boxShadow: 'var(--shadow-xl)',
+                            backgroundColor: 'rgba(255, 255, 255, 0.94)',
                         }}
                     >
-                        {/* Subtasks Execution Area */}
-                        <div className="w-full">
+                        {/* Subtasks Execution Line Trace */}
+                        <div className="w-full bg-black/5 backdrop-blur-md px-4 py-1">
                             <TaskSubtasksDisplay
                                 key={`lines_${subtasksUpdateKey}`}
                                 task={task}
@@ -135,88 +141,101 @@ export function FocusedTaskView({
                             />
                         </div>
 
-                        {/* Task Details Card */}
-                        <div
-                            className="w-full rounded-xl p-3 flex flex-col gap-2"
-                            style={{
-                                backgroundColor: 'var(--color-surface-active)',
-                                border: '1px solid var(--color-border)',
-                            }}
-                        >
-                            <div className="flex flex-col gap-2 flex-1 min-w-0 w-full mb-1">
-                                <div className="flex items-start gap-2 w-full text-left">
-                                    <span className="text-[13px] font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
-                                        {task.titulo}
-                                    </span>
-                                    {isDone && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-accent)' }} />}
-                                </div>
+                        {/* Task Details Card Container */}
+                        <div className="flex flex-col w-full">
+                            <div className="w-full p-6 flex flex-col gap-5">
+                                <div className="flex flex-col gap-4 w-full">
+                                    <div className="flex items-start justify-between gap-4 w-full">
+                                        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                                            <div className="flex items-center gap-2.5">
+                                                <h1 className="text-[16px] font-bold tracking-tight leading-tight line-clamp-2" style={{ color: 'var(--color-text-primary)' }}>
+                                                    {task.titulo}
+                                                </h1>
+                                                {isDone && <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center shrink-0"><Check size={10} className="text-white" strokeWidth={4} /></div>}
+                                            </div>
 
-                                <div className="flex flex-wrap items-center gap-2 text-left text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                                    <span className="font-mono" style={{ color: 'var(--color-text-tertiary)' }}>#{taskIndex + 1}</span>
-                                    <span>{isAI ? 'Inteligência Artificial' : 'Ações Manuais'}</span>
-                                    {task.prioridade && (
-                                        <>
-                                            <span className="w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--color-border-strong)' }} />
-                                            <span style={{
-                                                color: task.prioridade === 'critica'
-                                                    ? 'var(--color-destructive)'
-                                                    : task.prioridade === 'alta'
-                                                        ? 'var(--color-warning)'
-                                                        : 'var(--color-text-tertiary)'
-                                            }}>
-                                                {task.prioridade}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
+                                            <div className="flex items-center gap-3 text-[11px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
+                                                <span className="opacity-40">#{taskIndex + 1}</span>
+                                                <div className="w-1 h-1 rounded-full bg-black/10" />
+                                                <span>{isAI ? 'Agente de IA' : 'Ação Operacional'}</span>
+                                                {task.prioridade && (
+                                                    <>
+                                                        <div className="w-1 h-1 rounded-full bg-black/10" />
+                                                        <span className="uppercase tracking-[0.05em]" style={{
+                                                            color: task.prioridade === 'critica'
+                                                                ? 'var(--color-destructive)'
+                                                                : task.prioridade === 'alta'
+                                                                    ? 'var(--color-warning)'
+                                                                    : 'var(--color-text-tertiary)'
+                                                        }}>
+                                                            {task.prioridade}
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
 
-                            {/* AI Selector and Action Buttons */}
-                            <div className="w-full pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
-                                <div className="flex items-center justify-between w-full">
-                                    <div className="flex items-center gap-2">
-                                        {isAI && (
-                                            <ModelSelector
-                                                value={selectedTaskAiModel}
-                                                onChange={setSelectedTaskAiModel}
-                                            />
-                                        )}
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {isAI ? (
+                                                <div className="flex items-center gap-1.5 bg-black/5 hover:bg-black/10 transition-colors px-1.5 py-1.5 rounded-xl border border-black/5 group cursor-pointer">
+                                                    <Edit3 size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                                                    <Copy size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                                                    <X size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                                                </div>
+                                            ) : (
+                                                <X size={18} className="text-gray-400 cursor-pointer hover:text-gray-700 transition" />
+                                            )}
+                                        </div>
                                     </div>
 
-                                    <div className="flex items-center gap-1">
-                                        {isAI ? (
-                                            <AIActionButtons
-                                                tid={tid}
-                                                task={task}
-                                                isDone={isDone}
-                                                selectedPillar={selectedPillar}
-                                                taskSubtasks={taskSubtasks}
-                                                taskDeliverables={taskDeliverables}
-                                                autoExecuting={autoExecuting}
-                                                expandingTask={expandingTask}
-                                                handleExpandSubtasks={handleExpandSubtasks}
-                                                handleAutoExecute={handleAutoExecute}
-                                                handleRedoTask={handleRedoTask}
-                                                handleRedoSubtasks={handleRedoSubtasks}
-                                                handleStopExecution={handleStopExecution}
-                                            />
-                                        ) : (
-                                            <button
-                                                onClick={() => handleAITryUserTask(selectedPillar, task)}
-                                                disabled={!!autoExecuting || executingTask === tid}
-                                                className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50"
-                                                style={{ backgroundColor: 'transparent', color: 'var(--color-text-tertiary)' }}
-                                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
-                                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                                title={executingTask === tid ? 'Tentando...' : 'Delegar para IA'}
-                                            >
-                                                {executingTask === tid ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                ) : (
-                                                    <Wand2 className="w-3.5 h-3.5" />
-                                                )}
-                                            </button>
-                                        )}
+                                    <div className="flex items-center justify-between w-full pt-2 border-t border-black/5">
+                                        <div className="flex items-center gap-3">
+                                            {isAI && (
+                                                <div className="flex items-center gap-3 bg-black/5 px-3 py-1.5 rounded-xl border border-black/5">
+                                                    <ModelBadge
+                                                        model={taskDeliverables[tid]?.result_data?._actual_provider || taskDeliverables[tid]?.result_data?._actual_model || selectedTaskAiModel}
+                                                        tokens={taskDeliverables[tid]?.result_data?._tokens}
+                                                    />
+                                                    <div className="w-[1px] h-3 bg-black/10" />
+                                                    <LLMUsageIndicator provider={selectedTaskAiModel} />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            {isAI ? (
+                                                <AIActionButtons
+                                                    tid={tid}
+                                                    task={task}
+                                                    isDone={isDone}
+                                                    selectedPillar={selectedPillar}
+                                                    taskSubtasks={taskSubtasks}
+                                                    taskDeliverables={taskDeliverables}
+                                                    autoExecuting={autoExecuting}
+                                                    expandingTask={expandingTask}
+                                                    handleExpandSubtasks={handleExpandSubtasks}
+                                                    handleAutoExecute={handleAutoExecute}
+                                                    handleRedoTask={handleRedoTask}
+                                                    handleRedoSubtasks={handleRedoSubtasks}
+                                                    handleStopExecution={handleStopExecution}
+                                                />
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleAITryUserTask(selectedPillar, task)}
+                                                    disabled={!!autoExecuting || executingTask === tid}
+                                                    className="flex items-center gap-2 h-9 px-4 rounded-xl bg-black text-white text-[12px] font-bold shadow-lg shadow-black/20 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                                                >
+                                                    {executingTask === tid ? (
+                                                        <Loader2 size={14} className="animate-spin" />
+                                                    ) : (
+                                                        <>
+                                                            <Wand2 size={14} />
+                                                            <span>Delegar para IA</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

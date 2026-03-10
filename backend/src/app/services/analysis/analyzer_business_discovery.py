@@ -23,7 +23,7 @@ from app.services.common import (
     json, os, sys, time,  # Python basics
     call_llm,            # LLM
     search_duckduckgo, scrape_page,  # Web utils
-    log_info, log_error, log_warning, log_success, log_debug, log_research,  # Logging
+    log_info, log_error, log_warning, log_success, log_debug, log_research, log_llm,  # Logging
     safe_json_dumps, safe_json_loads,  # Serialization
     CommonConfig,    # Config
     get_timestamp, format_duration, safe_get  # Utils
@@ -405,60 +405,52 @@ JSON:
   "resumo_executivo": "Dados insuficientes para análise completa"
 }}"""
 
-    # Try multiple providers with fallback
-    providers_to_try = ["groq", "gemini", "openrouter"]
-    if model_provider != "groq":
-        providers_to_try.insert(0, model_provider)
-    
-    for provider in providers_to_try:
-        try:
-            log_llm(f"Tentando sintetizar discovery com {provider}...")
-            result = call_llm(provider=provider, prompt=prompt, temperature=0.2, json_mode=True)
-            
-            # Validate result structure
-            if not isinstance(result, dict):
-                log_warning(f"{provider} retornou tipo inválido: {type(result)}")
-                continue
-            
-            # Ensure all required fields exist
-            if "presenca_digital" not in result:
-                result["presenca_digital"] = {}
-            if "concorrentes_encontrados" not in result:
-                result["concorrentes_encontrados"] = []
-            if "dados_mercado_local" not in result:
-                result["dados_mercado_local"] = {}
-            if "problemas_detectados" not in result:
-                result["problemas_detectados"] = []
-            if "resumo_executivo" not in result:
-                result["resumo_executivo"] = "Análise parcial dos dados"
-            if "analise_competitiva_resumo" not in result:
-                result["analise_competitiva_resumo"] = ""
-            
-            result["found"] = True
-            
-            # Collect all sources
-            all_sources = []
-            for r in raw_results:
-                if isinstance(r, dict) and "sources" in r:
-                    all_sources.extend(r["sources"])
-            result["fontes_discovery"] = list(dict.fromkeys(all_sources))
-            
-            # Log what was found
-            pd = result.get("presenca_digital", {})
-            found_items = []
-            for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
-                if pd.get(canal, {}).get("encontrado"):
-                    found_items.append(canal)
-            n_comp = len(result.get("concorrentes_encontrados", []))
-            n_probs = len(result.get("problemas_detectados", []))
-            has_market = bool(result.get("dados_market_local", {}).get("preco_medio_regiao"))
-            log_success(f"Discovery sintetizado com {result.get('provider', provider)}: canais={found_items} | concorrentes={n_comp}")
-            
-            return result
-            
-        except Exception as e:
-            log_error(f"Erro ao sintetizar discovery com {provider}: {e}")
-            continue
+    # Use the central balancer with requested priority (OpenRouter, SambaNova, Cerebras first)
+    try:
+        log_llm(f"Sintetizando discovery com balanceamento centralizado...")
+        result = call_llm(provider=None, prompt=prompt, temperature=0.2, json_mode=True)
+        
+        # Validate result structure
+        if not isinstance(result, dict):
+            log_warning(f"Balancer retornou tipo inválido: {type(result)}")
+            raise Exception("Invalid return type from LLM")
+        
+        # Ensure all required fields exist
+        if "presenca_digital" not in result:
+            result["presenca_digital"] = {}
+        if "concorrentes_encontrados" not in result:
+            result["concorrentes_encontrados"] = []
+        if "dados_mercado_local" not in result:
+            result["dados_mercado_local"] = {}
+        if "problemas_detectados" not in result:
+            result["problemas_detectados"] = []
+        if "resumo_executivo" not in result:
+            result["resumo_executivo"] = "Análise parcial dos dados"
+        if "analise_competitiva_resumo" not in result:
+            result["analise_competitiva_resumo"] = ""
+        
+        result["found"] = True
+        
+        # Collect all sources
+        all_sources = []
+        for r in raw_results:
+            if isinstance(r, dict) and "sources" in r:
+                all_sources.extend(r["sources"])
+        result["fontes_discovery"] = list(dict.fromkeys(all_sources))
+        
+        # Log what was found
+        pd = result.get("presenca_digital", {})
+        found_items = []
+        for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
+            if pd.get(canal, {}).get("encontrado"):
+                found_items.append(canal)
+        n_comp = len(result.get("concorrentes_encontrados", []))
+        log_success(f"Discovery sintetizado com sucesso: canais={found_items} | concorrentes={n_comp}")
+        
+        return result
+        
+    except Exception as e:
+        log_error(f"Erro ao sintetizar discovery: {e}")
     
     # If all providers failed, return basic structure
     log_warning("Todos os provedores falharam para síntese de discovery")
@@ -481,7 +473,7 @@ JSON:
     }
 
 
-def discover_business(profile: dict, region: str = "br-pt", model_provider: str = "groq") -> dict:
+def discover_business(profile: dict, region: str = "br-pt", model_provider: str = None) -> dict:
     """
     Main entry point. Searches for the ACTUAL business online using chat data.
     

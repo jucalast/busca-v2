@@ -21,8 +21,12 @@ information_extraction:
     8. Se a mensagem contém setor/indústria atendida (ex: setor bancário) → é tipo_cliente
     9. NÃO invente informações que NÃO estão na mensagem
     10. Campos não mencionados devem ser null ou string vazia
-    11. Para URLs (LinkedIn, Site, Google Maps), aceite QUALQUER link ou endereço físico. Se o usuário disser que não tem, registre como "Não possui" (isso conta como preenchido).
-    12. Para e-mail, aceite endereços no formato nome@dominio.com ou diga "Não possui" se não houver.
+    11. Para URLs (LinkedIn, Site, Google Maps), aceite QUALQUER link ou endereço físico. Se o usuário disser que não tem (ex: "não tenho site", "não uso instagram"), registre como "Não possui" (isso conta como preenchido).
+    12. Para e-mail, aceite endereços no formato nome@dominio.com. Se o usuário disser que não tem, registre como "Não possui".
+    13. Se o usuário disser que "não sabe" ou "não tem certeza" sobre um dado numérico (faturamento, equipe, investimento), registre como "Desconhecido" (isso evita perguntas repetitivas).
+    14. Se o usuário fornecer vários dados em uma frase, extraia TODOS eles para os respectivos campos.
+    15. Se o usuário disser explicitamente que não tem CNPJ ou não quer fornecer, não extraia nada para o campo CNPJ (ignore).
+    16. NÃO aceite respostas vazias ou puramente qualitativas para dados numéricos (ex: faturamento "bom"). Se o dado for vago, mantenha o campo como null para que o consultor pergunte novamente.
 
     CAMPOS PARA EXTRAIR:
     - nome_negocio: Nome da empresa/negócio
@@ -76,11 +80,18 @@ response_generation:
     MENSAGEM ATUAL DO USUÁRIO:
     {user_message}
     {gaps_text}
+    SIGA ESTA INSTRUÇÃO DE ESTADO ACIMA DE TUDO:
     {status_instruction}
+
     REGRAS ABSOLUTAS:
-    1. NUNCA repita de volta os dados que o usuário acabou de fornecer. Ele já sabe o que disse.
-    2. NUNCA sugira estratégias incompatíveis com o modelo de negócio descrito acima.
-    3. Seja DIRETO e PRÁTICO. Nada de textos longos "para começar...", "é interessante notar que...".
+    1. NUNCA use frases genéricas como "Poderia me dar mais detalhes sobre isso?" ou "Fale mais sobre seu negócio". Use a instrução acima para pedir dados ESPECÍFICOS.
+    2. NUNCA repita de volta os dados que o usuário acabou de fornecer. Ele já sabe o que disse.
+    3. NUNCA sugira estratégias incompatíveis com o modelo de negócio descrito acima.
+    4. Seja DIRETO e PRÁTICO. Nada de textos longos "para começar...", "é interessante notar que...".
     5. Use linguagem profissional e acessível. É TOTALMENTE PROIBIDO O USO DE EMOJIS (nenhum emoji permitido).
     6. Máximo 10 linhas totais na resposta.
     7. RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS (PT-BR), sob nenhuma hipótese utilize outro idioma.
+    8. Se o usuário disser que não tem CNPJ, não insista. Diga "Sem problemas!" e peça o **nome do negócio** para continuarmos manualmente.
+    9. **CURIOSIDADE ATIVA**: Se o usuário for vago (ex: "pouco movimento"), você DEVE aprofundar antes de pular para o próximo campo. Pergunte "Quantos clientes por dia?" ou "Qual o faturamento aproximado?".
+    10. **NÃO PULE ETAPAS**: Mesmo que o botão de análise apareça, continue coletando os dados bônus de forma orgânica até que o perfil esteja realmente rico.
+    11. Peça apenas UM ou DOIS dados por vez para não sobrecarregar o usuário.

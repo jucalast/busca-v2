@@ -44,6 +44,18 @@ from app.services.agents.pillar_config import (
     SPECIALISTS,
 )
 
+# Import context builder functions
+from app.services.agents.engine.context_builder import (
+    brief_to_text,
+    build_execution_context,
+    build_cross_pillar_context,
+)
+
+# Import market researcher functions
+from app.services.agents.engine.market_researcher import (
+    _extract_market_for_pillar,
+)
+
 
 # ═══════════════════════════════════════════════════════════════════
 
@@ -52,7 +64,7 @@ from app.core.prompt_loader import get_engine_prompt
 import copy, concurrent.futures
 
 
-def _format_previous_results(previous_results: list = None, max_chars_per_item: int = 6000) -> str:
+def _format_previous_results(previous_results: list = None, max_chars_per_item: int = 2500) -> str:
     """Format previous subtask results into context for the next subtask."""
     if not previous_results:
         return ""
@@ -112,7 +124,8 @@ def agent_execute_task(
     all_diagnostics: dict = None,
     market_data: dict = None,
     previous_results: list = None,
-    model_provider: str = "groq",
+    model_provider: str = None,
+    monitor_task_id: str = None,
     subtask_index: int = 0,
 ) -> dict:
     """
@@ -130,9 +143,11 @@ def agent_execute_task(
     
     def check_cancelled():
         """Helper function to check if task was cancelled"""
-        current_status = db.get_background_task_progress(analysis_id, task_id)
+        # Use monitor_task_id if provided (e.g. parent task of subtasks), otherwise fallback to task_id
+        check_id = monitor_task_id or task_id
+        current_status = db.get_background_task_progress(analysis_id, check_id)
         if current_status and current_status.get("status") == "cancelled":
-            print(f"  🛑 CANCELLATION DETECTED for task {task_id}", file=sys.stderr)
+            print(f"  🛑 CANCELLATION DETECTED for task {check_id}", file=sys.stderr)
             return True
         return False
     
@@ -145,9 +160,11 @@ def agent_execute_task(
     # Ultra-aggressive cancellation check with database polling
     def check_cancelled_ultra():
         """Ultra aggressive cancellation that polls database frequently"""
-        current_status = db.get_background_task_progress(analysis_id, task_id)
+        # CRÍTICO: Usar monitor_task_id se disponível (é o ID que o usuário cancela no front)
+        check_id = monitor_task_id or task_id
+        current_status = db.get_background_task_progress(analysis_id, check_id)
         if current_status and current_status.get("status") == "cancelled":
-            print(f"  🛑 ULTRA CANCELLATION DETECTED for task {task_id}", file=sys.stderr)
+            print(f"  🛑 ULTRA CANCELLATION DETECTED for task {check_id}", file=sys.stderr)
             raise Exception("Task cancelled by user")
     
     # Create watchdog for continuous monitoring
@@ -222,7 +239,8 @@ def agent_execute_task(
                 segmento=segmento,
                 task_context=task_data,
                 force_refresh=False,
-                subtask_index=subtask_index
+                subtask_index=subtask_index,
+                cancellation_check=check_cancelled_ultra
             )
             research = research_data.get("content", "")
             task_sources = research_data.get("sources", [])
@@ -241,10 +259,10 @@ def agent_execute_task(
         # Combine all research with clear structure
         # Finalization tasks get more research context for richer documents
         is_finalization = "finalization" in task_id or "editor_final" in task_data.get("ferramenta", "")
-        max_research_chars = 20000 if is_finalization else 10000
+        max_research_chars = 10000 if is_finalization else 5000
         all_research = ""
         if market_context:
-            all_research += f"═══ DADOS DE MERCADO DO SETOR ═══\n{market_context}\n\n"
+            all_research += f"═══ DADOS DE MERCADO DO SETOR ═══\n{market_context[:3000]}\n\n"
         if research:
             all_research += f"═══ DADOS COLETADOS ═══\n"
             all_research += f"{research[:max_research_chars]}\n"
@@ -299,7 +317,11 @@ def agent_execute_task(
                     parts.append("Documentos já produzidos:\n" + "\n".join(docs[:8]))
 
             if parts:
-                completed_docs_text = "\n═══ DOCUMENTOS E SUBTAREFAS JÁ EXISTENTES (NÃO REPITA) ═══\n" + "\n\n".join(parts) + "\n⚠️ NÃO reproduza o conteúdo acima. Produza conteúdo NOVO e DIFERENTE.\n"
+                completed_docs_full = "\n\n".join(parts)
+                # Prevent this section from exploding the context
+                if len(completed_docs_full) > 2500:
+                    completed_docs_full = completed_docs_full[:2500] + "\n... (truncado para brevidade)"
+                completed_docs_text = "\n═══ DOCUMENTOS E SUBTAREFAS JÁ EXISTENTES (NÃO REPITA) ═══\n" + completed_docs_full + "\n⚠️ NÃO reproduza o conteúdo acima. Produza conteúdo NOVO e DIFERENTE.\n"
         except Exception:
             pass
 
@@ -493,8 +515,13 @@ Retorne APENAS o JSON."""
                 provider=model_provider,
                 prompt=prompt,
                 temperature=0.4,
-                json_mode=True
+                json_mode=True,
+                cancellation_check=watchdog.check_or_raise
             )
+            
+            # Check for cancellation after LLM call
+            check_cancelled_ultra()
+            watchdog.check_or_raise()
             
             # Handle raw_response fallback (when JSON constraint was relaxed by LLM router)
             if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
@@ -523,7 +550,7 @@ Retorne APENAS o JSON."""
             task_tipo = task_data.get("tipo", "").lower()
             has_ferramenta = bool(task_data.get("ferramenta", "").strip())
             is_production_task = task_tipo == "producao" or has_ferramenta or "finalization" in task_id
-            min_content_len = 1500 if is_production_task else 300
+            min_content_len = 1000 if is_production_task else 300
             
             if content_len < min_content_len:
                 print(f"  ⚠️ Content too short ({content_len} chars)! Retrying with explicit length requirement...", file=sys.stderr)
@@ -540,7 +567,8 @@ Retorne APENAS o JSON."""
                     prompt=retry_prompt,
                     temperature=0.3,
                     json_mode=True,
-                    prefer_small=False
+                    prefer_small=False,
+                    cancellation_check=watchdog.check_or_raise
                 )
                 # Handle raw_response on retry too
                 if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
@@ -658,7 +686,8 @@ Retorne APENAS o JSON."""
                     prompt=prompt,
                     temperature=0.4,
                     json_mode=True,
-                    prefer_small=True
+                    prefer_small=True,
+                    cancellation_check=watchdog.check_or_raise
                 )
                 result["task_id"] = task_id
                 result["sources"] = sources
@@ -689,7 +718,7 @@ def expand_task_subtasks(
     task_data: dict,
     brief: dict,
     market_data: dict = None,
-    model_provider: str = "groq",
+    model_provider: str = None,
 ) -> dict:
     """
     Break a single task into 3-6 concrete subtasks.
@@ -698,6 +727,19 @@ def expand_task_subtasks(
     
     NEW: Uses unified_research for intelligent subtask research.
     """
+    from app.core import database as db
+    
+    def check_cancelled():
+        """Helper function to check if task was cancelled"""
+        current_status = db.get_background_task_progress(analysis_id, task_data.get("id", ""))
+        if current_status and current_status.get("status") == "cancelled":
+            print(f"  🛑 CANCELLATION DETECTED during subtask expansion", file=sys.stderr)
+            return True
+        return False
+
+    if check_cancelled():
+        return {"success": False, "error": "Task cancelled by user"}
+
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -903,12 +945,20 @@ Se o tema já foi coberto → NÃO CRIE. Foque no que FALTA ser feito.
 
     try:
         from app.core.llm_router import call_llm
+        # Check for cancellation before LLM call
+        if check_cancelled():
+            return {"success": False, "error": "Task cancelled by user"}
+            
         result = call_llm(
             provider=model_provider,
             prompt=prompt,
             temperature=0.3,
             json_mode=True
         )
+        # Check for cancellation after LLM call
+        if check_cancelled():
+            return {"success": False, "error": "Task cancelled by user"}
+            
         result["sources"] = sources
         
         # Annotate each subtask with its execution mode (pesquisa vs producao)
@@ -921,7 +971,10 @@ Se o tema já foi coberto → NÃO CRIE. Foque no que FALTA ser feito.
         except Exception:
             pass  # Non-critical
         
-        return {"success": True, "subtasks": result}
+        # Capture tokens from expansion call
+        tokens = getattr(result, "_tokens", 0) if isinstance(result, str) else result.get("_tokens", 0)
+        
+        return {"success": True, "subtasks": result, "_tokens": tokens}
     except Exception as e:
         print(f"  ❌ Subtask expansion error: {e}", file=sys.stderr)
         return {"success": False, "error": f"Erro ao expandir subtarefas: {str(e)[:200]}"}
@@ -935,13 +988,26 @@ def ai_try_user_task(
     brief: dict,
     all_diagnostics: dict = None,
     market_data: dict = None,
-    model_provider: str = "groq",
+    model_provider: str = None,
 ) -> dict:
     """
     AI attempts a task that was classified as user-required.
     It generates the best possible deliverable it CAN produce,
-    clearly stating what the user still needs to do manually.
+    Uses saved market research + targeted RAG search for task-specific details.
     """
+    from app.core import database as db
+    
+    def check_cancelled():
+        """Helper function to check if task was cancelled"""
+        current_status = db.get_background_task_progress(analysis_id, task_id)
+        if current_status and current_status.get("status") == "cancelled":
+            print(f"  🛑 CANCELLATION DETECTED for AI user task {task_id}", file=sys.stderr)
+            return True
+        return False
+
+    if check_cancelled():
+        return {"success": False, "error": "Task cancelled by user"}
+
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -972,6 +1038,10 @@ def ai_try_user_task(
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
     
+    # Check for cancellation before search
+    if check_cancelled():
+        return {"success": False, "error": "Task cancelled by user"}
+
     research = ""
     try:
         from app.services.research.unified_research import research_engine
@@ -979,16 +1049,20 @@ def ai_try_user_task(
             task_title=task_title,
             task_desc=task_desc,
             pillar_key=pillar_key,
-            segmento=segmento,
+            segmento=brief.get("dna", {}).get("segmento", brief.get("segmento", "")),
             task_context=task_data,
-            force_refresh=False,
-            subtask_index=0
+            subtask_index=0,
+            cancellation_check=check_cancelled_ultra
         )
         research = research_data.get("content", "")
         sources.extend(research_data.get("sources", []))
         print(f"  📦 AI user task via unified_research: {len(research_data.get('sources', []))} sources", file=sys.stderr)
     except Exception as e:
         print(f"  ⚠️ Unified research failed for AI user task: {e}", file=sys.stderr)
+
+    # Check for cancellation after search
+    if check_cancelled():
+        return {"success": False, "error": "Task cancelled by user"}
 
     all_research = ""
     if market_context:
@@ -1020,6 +1094,11 @@ def ai_try_user_task(
         # DEBUG: Log prompt length and research size
         print(f"  📝 AI Try Prompt length: {len(prompt)} chars | Research length: {len(all_research)} chars", file=sys.stderr)
         print(f"  📄 AI Try Research preview: {all_research[:300]}...", file=sys.stderr)
+        
+        # Check for cancellation before LLM call
+        if check_cancelled():
+            return {"success": False, "error": "Task cancelled by user"}
+
         from app.core.llm_router import call_llm
         result = call_llm(
             provider=model_provider,
@@ -1027,6 +1106,10 @@ def ai_try_user_task(
             temperature=0.4,
             json_mode=True
         )
+        # Check for cancellation after LLM call
+        if check_cancelled():
+            return {"success": False, "error": "Task cancelled by user"}
+
         result["task_id"] = task_id
         result["sources"] = sources
         result["was_user_task"] = True

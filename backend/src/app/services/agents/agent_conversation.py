@@ -31,6 +31,7 @@ from app.services.common import (
 
 # Imports específicos deste módulo
 import re
+import requests
 import unicodedata
 from dotenv import load_dotenv
 
@@ -76,13 +77,192 @@ def _similar(s1: str, s2: str, threshold: float = 0.8) -> bool:
     return similarity >= threshold
 
 
-def _extract_business_info(message: str, current_profile: dict, messages: list = None) -> dict:
-    """Extract business information from user message using LLM.
+def _perform_web_research(company_name: str, current_profile: dict, yield_callback=None) -> dict:
+    """Research the company online to find REAL data (site, model, social, etc.)"""
+    from app.core.web_utils import search_duckduckgo, scrape_page
+    from app.core.llm_router import call_llm
     
-    Uses conversation history (messages) to understand ambiguous/short references.
-    """
+    if not company_name or len(company_name) < 3:
+        return {}
+    
+    log_info(f"🌐 Iniciando pesquisa web real para: {company_name}...")
+    if yield_callback:
+        yield_callback({"type": "tool", "tool": "web_research", "status": "running", "detail": f"Buscando site de {company_name}"})
+    
+    # 1. Search for official site and social
+    query = f'site oficial ou instagram "{company_name}"'
+    search_results = search_duckduckgo(query, max_results=5)
+    
+    if not search_results:
+        if yield_callback:
+            yield_callback({"type": "tool", "tool": "web_research", "status": "warning", "detail": "Nenhum site oficial encontrado"})
+        return {}
+        
+    discovery = {}
+    sources_text = ""
+    found_urls = []
+    
+    # Try to scrape the first relevant non-social link (likely the site)
+    for res in search_results:
+        url = res.get('href', '')
+        title = res.get('title', '')
+        snippet = res.get('body', '')
+        
+        found_urls.append(url)
+        sources_text += f"\nFonte: {title} ({url})\nSnippet: {snippet}\n"
+        
+        # If it looks like an official site (not a directory like cnpj.biz)
+        if not any(blocked in url for blocked in ["cnpj.biz", "casa-dos-dados", "econodata", "transparencia.cc", "consultacnpj"]):
+            if not discovery.get("site") and "http" in url:
+                discovery["site"] = url
+                # Scrape it!
+                if yield_callback:
+                    yield_callback({"type": "tool", "tool": "web_research", "status": "running", "detail": f"Lendo site: {url}"})
+                site_content = scrape_page(url)
+                if site_content:
+                    sources_text += f"\nCONTEÚDO DO SITE:\n{site_content[:3000]}\n"
+    
+    if yield_callback:
+        yield_callback({"type": "tool", "tool": "web_research", "status": "running", "detail": "Analisando dados reais encontrados..."})
+
+    # 2. Use LLM to extract REAL data from research
+    prompt = f"""Você é um analista de pesquisa de mercado. Com base nos dados REAIS da internet abaixo, extraia informações concretas sobre a empresa "{company_name}".
+    
+    DADOS DA PESQUISA:
+    {sources_text}
+    
+    REGRAS:
+    1. Retorne APENAS JSON.
+    2. modelo: Determine se é B2B (foco em empresas/indústria) ou B2C (foco em consumidor final/varejo) com base no que o site diz.
+    3. site: Confirme a URL oficial.
+    4. instagram/facebook/linkedin: Se encontrar as URLs, extraia.
+    5. segmento: Descreva a área de atuação real (ex: "Padaria Artesanal", "Indústria de Plásticos").
+    6. diferencial: Se o site citar algo como "desde 1990", "entrega rápida", "prêmio X", extraia.
+    
+    JSON:
+    {{
+        "modelo": "B2B ou B2C",
+        "site": "url",
+        "segmento": "descrição",
+        "instagram": "url ou null",
+        "linkedin": "url ou null",
+        "diferencial": "texto"
+    }}"""
+
+    try:
+        extraction = call_llm(provider="groq", prompt=prompt, json_mode=True, prefer_small=True)
+        if isinstance(extraction, dict):
+            # Clean nulls
+            real_data = {k: v for k, v in extraction.items() if v and str(v).lower() not in ("null", "none", "")}
+            
+            if yield_callback:
+                for field, val in real_data.items():
+                    label = _FIELD_LABELS_PT.get(field, field)
+                    yield_callback({"type": "discovery", "field": field, "label": label, "value": val})
+                yield_callback({"type": "tool", "tool": "web_research", "status": "success", "detail": "Pesquisa concluída com dados reais"})
+            
+            return real_data
+    except Exception as e:
+        log_error(f"Erro na análise de pesquisa: {e}")
+        if yield_callback:
+            yield_callback({"type": "tool", "tool": "web_research", "status": "error", "detail": "Erro ao processar dados da web"})
+            
+    return {}
+
+
+def _lookup_cnpj(cnpj: str) -> dict:
+    """Lookup CNPJ info using BrasilAPI."""
+    cnpj_clean = re.sub(r'\D', '', cnpj)
+    if len(cnpj_clean) != 14:
+        return {}
+    
+    log_info(f"🔍 Buscando dados para o CNPJ: {cnpj_clean}...")
+    
+    # Try BrasilAPI
+    try:
+        response = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj_clean}", timeout=7)
+        if response.status_code == 200:
+            data = response.json()
+            log_success(f"✅ BrasilAPI: Dados encontrados para {data.get('razao_social')}")
+            
+            mapped = {
+                "nome_negocio": data.get("nome_fantasia") or data.get("razao_social"),
+                "localizacao": f"{data.get('municipio')}-{data.get('uf')}",
+                "segmento": data.get("cnae_fiscal_descricao"),
+                "email_contato": data.get("email"),
+                "whatsapp": data.get("ddd_telefone_1"),
+                "google_maps": f"{data.get('logradouro')}, {data.get('numero')}, {data.get('bairro')}, {data.get('municipio')}-{data.get('uf')}",
+                "tempo_operacao": f"Desde {data.get('data_inicio_atividade')}",
+                "capital_social": data.get("capital_social")
+            }
+            if data.get("capital_social"):
+                mapped["capital_disponivel"] = f"R$ {data.get('capital_social'):,.2f}"
+            
+            return {k: v for k, v in mapped.items() if v}
+        else:
+            log_warning(f"⚠️ BrasilAPI retornou status {response.status_code}")
+    except Exception as e:
+        log_warning(f"⚠️ Erro na BrasilAPI: {str(e)}")
+
+    # Fallback: ReceitaWS (API Pública)
+    try:
+        log_info("🔄 Tentando ReceitaWS como fallback...")
+        response = requests.get(f"https://receitaws.com.br/v1/cnpj/{cnpj_clean}", timeout=7)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "ERROR":
+                log_warning(f"⚠️ ReceitaWS: {data.get('message')}")
+                return {}
+                
+            log_success(f"✅ ReceitaWS: Dados encontrados para {data.get('nome')}")
+            mapped = {
+                "nome_negocio": data.get("fantasia") or data.get("nome"),
+                "localizacao": f"{data.get('municipio')}-{data.get('uf')}",
+                "segmento": data.get("atividade_principal", [{}])[0].get("text"),
+                "email_contato": data.get("email"),
+                "whatsapp": data.get("telefone"),
+                "google_maps": f"{data.get('logradouro')}, {data.get('numero')}, {data.get('bairro')}, {data.get('municipio')}-{data.get('uf')}",
+                "tempo_operacao": f"Desde {data.get('abertura')}"
+            }
+            return {k: v for k, v in mapped.items() if v}
+    except Exception as e:
+        log_error(f"❌ Erro no fallback ReceitaWS: {str(e)}")
+
+    return {}
+
+
+def _extract_business_info(message: str, current_profile: dict, messages: list = None, yield_callback=None) -> dict:
+    """Extract business information from user message using LLM."""
     
     log_debug(f"Extracting info: {message[:60]}...")
+    
+    # ── Search for CNPJ ──
+    cnpj_match = re.search(r'\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}', message)
+    cnpj_data = {}
+    if cnpj_match and not current_profile.get("cnpj"):
+        cnpj_val = cnpj_match.group(0)
+        
+        if yield_callback:
+            yield_callback({"type": "tool", "tool": "cnpj_lookup", "status": "running"})
+            
+        cnpj_data = _lookup_cnpj(cnpj_val)
+        cnpj_data["cnpj"] = cnpj_val
+        
+        if yield_callback and cnpj_data:
+            detail = cnpj_data.get("nome_negocio") or cnpj_val
+            yield_callback({"type": "tool", "tool": "cnpj_lookup", "status": "success", "detail": detail})
+            # Yield discoveries
+            for field, val in cnpj_data.items():
+                if field != "cnpj":
+                    yield_callback({"type": "discovery", "field": field, "label": _FIELD_LABELS_PT.get(field, field), "value": val})
+
+        # --- REAL DATA RESEARCH ---
+        # If we got a name from CNPJ, let's research it on the web for REAL model/site
+        business_name = cnpj_data.get("nome_negocio")
+        if business_name:
+            research_data = _perform_web_research(business_name, current_profile, yield_callback)
+            if research_data:
+                cnpj_data.update(research_data)
     
     # Schema JSON para forçar estrutura correta (30 campos — inclui todos que o pipeline consome)
     json_schema = {
@@ -145,6 +325,7 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         current_profile=safe_json_dumps(current_profile, ensure_ascii=False)
     )
     
+    # ── LLM Extraction ──
     try:
         # Usar JSON mode nativo + modelo pequeno para extração
         from app.core.llm_router import call_llm
@@ -165,13 +346,36 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         else:
             extracted = result
         
+        log_debug(f"Raw extraction: {extracted}")
+        
         # Merge with current profile (only update non-null values)
         updated_profile = current_profile.copy()
+        
+        # Priority 1: CNPJ Data
+        found_via_cnpj = False
+        if cnpj_data:
+            found_via_cnpj = True
+            for key, value in cnpj_data.items():
+                if value: # Accept even if already exists if it's from CNPJ
+                    updated_profile[key] = value
+        
+        # Priority 2: LLM Extracted Data
         new_fields = 0
+        
+        # Define common "empty" or "placeholder" strings that LLMs often return
+        PLACEHOLDER_VALUES = (
+            "null", "none", "n/a", "na", "", "unknown", "desconhecido", 
+            "não informado", "nao informado", "não fornecido", "nao fornecido",
+            "não consta", "nao consta", "não mencionado", "nao mencionado"
+        )
+        
         for key, value in extracted.items():
-            if value is not None and value != "":
-                updated_profile[key] = value
-                new_fields += 1
+            if value is not None:
+                val_str = str(value).lower().strip().rstrip('.,;!')
+                if val_str not in PLACEHOLDER_VALUES and val_str != "":
+                    # Only update if we have a real value
+                    updated_profile[key] = value
+                    new_fields += 1
         
         # ── Post-extraction safety net ──
         # If nome_negocio is still empty, check for explicit name-giving patterns
@@ -254,7 +458,16 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
             if updated_profile.get(src):
                 updated_profile[dst] = updated_profile[src]
         
+        # Capture tokens from extraction call
+        extraction_tokens = getattr(result, "_tokens", 0) if isinstance(result, str) else result.get("_tokens", 0)
+        updated_profile["_last_extraction_tokens"] = extraction_tokens
+        
         log_success(f"JSON mode extracted: {new_fields} fields (total profile: {len([k for k, v in updated_profile.items() if v and v != ''])} fields)")
+        
+        # Mark if CNPJ was just found in this turn
+        if found_via_cnpj:
+            updated_profile["_just_found_cnpj"] = True
+            
         return updated_profile
         
     except Exception as e:
@@ -402,37 +615,19 @@ def _detect_discovery_gaps(message: str, current_profile: dict) -> list:
 # CAMPOS OBRIGATÓRIOS PARA ANÁLISE — "Lista de Compras" do Chat
 # ═══════════════════════════════════════════════════════════════════
 # Sem TODOS estes, a análise fica comprometida (persona errada, queries genéricas)
-CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos']
+CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos', 'faturamento', 'canais', 'site']
 
 # O consultor DEVE perguntar TODOS estes campos antes de liberar a análise
-BONUS_FIELDS = [
-    'faturamento',           # Faturamento mensal
-    'ticket_medio',          # Ticket médio por venda
-    'tipo_produto',          # Produto, serviço ou ambos
-    'equipe',                # Tamanho da equipe
-    'diferencial',           # Diferencial competitivo
-    'concorrentes',          # Concorrentes diretos
-    'canais',                # Canais de venda/comunicação
-    'investimento',          # Investimento em marketing
-    'margem',                # Margem de lucro
-    'tempo_operacao',        # Há quanto tempo opera
-    'modelo_operacional',    # Estoque próprio, sob encomenda, etc
-    'capital_disponivel',    # Capital disponível para investir
-    'gargalos',              # Gargalos operacionais
-    'tipo_cliente',          # Indústrias/setores atendidos
-    'capacidade_produtiva',  # Volume de produção
-    'regiao_atendimento',    # Região geográfica atendida
-    'fornecedores',          # Fornecedores
-    'origem_clientes',       # De onde vêm os clientes
-    'maior_objecao',         # Maior objeção dos clientes
-    'site',                  # Website
-    'instagram',             # Instagram
-    'whatsapp',              # WhatsApp
-    'linkedin',              # LinkedIn da empresa
-    'google_maps',           # Google Maps / Google Meu Negócio
-    'email_contato',         # E-mail de contato
-    'tempo_entrega',         # Prazo médio de entrega
-]
+# Grupos de campos para coleta organizada
+FIELD_GROUPS = {
+    "Identidade Digital": ['site', 'instagram', 'whatsapp', 'linkedin', 'google_maps', 'email_contato', 'canais'],
+    "Saúde Financeira": ['faturamento', 'ticket_medio', 'margem', 'capital_disponivel', 'investimento'],
+    "Estrutura e Operação": ['equipe', 'tipo_produto', 'tempo_operacao', 'modelo_operacional', 'capacidade_produtiva', 'tempo_entrega', 'fornecedores'],
+    "Inteligência de Mercado": ['concorrentes', 'diferencial', 'tipo_cliente', 'regiao_atendimento', 'origem_clientes', 'maior_objecao', 'gargalos']
+}
+
+# Lista achatada para compatibilidade
+BONUS_FIELDS = [f for fields in FIELD_GROUPS.values() for f in fields]
 BONUS_MINIMUM = len(BONUS_FIELDS)  # TODOS são obrigatórios
 
 # Labels em português para injeção natural no prompt
@@ -471,57 +666,62 @@ _FIELD_LABELS_PT = {
     'google_maps': 'Google Maps / Google Meu Negócio',
     'email_contato': 'e-mail de contato comercial',
     'tempo_entrega': 'prazo médio de entrega',
+    'cnpj': 'CNPJ da empresa',
 }
 
 
 def _compute_missing_fields(profile: dict) -> tuple:
-    """Compute which critical and bonus fields are still missing."""
-    filled = {k for k, v in profile.items() if v is not None and v != "" and v != []}
+    """Compute which critical and bonus fields are still missing, organized by groups."""
+    filled = {k for k, v in profile.items() if v is not None and v != "" and v != [] and str(v).lower() not in ("null", "none")}
+    
     missing_critical = [f for f in CRITICAL_FIELDS if f not in filled]
     missing_bonus = [f for f in BONUS_FIELDS if f not in filled]
+    
+    # Calculate group completion
+    group_status = {}
+    for group_name, fields in FIELD_GROUPS.items():
+        missing_in_group = [f for f in fields if f not in filled]
+        group_status[group_name] = {
+            "missing": missing_in_group,
+            "count_missing": len(missing_in_group),
+            "total": len(fields),
+            "is_complete": len(missing_in_group) == 0
+        }
+        
     bonus_collected = len(BONUS_FIELDS) - len(missing_bonus)
-    all_missing = missing_critical + (missing_bonus if bonus_collected < BONUS_MINIMUM else [])
-    return missing_critical, missing_bonus, bonus_collected, all_missing
+    all_missing = missing_critical + missing_bonus
+    
+    return missing_critical, missing_bonus, bonus_collected, all_missing, group_status
 
 
-def chat_consultant(messages: list, user_message: str, extracted_profile: dict, last_search_time: float = 0) -> dict:
+def chat_consultant(messages: list, user_message: str, extracted_profile: dict, last_search_time: float = 0):
     """
-    Main consultant function - handles conversation and searches.
-    Tracks missing critical fields and guides conversation to collect them naturally.
+    Main consultant generator - yields events for SSE streaming.
     """
     
+    # Track discovery events to yield them from the generator
+    discovery_events = []
+    def emit_callback(event):
+        discovery_events.append(event)
+
     log_info(f"Chat consultant processing: {user_message[:50]}...")
     
-    # 1. Extract business information
-    updated_profile = _extract_business_info(user_message, extracted_profile, messages)
+    # 1. Extract business information (this will trigger CNPJ lookups and discovery events)
+    updated_profile = _extract_business_info(user_message, extracted_profile, messages, yield_callback=emit_callback)
     
-    # 1.5. Track missing critical fields ("lista de compras")
-    missing_critical, missing_bonus, bonus_count, all_missing = _compute_missing_fields(updated_profile)
-    missing_labels = [_FIELD_LABELS_PT.get(f, f) for f in all_missing[:4]]  # Top 4
+    # Yield all discoveries and tool events collected during extraction
+    for ev in discovery_events:
+        yield ev
     
-    if missing_critical:
-        critical_labels = [_FIELD_LABELS_PT.get(f, f) for f in missing_critical]
-        log_info(f"Campos críticos faltando ({len(missing_critical)}): {critical_labels}")
+    # 1.5. Track missing fields
+    missing_critical, missing_bonus, bonus_count, all_missing, group_status = _compute_missing_fields(updated_profile)
     
-    if bonus_count < BONUS_MINIMUM:
-        missing_bonus_count = len(BONUS_FIELDS) - bonus_count
-        # Mostrar apenas os primeiros 5 nomes de bônus par não poluir
-        bonus_labels_to_show = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:5]]
-        suffix = "..." if len(missing_bonus) > 5 else ""
-        log_info(f"Campos bônus faltando ({bonus_count}/{BONUS_MINIMUM} coletados): {bonus_labels_to_show}{suffix}")
-    
-    # 2. Detect discovery gaps (when user says "não sei" about something)
+    # 2. Detect gaps
     discovery_gaps = _detect_discovery_gaps(user_message, updated_profile)
     if discovery_gaps:
         updated_profile["_discovery_gaps"] = discovery_gaps
-        log_info(f"Gaps para análise descobrir: {discovery_gaps}")
     
-    # NO web search in chat — all research happens in analysis phase
-    search_result = None
-    
-    # 3. Generate response — with missing-field guidance & readiness awareness
-    
-    # ── Build a HUMAN-READABLE profile summary (not raw JSON dump) ──
+    # 3. Build response prompt
     profile_summary_lines = []
     for key, label in _FIELD_LABELS_PT.items():
         val = updated_profile.get(key)
@@ -529,98 +729,43 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
             profile_summary_lines.append(f"• {label}: {val}")
     profile_summary = "\n".join(profile_summary_lines) if profile_summary_lines else "(nenhum dado coletado ainda)"
     
-    # ── Detect business model for adapted advice ──
     modelo_raw = (updated_profile.get("modelo") or "").lower()
     if "b2b" in modelo_raw:
-        modelo_contexto = "B2B (vende para empresas/indústrias). NÃO sugira estratégias de varejo, influenciadores, TikTok ou reels. Foque em prospecção ativa, LinkedIn, vendas consultivas, CRM, cold email, representantes."
-    elif any(kw in modelo_raw for kw in ("serviço", "servico", "consultoria", "agência", "agencia")):
-        modelo_contexto = "Prestação de serviços. Foque em autoridade, portfólio, indicações, Google Meu Negócio, networking."
+        modelo_contexto = "B2B (vende para empresas/indústrias)."
+    elif any(kw in modelo_raw for kw in ("serviço", "servico", "consultoria")):
+        modelo_contexto = "Prestação de serviços."
     else:
-        modelo_contexto = "B2C (vende para consumidor final). Foque em redes sociais, Instagram, WhatsApp, e-commerce, experiência do cliente."
+        modelo_contexto = "B2C (vende para consumidor final)."
     
-    # ── Conversation history (just the text, not raw JSON) ──
     history_lines = []
     for m in (messages[-4:] if messages else []):
         role_label = "Usuário" if m.get("role") == "user" else "Consultor"
-        content = m.get("content", "")[:300]
-        history_lines.append(f"{role_label}: {content}")
+        history_lines.append(f"{role_label}: {m.get('content', '')[:300]}")
     history_text = "\n".join(history_lines) if history_lines else "(primeira mensagem)"
     
-    # ── Discovery gaps instruction ──
-    gaps_text = ""
-    if discovery_gaps:
-        gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}. Diga 'Não se preocupe, vamos descobrir isso automaticamente na análise.' NÃO tente pesquisar ou adivinhar.\n"
+    gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}.\n" if discovery_gaps else ""
     
-    # ── Detect if user is explicitly asking for remaining questions ──
-    user_asking_for_questions = False
-    msg_lower = user_message.lower()
-    if any(kw in msg_lower for kw in ['perguntas restantes', 'quais perguntas', 'todas as perguntas',
-                                       'falta perguntar', 'mais perguntas', 'o que falta',
-                                       'que mais precisa', 'que mais quer saber',
-                                       'me mande todas', 'me de todas', 'mande todas',
-                                       'liste todas', 'quero todas', 'me fale todas',
-                                       'me dê todas', 'me diga todas']):
-        user_asking_for_questions = True
+    # Logic for ready_now: All critical must be filled, and we need at least some minimal bonus info
+    has_critical = len(missing_critical) == 0
     
-    # ── Readiness-aware instruction block ──
-    ready_now = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
+    # Check if we have enough "real" data (not just "Não possui" or "Desconhecido" for everything)
+    real_data_count = len([k for k, v in updated_profile.items() if v and str(v).lower() not in ("null", "none", "", "desconhecido", "não possui")])
     
-    # If user explicitly asks for remaining questions, always list them
-    if user_asking_for_questions:
-        all_remaining = missing_critical + missing_bonus
-        all_remaining_labels = [_FIELD_LABELS_PT.get(f, f) for f in all_remaining]
-        # Build a numbered list so the LLM copies it verbatim
-        lista_str = "\n".join([f"  {i+1}. {label}" for i, label in enumerate(all_remaining_labels)])
-        total = len(all_remaining_labels)
-        status_instruction = f"""
-ESTADO: O usuário PEDIU para ver TODAS as perguntas. Existem {total} informações pendentes.
-
-INSTRUÇÃO OBRIGATÓRIA — COPIE A LISTA ABAIXO INTEIRA, SEM RESUMIR, SEM "ETC.", SEM CORTAR:
-- Liste TODAS as {total} informações abaixo usando uma lista numerada.
-- NÃO resuma. NÃO use "etc.". NÃO pule nenhum item. Copie CADA LINHA abaixo.
-- Diga que TODAS são obrigatórias para gerar a análise.
-- Se não há campos faltando, diga que já tem tudo e pode gerar a análise.
-
-LISTA COMPLETA ({total} itens — copie todos):
-{lista_str}
-"""
-    elif ready_now:
-        # ALL fields collected → offer analysis, don't ask more questions
-        status_instruction = """
-ESTADO: ✅ TENHO TODAS AS INFORMAÇÕES NECESSÁRIAS.
-
-INSTRUÇÃO OBRIGATÓRIA:
-- Faça um BREVE resumo (3-5 linhas) mostrando que entendeu o negócio, o problema e o objetivo.
-- Diga que está pronto para gerar a análise completa.
-- NÃO faça perguntas. NÃO peça mais dados. NÃO repita informações que o usuário já deu.
-- Se o usuário deu feedback ou correção, agradeça e incorpore.
-- Seja DIRETO e CURTO. Máximo 8 linhas.
-"""
+    # We want at least some bonus fields to be filled OR all groups to have some progress
+    groups_with_progress = len([g for g in group_status.values() if not g["is_complete"] and g["count_missing"] < g["total"]])
+    
+    ready_now = has_critical and (bonus_count >= 5 or groups_with_progress >= 2)
+    
+    # Logic for status_instruction
+    if ready_now:
+        status_instruction = "ESTADO: ✅ TENHO TUDO. Resuma e ofereça análise."
     elif missing_critical:
-        campos_str = ", ".join([_FIELD_LABELS_PT.get(f, f) for f in missing_critical])
-        status_instruction = f"""
-ESTADO: ⚠️ Faltam dados CRÍTICOS: {campos_str}
-
-INSTRUÇÃO:
-- Pergunte NATURALMENTE por 1-2 desses campos na conversa.
-- NÃO liste perguntas como formulário. Faça parecer conversa real.
-- Exemplo: "Vocês vendem mais para empresas ou consumidor final?" para descobrir modelo B2B/B2C.
-- Seja BREVE. Não repita o que o usuário já disse. Máximo 6-8 linhas.
-"""
+        campo_label = _FIELD_LABELS_PT.get(missing_critical[0], missing_critical[0])
+        status_instruction = f"ESTADO: ⚠️ Falta {campo_label}. Peça de forma amigável."
     else:
-        bonus_missing = [_FIELD_LABELS_PT.get(f, f) for f in missing_bonus[:3]]
-        campos_str = ", ".join(bonus_missing)
-        status_instruction = f"""
-ESTADO: ⚠️ Dados críticos OK, mas AINDA faltam informações importantes: {campos_str}
+        current_group = next((n for n, s in group_status.items() if not s["is_complete"]), "Geral")
+        status_instruction = f"ESTADO: ⚠️ Coletando detalhe do grupo {current_group}. Peça o próximo campo."
 
-INSTRUÇÃO:
-- Pergunte NATURALMENTE por 1-2 desses campos na conversa.
-- NÃO ofereça gerar a análise ainda. Todas as perguntas precisam ser respondidas primeiro.
-- NÃO liste perguntas como formulário. Faça parecer conversa real.
-- Seja BREVE. Máximo 6-8 linhas.
-"""
-    
-    # Load response prompt from YAML
     from app.core.prompt_loader import load_prompt_file
     prompt_config = load_prompt_file("chat_consultant.yaml")
     template = prompt_config.get("response_generation", {}).get("prompt_template", "")
@@ -634,6 +779,9 @@ INSTRUÇÃO:
         status_instruction=status_instruction
     )
     
+    # Start yielding the response
+    yield {"type": "thought", "text": "Processando sua resposta..."}
+    
     result = call_llm(
         provider="groq",
         prompt=prompt,
@@ -641,64 +789,37 @@ INSTRUÇÃO:
         json_mode=False
     )
     
-    # When json_mode=False, call_llm returns a string directly
-    if isinstance(result, str):
-        reply = result
-    elif not result.get("success"):
-        log_error(f"LLM response failed: {result.get('error', 'Unknown error')}")
-        reply = "Desculpe, estou com dificuldades para responder. Poderia reformular sua pergunta?"
-    else:
-        reply = result.get("content", "")
+    reply = result if isinstance(result, str) else result.get("content", "Erro na geração.")
     
-    # 4. Determine if ready for analysis — ALL critical fields + minimum bonus
+    # Final yield of content
+    yield {"type": "content", "text": reply}
+    
+    # Determine final result
     fields_collected = [k for k, v in updated_profile.items() if v is not None and v != ""]
-    ready_for_analysis = len(missing_critical) == 0 and bonus_count >= BONUS_MINIMUM
     
-    if ready_for_analysis:
-        log_success(f"Pronto para análise — {len(fields_collected)} campos coletados")
-    else:
-        log_info(f"⏳ Aguardando dados: {len(missing_critical)} críticos e {len(missing_bonus)} bônus pendentes")
-    
-    return {
-        "reply": reply,
-        "search_performed": False,
-        "search_query": None,
-        "extracted_profile": updated_profile,
-        "ready_for_analysis": ready_for_analysis,
-        "fields_collected": fields_collected,
-        "fields_missing": all_missing,
-        "last_search_time": 0,
-        "discovery_gaps": discovery_gaps,
+    yield {
+        "type": "result",
+        "data": {
+            "reply": reply,
+            "extracted_profile": updated_profile,
+            "ready_for_analysis": ready_now,
+            "fields_collected": fields_collected,
+            "fields_missing": all_missing,
+            "discovery_gaps": discovery_gaps
+        }
     }
 
 
-def run_chat(input_data: dict) -> dict:
+def run_chat(input_data: dict):
     """
-    Main entry point for the CONSULTATIVE chat.
-    
-    Key principles:
-    - Search PROACTIVELY to bring valuable information
-    - TEACH the user, not just collect data
-    - Build profile NATURALLY through conversation
+    Main entry point for the CONSULTATIVE chat generator.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {
-            "reply": "❌ Erro: chave da API Groq não configurada.",
-            "extracted_profile": {},
-            "search_performed": False,
-            "search_query": None,
-            "ready_for_analysis": False,
-            "fields_collected": [],
-            "fields_missing": [],
-        }
-
     messages = input_data.get("messages", [])
     user_message = input_data.get("user_message", "")
     extracted_profile = input_data.get("extracted_profile", {})
     last_search_time = input_data.get("last_search_time", 0)
 
-    # Usar a função principal já implementada
+    # Return the generator directly
     return chat_consultant(messages, user_message, extracted_profile, last_search_time)
 
 

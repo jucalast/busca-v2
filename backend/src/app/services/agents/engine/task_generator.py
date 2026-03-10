@@ -50,6 +50,22 @@ from app.services.agents.pillar_config import (
 from typing import Dict, List, Any, Optional
 from app.core.prompt_loader import get_engine_prompt
 import copy, concurrent.futures
+from app.services.agents.engine.context_builder import brief_to_text, build_cross_pillar_context, build_execution_context
+from app.services.agents.engine.dependency_manager import check_pillar_dependencies
+from app.services.agents.engine.market_researcher import _should_search_for_task, _extract_market_for_pillar
+
+AI_CAPABILITIES = [
+    "texto", "escrita", "gera", "gerar", "conteúdo", "planejamento", "plano", "analise", "análise",
+    "documento", "docs", "script", "roteiro", "mapeamento", "mapear", "estratégia", "estratégico",
+    "persona", "público", "tom de voz", "copy", "legenda", "blog", "artigo", "email", "cadência",
+    "funil", "etapas", "critérios", "qualificação", "sugestão", "dicas", "ideias", "roteirizar"
+]
+
+REQUIRES_USER_ACTION = [
+    "pagar", "comprar", "boleto", "senha", "imprimir", "ligar", "gravar", "visitar", "instalar",
+    "baixar", "fisicamente", "reunião", "assinatura", "contrato", "correios", "enviar", "estoque",
+    "embalar", "fabricar", "produzir", "entrega", "contratar", "equipe", "reunir"
+]
 
 
 def generate_specialist_tasks(
@@ -59,7 +75,7 @@ def generate_specialist_tasks(
     diagnostic: dict = None,
     all_diagnostics: dict = None,
     market_data: dict = None,
-    model_provider: str = "groq",
+    model_provider: str = None,
 ) -> dict:
     """
     The specialist creates TASKS for their pillar using context-aware generation.

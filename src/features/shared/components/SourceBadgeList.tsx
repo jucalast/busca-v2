@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export function SourceBadgeList({ sources, maxVisible = 4, animated = false }: { sources: string[], maxVisible?: number, animated?: boolean }) {
+export function SourceBadgeList({ sources, maxVisible = 4, animated = false }: { sources: any[], maxVisible?: number, animated?: boolean }) {
     const [isExpanded, setIsExpanded] = useState(false);
 
     if (!sources || !Array.isArray(sources) || sources.length === 0) return null;

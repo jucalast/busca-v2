@@ -4,15 +4,9 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import Image from 'next/image';
+import LLMUsageIndicator from './llm-usage-indicator';
 
 const MODEL_OPTIONS = [
-    {
-        value: 'groq',
-        label: 'Groq',
-        sub: 'Llama',
-        logo: '/groq llama.png',
-        accent: '#f97316',
-    },
     {
         value: 'gemini',
         label: 'Gemini',
@@ -21,11 +15,32 @@ const MODEL_OPTIONS = [
         accent: '#60a5fa',
     },
     {
+        value: 'groq',
+        label: 'Groq',
+        sub: 'Llama',
+        logo: '/groq llama.svg',
+        accent: '#f97316',
+    },
+    {
         value: 'openrouter',
         label: 'OpenRouter',
         sub: 'Multi-modelo',
         logo: '/openrouter.png',
         accent: '#34d399',
+    },
+    {
+        value: 'sambanova',
+        label: 'SambaNova',
+        sub: 'Llama 405B',
+        logo: '/sambanova.png',
+        accent: '#8b5cf6',
+    },
+    {
+        value: 'cerebras',
+        label: 'Cerebras',
+        sub: 'Fastest 70B',
+        logo: '/cerebras.png',
+        accent: '#22c55e',
     },
 ];
 
@@ -108,7 +123,7 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                     left: computedLeft,
                     width: dropdownWidth,
                     transform: dropdownTransform,
-                    backgroundColor: 'var(--color-surface-1)',
+                    backgroundColor: '#ffffff',
                     border: '1px solid var(--color-border)',
                     boxShadow: 'var(--shadow-popover)',
                     animation: 'fade-in-up 0.12s ease-out',
@@ -140,6 +155,7 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                                 width={18}
                                 height={18}
                                 className="rounded shrink-0 object-contain"
+                                style={{ filter: 'none' }}
                             />
 
                             <div className="flex-1 flex items-center gap-1.5 text-left min-w-0 whitespace-nowrap">
@@ -158,6 +174,8 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                         </button>
                     );
                 })}
+
+
             </div>,
             document.body
         )
@@ -178,6 +196,7 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                     width={16}
                     height={16}
                     className="rounded shrink-0 object-contain"
+                    style={{ filter: 'none' }}
                 />
                 <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-secondary)' }}>{selected.label}</span>
                 <ChevronDown

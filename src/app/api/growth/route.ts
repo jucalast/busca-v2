@@ -71,16 +71,23 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
-        // ━━━ Action: Chat (conversational AI consultant) ━━━
+        // ━━━ Action: Chat (conversational AI consultant) — SSE streaming ━━━
         if (action === 'chat') {
-            const result = await runOrchestrator('chat', {
+            const stream = runOrchestratorStreaming({
                 aiModel,
+                action: 'chat',
                 messages: messages || [],
-                user_message: user_message || '',
+                user_message: user_message || body.message || '',
                 extracted_profile: extracted_profile || {},
-            }, 120000);
+            }, 120000, jwtToken);
 
-            return NextResponse.json(result);
+            return new Response(stream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
         }
 
         // ━━━ Action: Dimension Chat (per-dimension AI with search) ━━━
@@ -518,6 +525,22 @@ export async function POST(request: Request) {
         if (action === 'stop-task') {
             // Frontend handles abort via AbortController, backend just acknowledges
             const result = await runOrchestrator('stop-task', {}, 5000, jwtToken);
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Cancel Task ━━━
+        if (action === 'cancel-task') {
+            const { analysis_id, pillar_key, task_id } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('cancel-task', {
+                analysis_id,
+                pillar_key,
+                task_id,
+            }, 10000, jwtToken);
+
             return NextResponse.json(result);
         }
 

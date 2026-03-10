@@ -57,7 +57,7 @@ export function SvgMapLines({ pillarNodes }: { pillarNodes: any[] }) {
                                 refY="8"
                                 orient="auto"
                             >
-                                <circle cx="8" cy="8" r="3.5" fill="#0a0a0c" stroke={p.meta.color} strokeWidth="1.5" />
+                                <circle cx="8" cy="8" r="3.5" fill="#ffffff" stroke={p.meta.color} strokeWidth="1.5" />
                             </marker>
                             {p.isExpanded && p.subItems.map((sub: any, si: number) => (
                                 <marker
@@ -69,7 +69,7 @@ export function SvgMapLines({ pillarNodes }: { pillarNodes: any[] }) {
                                     refY="6"
                                     orient="auto"
                                 >
-                                    <circle cx="6" cy="6" r="2.5" fill="#0a0a0c" stroke={sub.color} strokeWidth="1.2" />
+                                    <circle cx="6" cy="6" r="2.5" fill="#ffffff" stroke={sub.color} strokeWidth="1.2" />
                                 </marker>
                             ))}
                         </React.Fragment>
@@ -80,7 +80,7 @@ export function SvgMapLines({ pillarNodes }: { pillarNodes: any[] }) {
             {/* Move the origin to center to match the absolutely positioned HTML nodes */}
             <g transform={`translate(0, 0)`}>
                 {/* Subtle orbit ring */}
-                <circle cx={0} cy={0} r={340} fill="none" stroke="rgba(255,255,255,0.025)" strokeWidth={1} strokeDasharray="6 12" />
+                <circle cx={0} cy={0} r={340} fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth={1} strokeDasharray="6 12" />
                 {svgLines}
             </g>
         </svg>

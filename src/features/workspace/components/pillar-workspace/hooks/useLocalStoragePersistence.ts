@@ -10,6 +10,7 @@ interface PersistableState {
     autoExecResults: Record<string, Record<number, any>>;
     autoExecStatuses: Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>;
     pillarStates: Record<string, any>;
+    selectedTaskAiModel?: string;
 }
 
 interface UseLocalStoragePersistenceProps {
@@ -112,6 +113,7 @@ export function useLocalStoragePersistence({
                 if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
                 if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
                 if (data.pillarStates) setPillarStates(data.pillarStates);
+                if (data.selectedTaskAiModel) setSelectedTaskAiModel(data.selectedTaskAiModel);
             }
         } catch (e) {
             console.warn('Failed to load persisted state:', e);
@@ -148,11 +150,12 @@ export function useLocalStoragePersistence({
                 autoExecResults: state.autoExecResults,
                 autoExecStatuses: state.autoExecStatuses,
                 pillarStates: state.pillarStates,
+                selectedTaskAiModel: state.selectedTaskAiModel,
             }));
         } catch (e) {
             console.warn('Failed to save state:', e);
         }
-    }, [state.completedTasks, state.taskDeliverables, state.taskSubtasks, state.autoExecSubtasks, state.autoExecResults, state.autoExecStatuses, state.pillarStates, isStorageLoaded]);
+    }, [state.completedTasks, state.taskDeliverables, state.taskSubtasks, state.autoExecSubtasks, state.autoExecResults, state.autoExecStatuses, state.pillarStates, state.selectedTaskAiModel, isStorageLoaded]);
 
     return { isStorageLoaded };
 }

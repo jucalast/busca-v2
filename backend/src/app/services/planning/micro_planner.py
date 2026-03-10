@@ -17,10 +17,12 @@ import sys
 import time
 import hashlib
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.core.web_utils import search_duckduckgo, scrape_page
 from app.core import database as db
+from app.core.llm_router import call_llm
 
 
 def _build_search_query(task_title: str, segmento: str, categoria: str) -> str:
@@ -81,10 +83,6 @@ def expand_task(
             "sources": [...]
         }
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "GROQ_API_KEY not configured"}
-
     perfil = profile.get("perfil", {})
     segmento = perfil.get("segmento", "")
     nome = perfil.get("nome", perfil.get("nome_negocio", ""))
@@ -191,10 +189,10 @@ Retorne APENAS o JSON."""
 
     try:
         result = call_llm(
-            api_key, prompt,
+            provider="groq",
+            prompt=prompt,
             temperature=0.3,
-            model="llama-3.1-8b-instant",
-            force_json=True
+            json_mode=True
         )
         
         # Add sources
@@ -252,10 +250,6 @@ def run_task_chat(
         task_detail: The expanded task detail (subtasks, specialist content)
         plan_context: Macro plan context (meta, phase info)
     """
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "reply": "Erro: API key não configurada."}
-
     perfil = profile.get("perfil", {})
     nome = perfil.get("nome", perfil.get("nome_negocio", ""))
     segmento = perfil.get("segmento", "")
@@ -336,10 +330,10 @@ Responda de forma direta e útil:"""
 
     try:
         reply = call_llm(
-            api_key, prompt,
+            provider="groq",
+            prompt=prompt,
             temperature=0.4,
-            model="llama-3.1-8b-instant",
-            force_json=False
+            json_mode=False
         )
     except Exception as e:
         reply = f"Desculpe, não consegui processar. Erro: {str(e)[:100]}"

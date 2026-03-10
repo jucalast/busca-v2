@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { openInGoogleDocs, getToolInfo, safeRender } from '../utils';
-import { MarkdownContent } from './MarkdownContent';
+import { MarkdownContent } from '@/features/shared/components/MarkdownContent';
 
 export function DeliverableCard({ deliverable, color, session, loadingState, setLoadingDoc }: { deliverable: any; color: string; session: any; loadingState: string | null; setLoadingDoc: (v: string | null) => void }) {
     const [expanded, setExpanded] = useState(true);
@@ -11,68 +11,64 @@ export function DeliverableCard({ deliverable, color, session, loadingState, set
     const toolInfo = getToolInfo(deliverable);
 
     return (
-        <div
-            className="mt-3 p-3 rounded-xl overflow-hidden"
-            style={{
-                backgroundColor: 'var(--color-surface-1)',
-                border: '1px solid var(--color-border)',
-                boxShadow: 'var(--shadow-lg)',
-            }}
-        >
+        <div className="mt-4 overflow-hidden bg-white border border-gray-200 rounded-xl">
             {/* Header */}
             <div
                 onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 cursor-pointer"
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                className="w-full flex items-center justify-between p-4 transition-all duration-300 cursor-pointer hover:bg-white/40"
             >
-                <img src={toolInfo.icon} alt={toolInfo.name} className="w-7 h-7 rounded object-contain shrink-0 opacity-60 grayscale" />
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-black/5 flex items-center justify-center shrink-0">
+                        <img src={toolInfo.icon} alt={toolInfo.name} className="w-6 h-6 object-contain opacity-70 grayscale" />
+                    </div>
 
-                <div className="flex-1 flex items-center gap-2 text-left min-w-0">
-                    <span className="text-[13px] font-medium" style={{ color: isPartial ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>
-                        {safeRender(deliverable.entregavel_titulo)}
-                    </span>
-                    <span className={`text-[11px] ${toolInfo.color}`}>
-                        {toolInfo.name}
-                    </span>
-                    {deliverable.entregavel_tipo && (
-                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                            {safeRender(deliverable.entregavel_tipo)}
-                        </span>
-                    )}
-                    {isPartial && pct && (
-                        <span className="text-[11px]" style={{ color: 'var(--color-warning)' }}>
-                            IA completou {pct}%
-                        </span>
-                    )}
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[14px] font-bold tracking-tight truncate" style={{ color: isPartial ? 'var(--color-warning)' : 'var(--color-text-primary)' }}>
+                                {safeRender(deliverable.entregavel_titulo)}
+                            </span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider bg-black/5 ${toolInfo.color}`}>
+                                {toolInfo.name}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
+                            {deliverable.entregavel_tipo && (
+                                <span>{safeRender(deliverable.entregavel_tipo)}</span>
+                            )}
+                            {isPartial && pct && (
+                                <>
+                                    <div className="w-1 h-1 rounded-full bg-black/10" />
+                                    <span style={{ color: 'var(--color-warning)' }}>IA completou {pct}%</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-3">
                     <button
                         onClick={(e) => { e.stopPropagation(); openInGoogleDocs(deliverable, '', session, setLoadingDoc); }}
                         disabled={loadingState === (deliverable.id || 'export')}
-                        className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg transition-all duration-150 text-[11px] font-medium disabled:opacity-50"
-                        style={{ color: 'var(--color-text-tertiary)' }}
-                        onMouseEnter={e => {
-                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
-                            e.currentTarget.style.color = 'var(--color-text-secondary)';
-                        }}
-                        onMouseLeave={e => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                        }}
+                        className="flex items-center gap-2.5 h-10 px-4 rounded-xl bg-black/5 text-[12px] font-bold transition-all hover:bg-black/10 disabled:opacity-50"
+                        style={{ color: 'var(--color-text-primary)' }}
                     >
-                        {loadingState === (deliverable.id || 'export') ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} /> : <img src={toolInfo.icon} alt="" className="w-4 h-4 rounded object-contain opacity-60 grayscale" />}
-                        {loadingState === (deliverable.id || 'export') ? 'Gerando...' : `Abrir no ${toolInfo.name}`}
+                        {loadingState === (deliverable.id || 'export') ? (
+                            <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                            <img src={toolInfo.icon} alt="" className="w-4 h-4 object-contain opacity-70" />
+                        )}
+                        <span>{loadingState === (deliverable.id || 'export') ? 'Gerando...' : `Abrir no ${toolInfo.name}`}</span>
                     </button>
-                    {expanded
-                        ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
-                        : <ChevronDown className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />}
+
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 transition-transform duration-300" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                        <ChevronDown size={16} className="text-zinc-400" />
+                    </div>
                 </div>
             </div>
 
             {expanded && (
-                <div className="px-2.5 pb-2.5 pt-0">
+                <div className="px-6 pb-6 pt-2 border-t border-black/5">
                     <MarkdownContent content={content || 'Resumo final concluído.'} />
                 </div>
             )}

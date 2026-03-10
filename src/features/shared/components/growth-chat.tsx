@@ -2,13 +2,19 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-    Send, Loader2, Check, X, Globe, ExternalLink,
-    ChevronDown, ChevronUp, User as UserIcon, Play,
+    Send, Loader2, Check, X, Globe, Search,
+    ChevronDown, ChevronUp, User as UserIcon, Play, Zap, ArrowLeft
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import ModelSelector from '@/features/shared/components/model-selector';
+import LLMUsageIndicator from '@/features/shared/components/llm-usage-indicator';
 import { VoiceButton, VoiceInterimBadge } from '@/features/shared/components/voice-button';
 import { useVoiceInput } from '@/features/shared/hooks/use-voice-input';
+import { SourceBadgeList } from './SourceBadgeList';
+import { MarkdownContent } from './MarkdownContent';
+import { StreamingText } from './StreamingText';
+import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
+import { AutoScrollContainer } from './AutoScrollContainer';
 
 interface SearchSource {
     title: string;
@@ -22,10 +28,18 @@ interface Message {
     searching?: boolean;
     searchQuery?: string;
     searchSources?: SearchSource[];
+    intelligence_tools_used?: any[];
+    tokens?: number;
+    actual_provider?: string;
 }
 
 interface ExtractedProfile {
     [key: string]: any;
+    _research_tasks?: any[];
+    _fields_researched?: string[];
+    _research_pending?: boolean;
+    _chat_context?: any;
+    perfil?: any;
 }
 
 interface GrowthChatProps {
@@ -33,158 +47,15 @@ interface GrowthChatProps {
     loading?: boolean;
 }
 
-const FIELD_LABELS: Record<string, string> = {
-    nome_negocio: 'Nome',
-    segmento: 'Segmento',
-    modelo: 'Modelo',
-    localizacao: 'Local',
-    dificuldades: 'Desafios',
-    objetivos: 'Objetivos',
-    tempo_operacao: 'Tempo',
-    num_funcionarios: 'Equipe',
-    tipo_produto: 'Oferta',
-    ticket_medio: 'Ticket',
-    faturamento_mensal: 'Faturamento',
-    canais_venda: 'Canais',
-    concorrentes: 'Concorrentes',
-    diferencial: 'Diferencial',
-    cliente_ideal: 'Cliente Ideal',
-    investimento_marketing: 'Invest. Mkt',
-    modelo_operacional: 'Modelo Op.',
-    capital_disponivel: 'Capital',
-    principal_gargalo: 'Gargalo',
-    margem_lucro: 'Margem',
-    tempo_entrega: 'Prazo',
-    origem_clientes: 'Origem',
-    maior_objecao: 'Objeção',
-};
-
-const TypingDots: React.FC = () => (
-    <span className="inline-flex items-center gap-[3px]">
-        {[0, 1, 2].map(i => (
-            <span
-                key={i}
-                className="inline-block w-1.5 h-1.5 rounded-full"
-                style={{
-                    backgroundColor: 'var(--color-text-muted)',
-                    animation: 'dot-pulse 1.2s ease-in-out infinite',
-                    animationDelay: `${i * 0.2}s`,
-                }}
-            />
-        ))}
-    </span>
-);
-
-const ShimmerRow: React.FC<{ label?: string }> = ({ label = 'Pensando...' }) => (
-    <div className="flex gap-3">
-        <img src="/logo_icon.png" alt="Agent" className="w-7 h-7 object-contain flex-shrink-0 mt-0.5" />
-        <div className="flex-1 py-1">
-            <div
-                className="relative overflow-hidden rounded-lg flex items-center gap-3 px-3 py-2"
-                style={{
-                    backgroundColor: 'var(--color-surface-hover)',
-                    border: '1px solid var(--color-border)',
-                }}
-            >
-                <div
-                    className="absolute inset-0 pointer-events-none"
-                    style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)', animation: 'shimmer-slide 1.6s ease-in-out infinite' }}
-                />
-                <TypingDots />
-                <span className="text-xs relative" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
-            </div>
+const ShimmerRow: React.FC<{ label?: string }> = ({ label }) => (
+    <div className="flex gap-3 animate-pulse opacity-60">
+        <div className="w-7 h-7 rounded-full bg-slate-100 flex-shrink-0" />
+        <div className="flex-1 space-y-2 py-1">
+            <div className="h-3 w-40 bg-slate-100 rounded" />
+            <div className="h-2 w-full bg-slate-50 rounded" />
         </div>
     </div>
 );
-
-function useStreamText(target: string | undefined, onDone?: () => void) {
-    const [displayed, setDisplayed] = useState('');
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useEffect(() => {
-        if (!target) { setDisplayed(''); return; }
-        setDisplayed('');
-        let idx = 0;
-        const chunkSize = Math.max(3, Math.ceil(target.length / 80));
-        const speed = Math.max(8, Math.round(6000 / target.length));
-
-        const tick = () => {
-            idx = Math.min(idx + chunkSize, target.length);
-            setDisplayed(target.slice(0, idx));
-            if (idx < target.length) {
-                timerRef.current = setTimeout(tick, speed);
-            } else {
-                onDone?.();
-            }
-        };
-        timerRef.current = setTimeout(tick, 30);
-        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [target]);
-
-    return displayed;
-}
-
-const StreamingBubble: React.FC<{ target: string; onDone: () => void }> = ({ target, onDone }) => {
-    const text = useStreamText(target, onDone);
-    return (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>
-            {text}
-            {text.length < target.length && (
-                <span
-                    className="inline-block w-0.5 h-3.5 ml-0.5 animate-pulse align-middle"
-                    style={{ backgroundColor: 'var(--color-accent)', opacity: 0.7 }}
-                />
-            )}
-        </p>
-    );
-};
-
-const SourcesList: React.FC<{ sources: SearchSource[] }> = ({ sources }) => {
-    const [open, setOpen] = useState(false);
-    if (!sources.length) return null;
-    return (
-        <div className="mt-2">
-            <button
-                onClick={() => setOpen(o => !o)}
-                className="inline-flex items-center gap-1.5 text-[10px] transition-colors duration-150"
-                style={{ color: 'var(--color-text-muted)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-            >
-                <ExternalLink className="w-2.5 h-2.5" />
-                {sources.length} fonte{sources.length > 1 ? 's' : ''}
-                {open ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-            </button>
-            {open && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5" style={{ animation: 'fade-in 0.15s ease-out' }}>
-                    {sources.map((s, idx) => {
-                        let display = s.title;
-                        try { if (!display) display = new URL(s.url).hostname; } catch { display = s.url; }
-                        return (
-                            <a
-                                key={idx}
-                                href={s.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors duration-150"
-                                style={{
-                                    backgroundColor: 'var(--color-surface-2)',
-                                    color: 'var(--color-text-muted)',
-                                    border: '1px solid var(--color-border)',
-                                }}
-                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-                            >
-                                <ExternalLink className="w-2.5 h-2.5" />{display}
-                            </a>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-};
 
 const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false }) => {
     const { aiModel, setAiModel } = useAuth();
@@ -193,397 +64,445 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
     const [sending, setSending] = useState(false);
     const [extractedProfile, setExtractedProfile] = useState<ExtractedProfile>({});
     const [readyForAnalysis, setReadyForAnalysis] = useState(false);
-    const [fieldsCollected, setFieldsCollected] = useState<string[]>([]);
+    const [hasPendingResearch, setHasPendingResearch] = useState(false);
     const [streamingIdx, setStreamingIdx] = useState<number | null>(null);
-    const [initialized, setInitialized] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
 
-    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => { scrollToBottom(); }, [messages]);
-
+    // Initial message
     useEffect(() => {
-        if (!initialized) { setInitialized(true); initChat(); }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialized]);
+        if (messages.length === 0) {
+            setMessages([{
+                role: 'assistant',
+                content: 'Olá! Sou seu estrategista de negócios. Para começarmos sua análise de forma automática, **poderia me informar o CNPJ da sua empresa?** (Se não tiver, não tem problema, podemos ir conversando!)'
+            }]);
+        }
+    }, [messages.length]);
 
-    const cleanMessage = (c: string) => c.replace(/^🔍\s*\n?Buscou:.*?\n/i, '').trim();
-
-    const finalizeStreaming = useCallback((idx: number, msg: Message) => {
+    const finalizeStreaming = useCallback((idx: number) => {
         setMessages(prev => {
+            if (!prev[idx]) return prev;
             const next = [...prev];
-            next[idx] = { ...msg, content: msg.streamTarget || msg.content, streamTarget: undefined };
+            next[idx] = {
+                ...next[idx],
+                content: next[idx].streamTarget || next[idx].content,
+                streamTarget: undefined
+            };
             return next;
         });
         setStreamingIdx(null);
-        setTimeout(() => inputRef.current?.focus(), 50);
     }, []);
 
-    const startStreaming = useCallback((idx: number) => setStreamingIdx(idx), []);
-
-    const initChat = async () => {
-        try {
-            const res = await fetch('/api/growth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'chat', aiModel, messages: [], user_message: '', extracted_profile: {} }),
-            });
-            const data = await res.json();
-            if (data.reply) {
-                const cleaned = cleanMessage(data.reply);
-                setMessages([{ role: 'assistant', content: '', streamTarget: cleaned }]);
-                startStreaming(0);
-            }
-        } catch {
-            setMessages([{ role: 'assistant', content: 'Oi! 👋 Me conta: qual o nome da sua empresa e o que ela faz?' }]);
-        }
-    };
-
-    const sendMessage = async (overrideText?: string) => {
-        const text = overrideText || input.trim();
+    const sendMessage = async (overrideContent?: string) => {
+        const text = (overrideContent ?? input).trim();
         if (!text || sending) return;
 
-        const userMsg: Message = { role: 'user', content: text };
-        const updatedMessages = [...messages, userMsg];
-        setMessages(prev => [...prev, userMsg, { role: 'assistant', content: '...' }]);
-        if (!overrideText) setInput('');
+        if (!overrideContent) setInput('');
         setSending(true);
 
+        const newUserMsg: Message = { role: 'user', content: text };
+        setMessages(prev => [...prev, newUserMsg]);
+
         try {
+            abortControllerRef.current = new AbortController();
+
+            // Initial AI message placeholder
+            const initialAiMsg: Message = { role: 'assistant', content: '', intelligence_tools_used: [] };
+            setMessages(prev => [...prev, initialAiMsg]);
+            const aiMsgIdx = messages.length + 1;
+
             const res = await fetch('/api/growth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: 'chat', aiModel,
-                    messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+                    action: 'chat',
                     user_message: text,
                     extracted_profile: extractedProfile,
+                    aiModel,
+                    messages: messages.map(m => ({ role: m.role, content: m.content || m.streamTarget })).slice(-8),
                 }),
+                signal: abortControllerRef.current.signal,
             });
-            const data = await res.json();
-            const cleaned = cleanMessage(data.reply || 'Desculpe, não consegui processar. Pode tentar de novo?');
-            const aiMsg: Message = {
-                role: 'assistant',
-                content: '',
-                streamTarget: cleaned,
-                searching: data.search_performed,
-                searchQuery: data.search_query,
-                searchSources: data.search_sources || [],
-            };
+
+            if (!res.ok) throw new Error('Falha na comunicação');
+            if (!res.body) throw new Error('Corpo da resposta vazio');
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedContent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('data: ')) {
+                        try {
+                            const event = JSON.parse(trimmedLine.slice(6));
+
+                            if (event.type === 'tool') {
+                                setMessages(prev => {
+                                    const next = [...prev];
+                                    const lastIdx = next.length - 1;
+                                    const lastMsg = next[lastIdx];
+                                    if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+
+                                    const currentTools = lastMsg.intelligence_tools_used || [];
+                                    const existingIdx = currentTools.findIndex((t: any) => t.tool === event.tool);
+
+                                    const newTools = [...currentTools];
+                                    if (existingIdx >= 0) {
+                                        newTools[existingIdx] = event;
+                                    } else {
+                                        newTools.push(event);
+                                    }
+
+                                    next[lastIdx] = { ...lastMsg, intelligence_tools_used: newTools };
+                                    return next;
+                                });
+                            }
+                            else if (event.type === 'discovery') {
+                                setExtractedProfile(prev => ({ ...prev, [event.field]: event.value }));
+                            }
+                            else if (event.type === 'content') {
+                                accumulatedContent = event.text;
+                                setMessages(prev => {
+                                    const next = [...prev];
+                                    const lastIdx = next.length - 1;
+                                    const lastMsg = next[lastIdx];
+                                    if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+                                    next[lastIdx] = { ...lastMsg, streamTarget: accumulatedContent };
+                                    return next;
+                                });
+                                setStreamingIdx(prev => prev === null ? (messages.length + 1) : prev);
+                            }
+                            else if (event.type === 'result') {
+                                const data = event.data;
+                                if (data?.ready_for_analysis) setReadyForAnalysis(true);
+                                if (data?.extracted_profile) setExtractedProfile(prev => ({ ...prev, ...data.extracted_profile }));
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE event', e);
+                        }
+                    }
+                }
+            }
+
+            // Finalize streaming
             setMessages(prev => {
-                const next = [...prev.slice(0, -1), aiMsg];
-                startStreaming(next.length - 1);
-                return next;
+                const lastIdx = prev.length - 1;
+                if (prev[lastIdx]?.role === 'assistant') {
+                    const next = [...prev];
+                    next[lastIdx] = {
+                        ...next[lastIdx],
+                        content: next[lastIdx].streamTarget || next[lastIdx].content,
+                        streamTarget: undefined
+                    };
+                    return next;
+                }
+                return prev;
             });
-            if (data.extracted_profile) setExtractedProfile(data.extracted_profile);
-            if (data.fields_collected) setFieldsCollected(data.fields_collected);
-            if (data.ready_for_analysis) setReadyForAnalysis(true);
-        } catch {
-            setMessages(prev => [
-                ...prev.slice(0, -1),
-                { role: 'assistant', content: 'Erro de conexão. Tente novamente.' },
-            ]);
+            setStreamingIdx(null);
+
+        } catch (err: any) {
+            if (err.name === 'AbortError') return;
+            setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: 'Ops, tive um problema. Poderia repetir?' }]);
         } finally {
             setSending(false);
         }
     };
 
-    const handleConfirmResearch = () => sendMessage('sim, concordo');
-    const handleRejectResearch = () => sendMessage('não concordo, quero definir eu mesmo');
-
-    const handleGenerateAnalysis = () => {
-        const criticalCheck = ['nome_negocio', 'segmento'].every(
-            f => extractedProfile[f] && String(extractedProfile[f]).trim() !== ''
-        );
-        if (!criticalCheck) {
-            sendMessage('Preciso saber pelo menos o nome e o segmento do seu negócio para gerar a análise.');
-            return;
-        }
-        const ep = extractedProfile;
-        const backendProfile = {
-            nome_negocio: ep.nome_negocio || '', segmento: ep.segmento || '', localizacao: ep.localizacao || '',
-            modelo: ep.modelo || '', faturamento: ep.faturamento || '', equipe: ep.equipe || '',
-            ticket_medio: ep.ticket_medio || '', problemas: ep.problemas || '', objetivos: ep.objetivos || '',
-            investimento: ep.investimento || '', canais: ep.canais || '', clientes: ep.clientes || '',
-            concorrentes: ep.concorrentes || '', diferencial: ep.diferencial || '', margem: ep.margem || '',
-            gargalos: ep.gargalos || '', site: ep.site || '', instagram: ep.instagram || '', whatsapp: ep.whatsapp || '',
-            perfil: {
-                nome: ep.nome_negocio || '', nome_negocio: ep.nome_negocio || '', segmento: ep.segmento || '',
-                localizacao: ep.localizacao || '', modelo: ep.modelo || '', modelo_negocio: ep.modelo || '',
-                tipo_oferta: ep.tipo_produto || 'ambos', tipo_produto: ep.tipo_produto || '',
-                tempo_mercado: ep.tempo_operacao || '', tempo_operacao: ep.tempo_operacao || '',
-                ticket_medio: ep.ticket_medio || '', ticket_medio_estimado: ep.ticket_medio || '',
-                faturamento_mensal: ep.faturamento || '', faturamento_faixa: ep.faturamento || '',
-                num_funcionarios: ep.equipe || '', investimento_marketing: ep.investimento || '',
-                capital_disponivel: ep.capital_disponivel || '',
-                dificuldades: ep.dificuldades || ep.problemas || '', objetivos: ep.objetivos || '',
-                modelo_operacional: ep.modelo_operacional || ep.operacao || '', canais_venda: ep.canais || '',
-                concorrentes: ep.concorrentes || '', diferencial: ep.diferencial || '', cliente_ideal: ep.clientes || '',
-                margem_lucro: ep.margem || '', origem_clientes: ep.origem_clientes || '',
-                maior_objecao: ep.maior_objecao || '', tempo_entrega: ep.tempo_entrega || '',
-                principal_gargalo: ep.gargalos || '', instagram_handle: ep.instagram || '',
-                linkedin_url: ep.linkedin || '', site_url: ep.site || '', email_contato: ep.email || '',
-                whatsapp_numero: ep.whatsapp || '', google_maps_url: ep.google_maps || '',
-            },
-            restricoes_criticas: {
-                modelo_operacional: ep.operacao || null, capital_disponivel: ep.investimento || null,
-                equipe_solo: ep.equipe === '1' || ep.equipe === 'solo' || ep.equipe === 'só eu' || ep.equipe === 'sozinho' ||
-                    String(ep.equipe || '').toLowerCase().includes('sozinho') || String(ep.equipe || '').toLowerCase().includes('só eu'),
-                canais_existentes: ep.canais || [], principal_gargalo: ep.gargalos || null, maior_objecao: ep.maior_objecao || null,
-            },
-            diagnostico_inicial: {
-                problemas_identificados: [{ area: 'geral', problema: ep.problemas || '', severidade: 3, evidencia: 'Relatado pelo usuário', restricao_afetada: ep.operacao || null }],
-                pontos_fortes: [ep.diferencial || 'A definir'],
-            },
-            categorias_relevantes: [], queries_sugeridas: {},
-            objetivos_parseados: [{ objetivo: ep.objetivos || '', prazo: 'médio prazo', area_relacionada: 'crescimento' }],
-            _chat_context: {
-                concorrentes: ep.concorrentes || null, cliente_ideal: ep.clientes || null,
-                canais_venda: ep.canais || [], investimento_marketing: ep.investimento || null,
-                margem_lucro: ep.margem || null, tempo_entrega: ep.tempo_entrega || null,
-                origem_clientes: ep.origem_clientes || null, maior_objecao: ep.maior_objecao || null,
-                instagram_handle: ep.instagram || null, linkedin_url: ep.linkedin || null,
-                site_url: ep.site || null, email_contato: ep.email || null,
-                whatsapp_numero: ep.whatsapp || null, google_maps_url: ep.google_maps || null,
-            },
-            _research_tasks: ep._research_tasks || [],
-        };
-        onProfileReady(backendProfile);
+    const handleConfirmResearch = () => {
+        setHasPendingResearch(false);
+        sendMessage('Sim, pode realizar a pesquisa detalhada agora para avançarmos.');
     };
 
-    const hasPendingResearch = !!extractedProfile._research_pending;
-    const progressPercent = Math.round((fieldsCollected.length / Object.keys(FIELD_LABELS).length) * 100);
+    const handleRejectResearch = () => {
+        setHasPendingResearch(false);
+        sendMessage('Prefiro definir os detalhes eu mesmo por enquanto.');
+    };
 
-    const voice = useVoiceInput({
-        onTranscript: (text) => {
-            setInput(prev => (prev ? `${prev} ${text}` : text));
-            setTimeout(() => inputRef.current?.focus(), 50);
-        },
-    });
+    const startAnalysis = () => {
+        onProfileReady(extractedProfile);
+    };
+
+    const onVoiceSuccess = useCallback((text: string) => {
+        setInput(text);
+        if (inputRef.current) {
+            inputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }, []);
+
+    const {
+        state: voiceState,
+        interimText,
+        isSupported: voiceSupported,
+        toggle: toggleVoice
+    } = useVoiceInput({ onTranscript: onVoiceSuccess });
+
+    const progressValue = messages.length * 5; // Fake progress
+    const currentBusinessName = extractedProfile.nome_negocio || 'Seu Negócio';
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="w-full h-full flex flex-col pt-0 relative z-10 overflow-hidden bg-white rounded-3xl p-6 border border-gray-200">
+            {/* Standard Header - Matches Task Chat */}
+
             {/* Progress bar */}
-            <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }}>
+            <div className="w-full h-[2px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
                 <div
                     className="h-full transition-all duration-700 ease-out"
-                    style={{
-                        width: `${progressPercent}%`,
-                        background: `linear-gradient(90deg, var(--color-accent), rgba(59,130,246,0.4))`,
-                    }}
+                    style={{ width: `${Math.min(progressValue, 100)}%`, backgroundColor: 'var(--color-accent)' }}
                 />
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-                {messages.map((msg, i) => {
-                    const isThinking = msg.content === '...' && !msg.streamTarget;
-                    const isStreaming = streamingIdx === i && !!msg.streamTarget;
 
-                    if (isThinking) {
-                        return <ShimmerRow key={i} label="Pensando..." />;
-                    }
 
-                    if (msg.role === 'user') {
-                        return (
-                            <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
-                                <div
-                                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                                    style={{ backgroundColor: 'var(--color-surface-2)' }}
-                                >
-                                    <UserIcon className="w-3.5 h-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
-                                </div>
-                                <div className="flex-1 text-right">
-                                    <div
-                                        className="inline-block text-left rounded-2xl rounded-tr-md px-4 py-2.5 max-w-[85%]"
-                                        style={{
-                                            backgroundColor: 'var(--color-surface-active)',
-                                            border: '1px solid var(--color-border)',
-                                        }}
-                                    >
-                                        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    }
+            {/* Content Area - Using AutoScrollContainer */}
+            <div className="flex-1 relative overflow-hidden w-full">
+                <AutoScrollContainer>
+                    <div className="w-full space-y-8 px-8 pt-8 pb-64 max-w-4xl mx-auto text-start">
+                        {messages.map((msg, i) => {
+                            const isThinking = msg.content === '...' && !msg.streamTarget;
+                            const isStreaming = streamingIdx === i && !!msg.streamTarget;
 
-                    return (
-                        <div key={i} className="flex gap-3" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
-                            <img src="/logo_icon.png" alt="Agent" className="w-7 h-7 object-contain flex-shrink-0 mt-0.5" />
-                            <div className="flex-1 min-w-0">
-                                {msg.searching && msg.searchQuery && (
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <div
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-                                            style={{
-                                                backgroundColor: 'var(--color-warning-muted)',
-                                                border: '1px solid rgba(234,179,8,0.15)',
-                                            }}
-                                        >
-                                            <Globe className="w-3 h-3" style={{ color: 'var(--color-warning)' }} />
-                                            <span className="text-[10px] font-medium" style={{ color: 'rgba(234,179,8,0.8)' }}>&ldquo;{msg.searchQuery}&rdquo;</span>
+                            if (isThinking) {
+                                return <ShimmerRow key={i} label="Analisando contexto..." />;
+                            }
+
+                            if (msg.role === 'user') {
+                                return (
+                                    <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
+                                        <div className="flex-1 text-right">
+                                            <div
+                                                className="inline-block text-left rounded-2xl rounded-tr-md px-4 py-2"
+                                                style={{
+                                                    backgroundColor: '#f3f4f6',
+                                                }}
+                                            >
+                                                <p className="text-[14px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
+                                            </div>
                                         </div>
                                     </div>
-                                )}
+                                );
+                            }
 
-                                {isStreaming && msg.streamTarget ? (
-                                    <StreamingBubble target={msg.streamTarget} onDone={() => finalizeStreaming(i, msg)} />
-                                ) : (
-                                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>{msg.content}</p>
-                                )}
+                            const hasSources = (msg.searchSources?.length ?? 0) > 0;
+                            const contentToRender = isStreaming ? (msg.streamTarget || '') : (msg.content || msg.streamTarget || '');
 
-                                {/* Research action buttons */}
-                                {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
-                                    <div className="flex flex-wrap items-center gap-2 mt-3">
-                                        <button
-                                            onClick={handleConfirmResearch}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95"
-                                            style={{
-                                                backgroundColor: 'var(--color-success-muted)',
-                                                color: 'var(--color-success)',
-                                                border: '1px solid rgba(34,197,94,0.15)',
-                                            }}
-                                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(34,197,94,0.15)')}
-                                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-success-muted)')}
-                                        >
-                                            <Check className="w-3 h-3" />Concordo, pesquisar
-                                        </button>
-                                        <button
-                                            onClick={handleRejectResearch}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95"
-                                            style={{
-                                                backgroundColor: 'var(--color-surface-hover)',
-                                                color: 'var(--color-text-tertiary)',
-                                                border: '1px solid var(--color-border)',
-                                            }}
-                                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-active)')}
-                                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
-                                        >
-                                            <X className="w-3 h-3" />Definir eu mesmo
-                                        </button>
+                            return (
+                                <div key={i} className="w-full space-y-4 pt-4 first:pt-0" style={{ animation: 'fade-in-up 0.5s ease-out forwards' }}>
+                                    {hasSources && (
+                                        <div className="mb-2">
+                                            <SourceBadgeList
+                                                sources={msg.searchSources || []}
+                                                maxVisible={4}
+                                                animated={isStreaming}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="flex items-center justify-between gap-2">
+                                        {((msg.tokens ?? 0) > 0 || msg.actual_provider) && (
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100/50 backdrop-blur-sm border border-slate-200 font-sans">
+                                                {msg.actual_provider && (
+                                                    <div className="flex items-center gap-1.5 mr-1 border-r border-slate-200 pr-2">
+                                                        <img
+                                                            src={
+                                                                msg.actual_provider === 'gemini' ? '/gemini.png' :
+                                                                    msg.actual_provider === 'groq' ? '/groq llama.svg' :
+                                                                        msg.actual_provider === 'sambanova' ? '/sambanova.png' :
+                                                                            msg.actual_provider === 'deepseek' ? '/deepseek.png' :
+                                                                                msg.actual_provider === 'cerebras' ? '/cerebras.png' :
+                                                                                    '/openrouter.png'
+                                                            }
+                                                            className="w-3.5 h-3.5 rounded-sm object-contain"
+                                                            alt={msg.actual_provider}
+                                                            style={{ filter: 'none' }}
+                                                        />
+                                                        <span className="text-[10px] font-bold text-slate-700 capitalize">{msg.actual_provider}</span>
+                                                    </div>
+                                                )}
+                                                <Zap className="w-3 h-3 text-amber-500" />
+                                                <span className="text-[10px] font-mono font-bold text-slate-500">{msg.tokens || 0} unit</span>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
 
-                                {msg.searching && msg.searchSources && msg.searchSources.length > 0 && (
-                                    <SourcesList sources={msg.searchSources} />
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
-                <div ref={messagesEndRef} />
+                                    <IntelligenceToolsBadges
+                                        tools={msg.intelligence_tools_used}
+                                        isRunning={isStreaming}
+                                    />
+
+                                    <div className="space-y-3">
+                                        {isStreaming ? (
+                                            <StreamingText
+                                                text={contentToRender}
+                                                speed={6}
+                                                className="text-[14px] leading-relaxed"
+                                                onDone={() => finalizeStreaming(i)}
+                                            />
+                                        ) : (
+                                            <div className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
+                                                <MarkdownContent content={msg.content} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
+                                        <div className="flex flex-wrap items-center gap-2 mt-4">
+                                            <button
+                                                onClick={handleConfirmResearch}
+                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 shadow-sm"
+                                                style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+                                            >
+                                                <Check className="w-3.5 h-3.5" />Concordo, pesquisar
+                                            </button>
+                                            <button
+                                                onClick={handleRejectResearch}
+                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 border border-slate-200"
+                                                style={{ backgroundColor: 'white', color: 'var(--color-text-secondary)' }}
+                                            >
+                                                <X className="w-3.5 h-3.5" />Definir eu mesmo
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {i < messages.length - 1 && (
+                                        <div className="h-px w-full bg-slate-100 mt-8" />
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </AutoScrollContainer>
             </div>
 
-            {/* Input card */}
-            <div className="px-4 pb-4 pt-3 flex-shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
-                <div
-                    className="w-full rounded-xl p-3 flex flex-col gap-2"
-                    style={{
-                        backgroundColor: 'var(--color-surface-active)',
-                        border: '1px solid var(--color-border)',
-                    }}
-                >
-                    <VoiceInterimBadge text={voice.interimText} />
-
-                    <div className="flex flex-col gap-2 flex-1 min-w-0 w-full mb-1">
-                        {loading ? (
-                            <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
-                                <TypingDots />
-                                <span>Gerando análise...</span>
+            {/* Simplified Floating Input Card - Matches Task Card style */}
+            <div
+                className="absolute bottom-6 left-6 right-6 flex flex-col gap-0 backdrop-blur-3xl rounded-[32px] overflow-hidden z-[100] border-2 border-gray-200 shadow-xl"
+                style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)' }}
+            >
+                <div className="w-full p-4 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-3 w-full">
+                        <div className="flex flex-col gap-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-[14px] font-bold tracking-tight leading-tight line-clamp-1" style={{ color: 'var(--color-text-primary)' }}>
+                                    {sending ? 'IA Processando...' : currentBusinessName}
+                                </h1>
+                                {readyForAnalysis && <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={9} className="text-white" strokeWidth={4} /></div>}
                             </div>
-                        ) : (
-                            <input
-                                ref={inputRef}
-                                type="text"
-                                value={voice.state === 'listening' && voice.interimText
-                                    ? `${input}${input ? ' ' : ''}${voice.interimText}`
-                                    : input}
-                                onChange={e => {
-                                    if (voice.state !== 'listening') setInput(e.target.value);
-                                }}
-                                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                                placeholder={
-                                    voice.state === 'listening'
-                                        ? 'Ouvindo...'
-                                        : 'Digite ou fale sua mensagem...'
-                                }
-                                disabled={sending || streamingIdx !== null}
-                                className="w-full bg-transparent text-[13px] font-medium focus:outline-none disabled:opacity-40 leading-snug"
-                                style={{
-                                    color: 'var(--color-text-primary)',
-                                }}
-                            />
-                        )}
+                            <div className="flex items-center gap-2 text-[10px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
+                                <span className="opacity-40">#{messages.length} Passos</span>
+                                <div className="w-1 h-1 rounded-full bg-black/10" />
+                                <span>Agente Estratégico</span>
+                            </div>
+                        </div>
 
-                        {/* Metadata badges */}
-                        <div className="flex flex-wrap items-center gap-2 text-left text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                            <span className="font-mono" style={{ color: 'var(--color-text-tertiary)' }}>
-                                {messages.filter(m => m.role === 'user').length > 0
-                                    ? `#${messages.filter(m => m.role === 'user').length}`
-                                    : '#0'}
-                            </span>
-                            {fieldsCollected.length > 0 && (
-                                <>
-                                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--color-border-strong)' }} />
-                                    <span style={{ color: 'var(--color-accent)', opacity: 0.7 }}>{progressPercent}% coletado</span>
-                                </>
-                            )}
+                        {/* Right side icons/actions */}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 bg-black/5 hover:bg-black/10 transition-colors px-1.5 py-1.5 rounded-xl border border-black/5 group cursor-pointer">
+                                <Search size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                                <Zap size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                                <X size={15} className="text-gray-400 group-hover:text-gray-600 transition" />
+                            </div>
                         </div>
                     </div>
 
-                    {/* Footer */}
-                    <div className="w-full pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                                <ModelSelector value={aiModel} onChange={setAiModel} direction="up" />
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                                {readyForAnalysis && !loading && !sending && (
-                                    <button
-                                        onClick={handleGenerateAnalysis}
-                                        className="relative overflow-hidden flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer"
-                                        style={{ backgroundColor: 'transparent' }}
-                                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-accent-muted)')}
-                                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                        title="Gerar análise completa"
-                                    >
-                                        <div
-                                            className="absolute inset-0 pointer-events-none"
-                                            style={{ background: 'linear-gradient(90deg, transparent, var(--color-accent-muted), transparent)', animation: 'shimmer-slide 2.4s ease-in-out infinite' }}
-                                        />
-                                        <Play className="w-3.5 h-3.5 fill-current relative z-10" style={{ color: 'var(--color-accent)' }} />
-                                        <span className="text-[11px] font-medium relative z-10" style={{ color: 'var(--color-text-tertiary)' }}>Gerar Análise</span>
-                                    </button>
-                                )}
-
-                                <VoiceButton
-                                    state={voice.state}
-                                    interimText={voice.interimText}
-                                    isSupported={voice.isSupported}
-                                    onToggle={voice.toggle}
-                                />
-
+                    <div className="flex flex-col gap-3 pt-2 border-t border-black/5">
+                        {readyForAnalysis ? (
+                            <div className="flex flex-col gap-3">
+                                <p className="text-[12px] text-gray-500 font-medium">Todos os dados necessários foram coletados. Deseja iniciar a análise profunda?</p>
                                 <button
-                                    onClick={() => sendMessage()}
-                                    disabled={!input.trim() || sending || streamingIdx !== null || loading}
-                                    className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50"
-                                    style={{ backgroundColor: 'transparent' }}
-                                    onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
-                                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                    title="Enviar mensagem"
+                                    onClick={startAnalysis}
+                                    className="flex items-center justify-center gap-2 h-11 px-6 rounded-2xl bg-black text-white text-[14px] font-bold shadow-xl shadow-black/20 hover:-translate-y-0.5 transition-all active:scale-95 group"
                                 >
-                                    {sending
-                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
-                                        : <Send className="w-3.5 h-3.5" style={{ color: 'var(--color-text-tertiary)' }} />}
+                                    <Zap className="w-4 h-4 fill-amber-400 text-amber-400 group-hover:scale-125 transition-transform" />
+                                    <span>Iniciar Análise Estratégica</span>
                                 </button>
+                            </div>
+                        ) : (
+                            <div className="relative group">
+                                <textarea
+                                    ref={inputRef}
+                                    value={input}
+                                    onChange={e => setInput(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            sendMessage();
+                                        }
+                                    }}
+                                    placeholder="Descreva seu negócio ou responda à pergunta acima..."
+                                    className="w-full bg-transparent border-0 ring-0 focus:ring-0 focus:ring-transparent focus:ring-offset-0 outline-none focus:outline-none text-[14px] placeholder:text-gray-400 text-gray-700 min-h-[44px] max-h-32 py-2 resize-none transition-all pr-24 shadow-none border-transparent focus:border-transparent appearance-none"
+                                    style={{ outline: 'none !important', boxShadow: 'none !important' } as any}
+                                    rows={1}
+                                />
+                                <div className="absolute right-0 bottom-0 flex items-center gap-1 p-1">
+                                    <VoiceButton
+                                        state={voiceState}
+                                        interimText={interimText}
+                                        isSupported={voiceSupported}
+                                        onToggle={toggleVoice}
+                                    />
+                                    <button
+                                        onClick={() => sendMessage()}
+                                        disabled={!input.trim() || sending}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 disabled:opacity-30 shadow-sm"
+                                        style={{
+                                            backgroundColor: input.trim() ? 'var(--color-accent)' : 'var(--color-surface-hover)',
+                                            color: input.trim() ? 'white' : 'var(--color-text-muted)',
+                                        }}
+                                    >
+                                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} className={input.trim() ? 'translate-x-0.5 -translate-y-0.5' : ''} />}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between mt-1">
+                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 scale-90 origin-left shadow-sm">
+                                <ModelSelector value={aiModel} onChange={setAiModel} />
+                                <div className="w-[1px] h-3 bg-black/10" />
+                                <LLMUsageIndicator provider={aiModel} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <VoiceInterimBadge text={interimText} />
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <style jsx global>{`
+                .scrollbar-hide::-webkit-scrollbar {
+                    display: none;
+                }
+                .scrollbar-hide {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+                @keyframes fade-in-up {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                /* Global focus ring removal */
+                *:focus, *:active, *:focus-visible, [data-focus], .focus-ring {
+                    outline: none !important;
+                    box-shadow: none !important;
+                    --tw-ring-offset-width: 0px !important;
+                    --tw-ring-width: 0px !important;
+                    --tw-ring-color: transparent !important;
+                    border-color: transparent !important;
+                }
+                textarea:focus, input:focus {
+                    background-color: transparent !important;
+                }
+            `}</style>
         </div>
     );
 };

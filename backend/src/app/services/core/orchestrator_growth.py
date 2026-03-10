@@ -28,7 +28,7 @@ from app.services.common import (
 # Imports específicos deste módulo
 from dotenv import load_dotenv
 
-def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
+def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider=None):
     """Helper function to process a single category in a thread."""
     from app.services.search.search_service import search_duckduckgo, scrape_page
     cat_id = cat.get("id", "")
@@ -313,7 +313,7 @@ Responda de forma direta e util:"""
     }
 
 
-def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = "groq") -> dict:
+def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = None) -> dict:
     """
     Run targeted market searches in PARALLEL to speed up analysis.
     NOW: Passes restrictions to category processing for context-aware results.
@@ -485,8 +485,8 @@ def main():
     if "pillar_key" in input_data and isinstance(input_data["pillar_key"], str):
         input_data["pillar_key"] = input_data["pillar_key"].replace("-", "_")
 
-    # Extract model provider from input data (fallback to environment variable)
-    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "groq")))
+    # Extract model provider from input data (fallback to None for auto-balancing)
+    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL")))
 
     print(f"DEBUG: Action={args.action} | Model={model_provider}", file=sys.stderr)
 
@@ -616,16 +616,42 @@ def main():
             print(f"    📂 id={mc.get('id','')} | nome={mc.get('nome','')} | fontes={len(mc.get('fontes',[]))} | dados={'✅' if has_data else '❌'}", file=sys.stderr)
 
         # Step 2.5: Sales Intelligence Brief — sintetiza pesquisa em contexto orientado a vendas
-        print("🧠 Gerando brief de inteligência de vendas...", file=sys.stderr)
+        print("🧠 Gerando brief de inteligência de vendas e coletando inteligência estratégica...", file=sys.stderr)
         sales_brief = generate_sales_brief(profile, discovery_data, market_data, model_provider)
+        
+        # 🧪 [NEW] Inteligência Estratégica para o Auditor (Trends, News, Triggers)
+        strategic_intel = {}
+        try:
+            from app.services.intelligence.intelligence_hub import intel_hub
+            perfil_p = profile.get("perfil", profile)
+            segmento_p = perfil_p.get("segmento", "")
+            local_p = perfil_p.get("localizacao", "Brasil")
+            
+            # Coleta rápida de tendências e notícias reais
+            intel_data = intel_hub.research_target_audience(
+                segmento=segmento_p, 
+                localizacao=local_p,
+                include_companies=False # Evitar lentidão na análise inicial
+            )
+            strategic_intel = intel_data.get("intelligence", {})
+            print(f"  ✅ Inteligência Estratégica coletada: {list(strategic_intel.keys())}", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ Falha ao coletar inteligência estratégica: {e}", file=sys.stderr)
+
         if sales_brief:
             profile["_sales_brief"] = sales_brief
             print(f"  💡 Brief gerado: {len(sales_brief)} chars", file=sys.stderr)
 
-        # Step 3: Per-dimension scoring with discovery context
-        print("THOUGHT: Calculando score por dimensão...")
+        # Step 3: Per-dimension scoring with discovery + strategic context
+        print("THOUGHT: Calculando score por dimensão com Auditoria de Mercado...")
         print("📊 Calculando score por dimensão...", file=sys.stderr)
-        score_result = run_scorer(profile, market_data, discovery_data=discovery_data, model_provider=model_provider)
+        score_result = run_scorer(
+            profile, 
+            market_data, 
+            discovery_data=discovery_data, 
+            strategic_intel=strategic_intel,
+            model_provider=model_provider
+        )
         score_data = score_result.get("score", {}) if score_result.get("success") else {}
         task_plan = score_result.get("taskPlan", {})
 

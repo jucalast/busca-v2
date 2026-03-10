@@ -43,7 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isNextAuthenticated = nextAuthStatus === 'authenticated';
 
   // Global AI Model preference
-  const [aiModel, setAiModel] = useState<string>('groq');
+  const [aiModel, setAiModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('global_ai_model') || 'gemini';
+    }
+    return 'gemini';
+  });
 
   // Load purely custom session from localStorage on mount
   useEffect(() => {
@@ -55,11 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!valid) {
           localStorage.removeItem('auth_token');
         }
-      }
-
-      const storedModel = localStorage.getItem('global_ai_model');
-      if (storedModel) {
-        setAiModel(storedModel);
       }
 
       setIsLoadingCustom(false);

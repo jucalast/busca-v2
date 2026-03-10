@@ -3,62 +3,13 @@
 import React from 'react';
 import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check, Globe, Newspaper, TrendingUp, Search, Building2, Zap } from 'lucide-react';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
-import { SourceBadgeList } from '@/features/workspace/components/pillar-workspace/components/SourceBadgeList';
-import { MarkdownContent } from '@/features/workspace/components/pillar-workspace/components/MarkdownContent';
-import { StreamingText } from '@/features/workspace/components/pillar-workspace/components/StreamingText';
+import { SourceBadgeList } from '@/features/shared/components/SourceBadgeList';
+import { MarkdownContent } from '@/features/shared/components/MarkdownContent';
+import { StreamingText } from '@/features/shared/components/StreamingText';
 import { cleanMarkdown, exportAsCSV, openInGoogleDocs, openInGoogleSheets, openInGoogleForms } from '@/features/workspace/components/pillar-workspace/utils';
 import { useSession } from 'next-auth/react';
 
-// ═══ Intelligence Tools Visualization ═══
-const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; style: React.CSSProperties }> = {
-    web_search: { icon: Search, label: 'Web Search', style: { color: 'var(--color-accent)' } },
-    web_extractor: { icon: Globe, label: 'Web Extractor', style: { color: 'var(--color-accent)' } },
-    news_extractor: { icon: Newspaper, label: 'News Intel', style: { color: 'var(--color-warning)' } },
-    trend_analyzer: { icon: TrendingUp, label: 'Google Trends', style: { color: 'var(--color-success)' } },
-    trend_analyzer_rising: { icon: Zap, label: 'Termos em Alta', style: { color: 'var(--color-warning)' } },
-    sales_triggers: { icon: Zap, label: 'Sales Triggers', style: { color: 'var(--color-destructive)' } },
-    cnpj_lookup: { icon: Building2, label: 'CNPJ Lookup', style: { color: 'var(--color-accent)' } },
-};
-
-function IntelToolRow({ tool }: { tool: any }) {
-    const [open, setOpen] = React.useState(false);
-    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool, style: { color: 'var(--color-text-secondary)' } };
-    const Icon = config.icon;
-    const detail = tool.detail as string | undefined;
-
-    return (
-        <div className="flex flex-col">
-            <button
-                onClick={() => detail && setOpen(p => !p)}
-                className={`group flex items-center gap-1.5 w-fit transition-colors ${detail ? 'cursor-pointer' : 'cursor-default'}`}
-            >
-                <Icon className="w-3 h-3 shrink-0 transition-colors" style={config.style} />
-                <span className="text-[11px] transition-colors" style={{ color: 'var(--color-text-secondary)' }}>
-                    {config.label}
-                </span>
-                {detail && (
-                    <ChevronDown className={`w-3 h-3 transition-all duration-200 ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--color-text-muted)' }} />
-                )}
-            </button>
-            {open && detail && (
-                <p className="text-[11px] leading-relaxed mt-1 pl-[18px]" style={{ color: 'var(--color-text-muted)' }}>{detail}</p>
-            )}
-        </div>
-    );
-}
-
-function IntelligenceToolsBadges({ tools, isRunning = false }: { tools?: any[]; isRunning?: boolean }) {
-    const applied = tools?.filter(t => t.status === 'success') ?? [];
-    if (applied.length === 0) return null;
-
-    return (
-        <div className="flex flex-col gap-1 py-3">
-            {applied.map((tool, idx) => (
-                <IntelToolRow key={`${tool.tool}-${idx}`} tool={tool} />
-            ))}
-        </div>
-    );
-}
+import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
 
 /**
  * If a string looks like raw JSON (starts with { or [), format it into readable markdown.
@@ -163,8 +114,9 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                             <span
                                 className="text-[12px] font-medium truncate flex-1 relative z-10"
                                 style={{
-                                    color: status === 'done' || isDone ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
+                                    color: status === 'done' || isDone ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
                                     textDecoration: status === 'done' || isDone ? 'line-through' : 'none',
+                                    opacity: status === 'done' || isDone ? 0.6 : 1
                                 }}
                             >
                                 {safeRender(st.titulo)}
@@ -372,8 +324,9 @@ export default function TaskSubtasksDisplay({
                 <p
                     key={`${variant}-${idx}`}
                     className={variant === 'full'
-                        ? 'text-[13px] font-light text-zinc-100 leading-relaxed'
-                        : 'text-[11px] text-zinc-300 leading-relaxed'}
+                        ? 'text-[14px] font-normal leading-relaxed'
+                        : 'text-[12px] leading-relaxed'}
+                    style={{ color: variant === 'full' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
                 >
                     {paragraph}
                 </p>
@@ -443,25 +396,25 @@ export default function TaskSubtasksDisplay({
                         }}>
                             {/* 🔄 STRATEGIC FEEDBACK LOOP INSIGHTS */}
                             {result?.strategic_insights && (
-                                <div className="mb-4 p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 backdrop-blur-sm">
-                                    <div className="flex items-center gap-2 mb-2 text-indigo-400">
+                                <div className="mb-4 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 backdrop-blur-sm">
+                                    <div className="flex items-center gap-2 mb-2 text-blue-600">
                                         <Zap className="w-4 h-4 fill-current" />
                                         <span className="text-[10px] font-bold uppercase tracking-widest">Descoberta Estratégica Realimentada</span>
                                     </div>
                                     <div className="space-y-3">
                                         {result.strategic_insights.score_adjustment && (
                                             <div className="flex items-center gap-2">
-                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${result.strategic_insights.score_adjustment.delta > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${result.strategic_insights.score_adjustment.delta > 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
                                                     {result.strategic_insights.score_adjustment.delta > 0 ? '+' : ''}{result.strategic_insights.score_adjustment.delta} Score
                                                 </div>
-                                                <span className="text-[11px] text-zinc-300 italic">"{result.strategic_insights.score_adjustment.motivo}"</span>
+                                                <span className="text-[11px] text-slate-600 italic">"{result.strategic_insights.score_adjustment.motivo}"</span>
                                             </div>
                                         )}
                                         {result.strategic_insights.profile_updates && Object.keys(result.strategic_insights.profile_updates).length > 0 && (
                                             <div className="flex flex-wrap gap-2">
                                                 {Object.entries(result.strategic_insights.profile_updates).map(([k, v]) => (
-                                                    <div key={k} className="text-[9px] bg-zinc-800/80 px-2 py-1 rounded border border-zinc-700/50 text-zinc-400">
-                                                        <span className="font-bold uppercase opacity-60 mr-1">{k}:</span> {String(v)}
+                                                    <div key={k} className="text-[9px] bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700">
+                                                        <span className="font-bold uppercase opacity-80 mr-1">{k}:</span> {String(v)}
                                                     </div>
                                                 ))}
                                             </div>
@@ -488,17 +441,41 @@ export default function TaskSubtasksDisplay({
                             )}
 
                             {/* Subtask title */}
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="text-[24px] font-medium text-white tracking-normal">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
                                     {subtaskTitle}
                                 </div>
+                                {result?._tokens > 0 && (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200">
+                                        {result._actual_provider && (
+                                            <div className="flex items-center gap-1.5 mr-1 border-r border-slate-200 pr-2">
+                                                <img
+                                                    src={
+                                                        result._actual_provider === 'gemini' ? '/gemini.png' :
+                                                            result._actual_provider === 'groq' ? '/groq llama.svg' :
+                                                                result._actual_provider === 'sambanova' ? '/sambanova.png' :
+                                                                    result._actual_provider === 'deepseek' ? '/deepseek.png' :
+                                                                        result._actual_provider === 'cerebras' ? '/cerebras.png' :
+                                                                            '/openrouter.png'
+                                                    }
+                                                    className="w-3.5 h-3.5 rounded-sm object-contain"
+                                                    alt={result._actual_provider}
+                                                    style={{ filter: 'none' }}
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-700 capitalize">{result._actual_provider}</span>
+                                            </div>
+                                        )}
+                                        <Zap className="w-3 h-3 text-amber-500" />
+                                        <span className="text-[10px] font-mono font-bold text-slate-500">{result._tokens} units</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* AI opinion / streaming */}
                             {(opinionText || isStreaming) ? (
                                 isStreaming ? (
                                     streamingText ? (
-                                        <StreamingText text={streamingText} speed={6} className="text-[13px] text-zinc-300 leading-relaxed" />
+                                        <StreamingText text={streamingText} speed={6} className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }} />
                                     ) : (
                                         <div className="flex items-center gap-0.5 py-2">
                                             {[0, 1, 2].map(i => (
@@ -565,6 +542,19 @@ export default function TaskSubtasksDisplay({
                         </div>
                     );
                 })}
+                {items.length > 1 && (
+                    <div className="flex justify-end pt-5 border-t border-slate-100 mt-8">
+                        <div className="flex items-center gap-2.5 group">
+                            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold group-hover:text-slate-500 transition-colors">Total Tokens do Processo</span>
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
+                                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
+                                <span className="text-[13px] font-mono font-bold text-slate-800">
+                                    {items.reduce((sum, item) => sum + (item.result?._tokens || 0), 0)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -621,8 +611,8 @@ export default function TaskSubtasksDisplay({
                                     const renderSubtaskOpinion = () => {
                                         if (!resultForSubtask || !subtaskOpinionText) return null;
                                         return (
-                                            <div className="px-3 pb-3 pt-2 border-t border-white/[0.03]">
-                                                <div className="text-[9px] font-semibold tracking-[0.3em] text-violet-200/60 uppercase mb-1">Opinião da IA</div>
+                                            <div className="px-3 pb-3 pt-2 border-t border-slate-200/40">
+                                                <div className="text-[9px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-1">Opinião da IA</div>
                                                 <div className="space-y-1.5">
                                                     {renderOpinionParagraphs(subtaskOpinionText, 'compact')}
                                                 </div>
@@ -649,8 +639,9 @@ export default function TaskSubtasksDisplay({
                                                 <span
                                                     className="text-[12px] font-medium truncate flex-1"
                                                     style={{
-                                                        color: status === 'done' ? 'var(--color-text-muted)' : status === 'running' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                                        color: status === 'done' ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
                                                         textDecoration: status === 'done' ? 'line-through' : 'none',
+                                                        opacity: status === 'done' ? 0.6 : 1
                                                     }}
                                                 >
                                                     {st.modo_execucao === 'producao' && (
@@ -671,6 +662,12 @@ export default function TaskSubtasksDisplay({
                                                 {status === 'running' && (
                                                     <span className="text-[9px] font-medium animate-pulse px-2" style={{ color: 'var(--color-accent)' }}>
                                                         {st.modo_execucao === 'producao' ? '🏭 Produzindo...' : 'Executando...'}
+                                                    </span>
+                                                )}
+
+                                                {status === 'done' && resultForSubtask?._tokens > 0 && (
+                                                    <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 ml-auto">
+                                                        {resultForSubtask._tokens} unit
                                                     </span>
                                                 )}
 

@@ -85,7 +85,7 @@ export default function BusinessMindMap({
     return (
         <div
             ref={containerRef}
-            className="h-full w-full bg-[#0a0a0c] relative select-none overflow-hidden"
+            className="h-full w-full bg-white relative select-none overflow-hidden"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -96,15 +96,15 @@ export default function BusinessMindMap({
 
             {/* ─── Title ─── */}
             <div className="absolute top-4 left-4 z-30">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/40 backdrop-blur-sm">
-                    <Brain className="w-4 h-4 text-violet-400" />
-                    <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Mapa do Negócio</span>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/80 backdrop-blur-md border border-gray-200 shadow-sm">
+                    <Brain className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Mapa do Negócio</span>
                 </div>
             </div>
 
             {/* ─── Zoom level ─── */}
             <div className="absolute bottom-4 left-4 z-30">
-                <span className="text-[10px] text-zinc-600 font-mono px-2 py-1 rounded bg-white/[0.03]">
+                <span className="text-[10px] text-gray-600 font-mono px-2 py-1 rounded bg-white/80 backdrop-blur-md border border-gray-200">
                     {Math.round(zoom * 100)}%
                 </span>
             </div>

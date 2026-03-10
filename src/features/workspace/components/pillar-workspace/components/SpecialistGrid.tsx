@@ -158,50 +158,58 @@ export function SpecialistGrid({
         const pillarSources = [...new Set([...mktSources, ...planSources])];
 
         const isExecuted = !!(pillarStates[key] || (completedTasks[key]?.size ?? 0) > 0);
-        const hoverColor = isExecuted ? meta.color : '#4B5563';
+        const hoverColor = isExecuted ? meta.color : '#A1A1AA';
 
         return (
             <div
                 key={key}
                 className="relative flex flex-col group cursor-pointer transition-all"
                 style={{
-                    animationDelay: `${index * 60}ms`,
-                    animation: 'fade-in-up 0.4s ease-out backwards',
+                    animationDelay: `${index * 50}ms`,
+                    animation: 'fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards',
                 }}
                 onClick={() => !isLoading && !hasMoved && handleSelectPillar(key)}
             >
-                {/* Minimalist Agent Card - Opaque with Subtitle */}
+                {/* macOS Style Glass Chip Card */}
                 <div
-                    className="w-72 h-16 rounded-xl px-5 transition-all duration-200 overflow-hidden relative flex items-center justify-between pointer-events-auto"
-                    style={{ backgroundColor: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}
+                    className="w-72 h-[72px] rounded-2xl px-5 transition-all duration-300 overflow-hidden relative flex items-center justify-between pointer-events-auto bg-white border border-gray-200 shadow-[0_4px_30px_rgba(0,0,0,0.03)]"
                     onMouseEnter={e => {
-                        e.currentTarget.style.borderColor = hoverColor;
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = `0 4px 20px -5px ${hoverColor}30`;
+                        e.currentTarget.style.borderColor = `${hoverColor}40`;
+                        e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+                        e.currentTarget.style.boxShadow = `0 12px 30px -10px ${hoverColor}20`;
+                        e.currentTarget.style.backgroundColor = 'white';
                     }}
                     onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-border)';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+                        e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                        e.currentTarget.style.boxShadow = '0 4px 30px rgba(0,0,0,0.03)';
+                        e.currentTarget.style.backgroundColor = 'white';
                     }}
                 >
-                    <div className="flex flex-col gap-0.5 mt-0.5 truncate pr-4">
-                        <h3 className="text-lg font-normal tracking-tight truncate leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+                    <div className="flex flex-col gap-1 truncate pr-4">
+                        <h3 className="text-[15px] font-bold tracking-tight truncate leading-tight" style={{ color: 'var(--color-text-primary)' }}>
                             {meta.label}
                         </h3>
-                        <div className="flex items-center gap-3 mt-1">
-                            <span className="text-[10px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
-                                Diag: {typeof dim.score === 'number' ? Math.round(dim.score) : 0}
-                            </span>
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-black/5">
+                                <span className="text-[9px] font-bold uppercase tracking-wider opacity-60" style={{ color: 'var(--color-text-primary)' }}>
+                                    Score
+                                </span>
+                                <span className="text-[10px] font-bold" style={{ color: hoverColor }}>
+                                    {typeof dim.score === 'number' ? Math.round(dim.score) : 0}
+                                </span>
+                            </div>
                             {isExecuted && pillarSources.length > 0 && <StackedSources sources={pillarSources} max={3} />}
                         </div>
                     </div>
 
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <div className="flex items-center transition-all duration-300">
                         {isLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" style={{ color: hoverColor }} />
+                            <Loader2 size={16} className="animate-spin" style={{ color: hoverColor }} />
                         ) : (
-                            <ChevronRight className="w-4 h-4" style={{ color: hoverColor }} />
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ChevronRight size={14} style={{ color: 'var(--color-text-primary)' }} />
+                            </div>
                         )}
                     </div>
                 </div>
@@ -210,60 +218,57 @@ export function SpecialistGrid({
     };
 
     return (
-        <div className="min-h-full relative z-20" style={{ backgroundColor: 'var(--color-bg)' }}>
+        <div className="min-h-full relative z-20 overflow-hidden bg-white rounded-3xl mb-8 mr-4">
             <div className="flex flex-col">
                 {/* Score Gauge Header */}
-                <ScoreGauge
-                    score={scoreGeral}
-                    classificacao={safeRender(classificacao) as string}
-                    onExport={() => exportFullAnalysis(session, setLoadingFullExport, {
-                        profile, score, specialists, marketData, taskPlan: pillarStates
-                    }, userProfile.name)}
-                    onRedo={onRedo}
-                    loadingExport={loadingFullExport}
-                    hasSession={!!session?.accessToken}
-                >
-                    {/* Map Controls */}
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={resetTransform}
-                            className="p-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-hover)] transition-colors shadow-lg text-[var(--color-text-secondary)] flex items-center gap-2 px-3 h-8"
-                        >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span className="text-[9px] font-bold uppercase tracking-wider">Resetar Vista</span>
-                        </button>
-                        <div className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[8px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest text-center h-8 flex items-center">
-                            Apenas Arraste p/ Mover
+                <div className="relative z-[100]">
+                    <ScoreGauge
+                        score={scoreGeral}
+                        classificacao={safeRender(classificacao) as string}
+                        onExport={() => exportFullAnalysis(session, setLoadingFullExport, {
+                            profile, score, specialists, marketData, taskPlan: pillarStates
+                        }, userProfile.name)}
+                        onRedo={onRedo}
+                        loadingExport={loadingFullExport}
+                        hasSession={!!session?.accessToken}
+                    >
+                        {/* Map Controls */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={resetTransform}
+                                className="h-9 px-4 rounded-xl border border-black/5 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center gap-2"
+                            >
+                                <RotateCcw size={14} className="text-zinc-500" />
+                                <span className="text-[11px] font-bold text-zinc-600">Centralizar Vista</span>
+                            </button>
+                            <div className="h-9 px-4 rounded-xl border border-black/5 bg-black/5 text-[10px] text-zinc-500 font-bold uppercase tracking-widest flex items-center">
+                                Arraste p/ Mover
+                            </div>
                         </div>
-                        <div className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[8px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest text-center h-8 flex items-center">
-                            Scroll p/ Zoom
-                        </div>
-                    </div>
-                </ScoreGauge>
+                    </ScoreGauge>
+                </div>
 
                 {error && (
-                    <div
-                        className="p-3 rounded-lg text-sm mx-2"
-                        style={{
-                            backgroundColor: 'var(--color-destructive-muted)',
-                            color: 'var(--color-destructive)',
-                            border: '1px solid rgba(239,68,68,0.15)',
-                        }}
-                    >
-                        {error}
-                        <button onClick={() => setError('')} className="ml-2 underline text-xs" style={{ color: 'var(--color-destructive)' }}>Fechar</button>
+                    <div className="px-6 py-2">
+                        <div className="p-4 rounded-2xl bg-red-50/50 border border-red-100 backdrop-blur-sm flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle size={16} className="text-red-500" />
+                                <span className="text-[13px] font-medium text-red-600">{error}</span>
+                            </div>
+                            <button onClick={() => setError('')} className="text-[11px] font-bold uppercase tracking-wider text-red-400">Fechar</button>
+                        </div>
                     </div>
                 )}
 
-                {/* Agent Pipeline Architecture - Dark Board Section with Dots */}
-                <div className="w-full -mt-[57px] relative z-0 overflow-hidden select-none">
+                {/* Agent Pipeline Architecture - board Section with Dots */}
+                <div className="w-full -mt-[40px] relative z-0 overflow-hidden select-none rounded-3xl">
                     <div
                         ref={boardRef}
-                        className="w-full relative min-h-[85vh] outline-none cursor-grab active:cursor-grabbing"
+                        className="w-full relative min-h-[90vh] outline-none cursor-grab active:cursor-grabbing"
                         style={{
-                            backgroundColor: 'var(--color-bg)',
-                            backgroundImage: `radial-gradient(var(--color-border) 1px, transparent 1px)`,
-                            backgroundSize: '24px 24px',
+                            backgroundColor: 'rgba(243, 244, 246, 0.5)',
+                            backgroundImage: `radial-gradient(rgba(0,0,0,0.15) 1.5px, transparent 1.5px)`,
+                            backgroundSize: '40px 40px',
                             backgroundPosition: `${transform.x}px ${transform.y}px`
                         }}
                         onWheel={handleWheel}
@@ -279,29 +284,10 @@ export function SpecialistGrid({
                                 transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
                                 transformOrigin: '0 0',
                                 backfaceVisibility: 'hidden',
-                                WebkitFontSmoothing: 'antialiased',
-                                MozOsxFontSmoothing: 'grayscale',
                                 transformStyle: 'preserve-3d'
                             }}
                         >
                             <div className="flex flex-row items-center justify-start gap-0 relative min-h-[600px] min-w-max px-32">
-                                <style jsx>{`
-                                    .custom-scrollbar::-webkit-scrollbar {
-                                        height: 5px;
-                                        width: 5px;
-                                    }
-                                    .custom-scrollbar::-webkit-scrollbar-track {
-                                        background: transparent;
-                                    }
-                                    .custom-scrollbar::-webkit-scrollbar-thumb {
-                                        background: var(--color-border);
-                                        border-radius: 10px;
-                                    }
-                                    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                                        background: var(--color-text-tertiary);
-                                    }
-                                `}</style>
-
                                 {/* SVG DEFS for Dynamic Colored Arrows */}
                                 <svg className="absolute w-0 h-0">
                                     <defs>
@@ -317,7 +303,7 @@ export function SpecialistGrid({
                                             <path
                                                 d="M 4 3 L 10 8 L 4 13"
                                                 fill="none"
-                                                stroke="#4B5563"
+                                                stroke="rgba(0,0,0,0.1)"
                                                 strokeWidth="2.5"
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
@@ -356,19 +342,19 @@ export function SpecialistGrid({
                                 <div className="w-24 h-[192px] flex-none relative z-0">
                                     <svg className="w-full h-full" style={{ overflow: 'visible' }}>
                                         <path
-                                            d="M 0 96 C 36 96, 36 32, 76 32 L 96 32"
+                                            d="M 0 96 C 36 96, 40 32, 76 32 L 96 32"
                                             fill="none"
-                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
                                         />
                                         <path
-                                            d="M 0 96 C 36 96, 36 160, 76 160 L 96 160"
+                                            d="M 0 96 C 36 96, 40 160, 76 160 L 96 160"
                                             fill="none"
-                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
                                         />
                                     </svg>
@@ -384,19 +370,19 @@ export function SpecialistGrid({
                                 <div className="w-24 h-[192px] flex-none relative z-0">
                                     <svg className="w-full h-full" style={{ overflow: 'visible' }}>
                                         <path
-                                            d="M 0 32 C 36 32, 36 96, 76 96 L 96 96"
+                                            d="M 0 32 C 36 32, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? PILLAR_META['branding'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? PILLAR_META['branding'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "url(#arrowhead-branding)" : "url(#arrowhead-inactive)")}
                                         />
                                         <path
-                                            d="M 0 160 C 36 160, 36 96, 76 96 L 96 96"
+                                            d="M 0 160 C 36 160, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? PILLAR_META['identidade_visual'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? PILLAR_META['identidade_visual'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "url(#arrowhead-identidade_visual)" : "url(#arrowhead-inactive)")}
                                         />
                                     </svg>
@@ -411,19 +397,19 @@ export function SpecialistGrid({
                                 <div className="w-24 h-[192px] flex-none relative z-0">
                                     <svg className="w-full h-full" style={{ overflow: 'visible' }}>
                                         <path
-                                            d="M 0 96 C 36 96, 36 32, 76 32 L 96 32"
+                                            d="M 0 96 C 36 96, 40 32, 76 32 L 96 32"
                                             fill="none"
-                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
                                         />
                                         <path
-                                            d="M 0 96 C 36 96, 36 160, 76 160 L 96 160"
+                                            d="M 0 96 C 36 96, 40 160, 76 160 L 96 160"
                                             fill="none"
-                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
                                         />
                                     </svg>
@@ -439,19 +425,19 @@ export function SpecialistGrid({
                                 <div className="w-24 h-[192px] flex-none relative z-0">
                                     <svg className="w-full h-full" style={{ overflow: 'visible' }}>
                                         <path
-                                            d="M 0 32 C 36 32, 36 96, 76 96 L 96 96"
+                                            d="M 0 32 C 36 32, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? PILLAR_META['trafego_organico'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? PILLAR_META['trafego_organico'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_organico)" : "url(#arrowhead-inactive)")}
                                         />
                                         <path
-                                            d="M 0 160 C 36 160, 36 96, 76 96 L 96 96"
+                                            d="M 0 160 C 36 160, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? PILLAR_META['trafego_pago'].color : '#4B5563')}
-                                            strokeWidth="2.5"
-                                            strokeOpacity={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "0.6" : "0.3")}
+                                            stroke={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? PILLAR_META['trafego_pago'].color : 'rgba(0,0,0,0.1)')}
+                                            strokeWidth="3"
+                                            strokeOpacity={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_pago)" : "url(#arrowhead-inactive)")}
                                         />
                                     </svg>

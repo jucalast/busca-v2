@@ -85,6 +85,10 @@ class NewsExtractor:
             result["error"] = "gnews não disponível"
             return result
         
+        if not segmento or not segmento.strip():
+            print(f"  ⚠️ NewsExtractor: segmento vazio. Pulando.", file=sys.stderr)
+            return result
+
         try:
             client = self._create_client(period=period, max_results=max_results)
             

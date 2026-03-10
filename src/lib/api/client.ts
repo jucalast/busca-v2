@@ -164,6 +164,7 @@ export async function runOrchestrator(
 }
 
 export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480000, authToken?: string | null): ReadableStream {
+    const action = inputData.action || 'analyze';
     // This previously used child_process spawn + SSE emulation from Python.
     // For now we will adapt this to proxy an actual HTTP SSE stream from FastAPI.
     return new ReadableStream({
@@ -183,7 +184,7 @@ export function runOrchestratorStreaming(inputData: any, timeoutMs: number = 480
 
             try {
                 // The /analyze route must return a SSE response (text/event-stream)
-                const url = `${process.env.FASTAPI_URL || 'http://127.0.0.1:8000'}/api/v1/growth/analyze`;
+                const url = `${process.env.FASTAPI_URL || 'http://127.0.0.1:8000'}/api/v1/growth/${action}`;
                 console.log(`[Growth SSE] Fetching stream from ${url}`);
 
                 const headers: Record<string, string> = { 'Content-Type': 'application/json' };

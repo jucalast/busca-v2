@@ -66,7 +66,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
       }
       let size = 0, alpha = 0;
       if (type === 'core') { size = Math.random() * 0.8 + 0.4; alpha = Math.random() * 0.5 + 0.5; }
-      else if (type === 'glow') { size = Math.random() * 1.5 + 0.5; alpha = Math.random() * 0.15 + 0.05; }
+      else if (type === 'glow') { size = Math.random() * 1.5 + 0.5; alpha = Math.random() * 0.3 + 0.1; }
       else if (type === 'scatter') { size = Math.random() * 0.8 + 0.3; alpha = Math.random() * 0.6 + 0.2; }
       return { type, baseX: x, baseY: y, x, y, size, alpha, density, vx: 0, vy: 0 };
     }
@@ -84,7 +84,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
       }
       c.lineTo(cx, cy - outerR);
       c.closePath();
-      c.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      c.fillStyle = 'rgba(37, 99, 235, 0.6)';
       c.fill();
     }
 
@@ -94,7 +94,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
       c.translate(x, y - 40 * scale);
       const H = 80 * scale;
       const serifH = 10 * scale;
-      c.fillStyle = 'white';
+      c.fillStyle = '#2563eb';
       c.fillRect(0, 0, 36 * scale, serifH);
       c.fillRect(10 * scale, 0, 16 * scale, H);
       c.fillRect(0, H - serifH, 50 * scale, serifH);
@@ -117,7 +117,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
         ambient.push(createParticle(0, 0, 'ambient', canvas.width, canvas.height));
       }
 
-      ctx.fillStyle = 'white';
+      ctx.fillStyle = '#2563eb';
       let fontSize = Math.min(canvas.width / 8, 120);
       ctx.font = `bold ${fontSize}px 'Montserrat', sans-serif`;
       ctx.textBaseline = 'middle';
@@ -138,7 +138,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
       const plusY = startY;
       const thick = fontSize * 0.14;
 
-      ctx.fillStyle = 'white';
+      ctx.fillStyle = '#2563eb';
       ctx.fillRect(plusX - plusSize / 2, plusY - thick / 2, plusSize, thick);
       ctx.fillRect(plusX - thick / 2, plusY - plusSize / 2, thick, plusSize);
 
@@ -226,10 +226,10 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
 
       ctx.shadowBlur = 0;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalCompositeOperation = 'source-over';
       if (shadowCanvasRef.current) {
         ctx.drawImage(shadowCanvasRef.current, 0, 0);
       }
@@ -241,7 +241,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
         p.y += p.vy;
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+        ctx.fillStyle = `rgba(37, 99, 235, ${p.alpha})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
@@ -264,7 +264,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
         }
 
         // Draw
-        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+        ctx.fillStyle = `rgba(37, 99, 235, ${p.alpha})`;
         if (p.type === 'ambient' || p.type === 'glow') {
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -327,7 +327,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
   }, []);
 
   return (
-    <div className="relative w-full h-screen min-h-screen bg-black flex flex-col items-center justify-center overflow-hidden cursor-crosshair">
+    <div className="relative w-full h-screen min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden cursor-crosshair">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
@@ -345,8 +345,8 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
             }}
             className="flex items-center gap-2 mb-3"
           >
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/80 shrink-0 animate-pulse" />
-            <span className="text-white/90 text-sm font-mono tracking-wide">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 animate-pulse" />
+            <span className="text-slate-900 text-sm font-mono tracking-wide">
               {thoughts[0]}
             </span>
           </div>
@@ -360,8 +360,8 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
               className="flex items-center gap-2"
               style={{ opacity: 0.18 - i * 0.04 }}
             >
-              <span className="inline-block w-1 h-1 rounded-full bg-white/40 shrink-0" />
-              <span className="text-white/60 text-xs font-mono tracking-wide line-through decoration-white/20">
+              <span className="inline-block w-1 h-1 rounded-full bg-slate-400 shrink-0" />
+              <span className="text-slate-500 text-xs font-mono tracking-wide line-through decoration-slate-300">
                 {thought}
               </span>
             </div>
@@ -369,13 +369,13 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
         </div>
 
         {/* Divider + status */}
-        <div className="mt-4 border-t border-white/10 pt-3 flex items-center justify-between">
+        <div className="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between">
           {progress ? (
-            <p className="text-white/40 text-xs tracking-wider">{progress}</p>
+            <p className="text-slate-500 text-xs tracking-wider">{progress}</p>
           ) : (
-            <p className="text-white/30 text-xs tracking-wider">Analisando seu negócio...</p>
+            <p className="text-slate-400 text-xs tracking-wider">Analisando seu negócio...</p>
           )}
-          <p className="text-white/20 text-xs tracking-wider">1–3 min</p>
+          <p className="text-slate-300 text-xs tracking-wider">1–3 min</p>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import ParticleLoader from '@/features/shared/components/particle-loader';
+import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 import GrowthChat from '@/features/shared/components/growth-chat';
 import SidebarLayout from '@/components/layout/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,9 +25,15 @@ export default function Home() {
   const [agentThoughts, setAgentThoughts] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [growthLoading, setGrowthLoading] = useState(false);
+  const [analysisSubtasks, setAnalysisSubtasks] = useState<any[]>([]);
+  const [analysisStatuses, setAnalysisStatuses] = useState<Record<number, 'waiting' | 'running' | 'done' | 'error'>>({});
+  const [analysisResults, setAnalysisResults] = useState<Record<number, any>>({});
+  const [analysisStep, setAnalysisStep] = useState(0);
+  const [businessName, setBusinessName] = useState('Seu Negócio');
   // ─── Growth mode: Chat profile ready → Run Analysis ───
   const handleChatProfileReady = async (chatProfile: any) => {
     setIsAnalyzing(true);
+    setBusinessName(chatProfile.nome_negocio || chatProfile.nome || 'Seu Negócio');
     setGrowthProgress('Gerando perfil completo e pesquisando mercado...');
     setError('');
 
@@ -95,6 +102,10 @@ export default function Home() {
     try {
       setGrowthProgress('Iniciando análise...');
       setAgentThoughts([]);
+      setAnalysisSubtasks([]);
+      setAnalysisStatuses({});
+      setAnalysisResults({});
+      setAnalysisStep(0);
 
       const res = await fetch('/api/growth', {
         method: 'POST',
@@ -119,6 +130,7 @@ export default function Home() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let currentSubtaskIdx = -1;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -136,6 +148,61 @@ export default function Home() {
 
             if (event.type === 'thought') {
               setAgentThoughts(prev => [event.text, ...prev].slice(0, 20));
+              setGrowthProgress(event.text);
+
+              // If it sounds like a new major step, create a running subtask
+              if (event.text.includes('Iniciando') || event.text.includes('Pesquisando') || event.text.includes('Calculando') || event.text.includes('Analisando')) {
+                currentSubtaskIdx++;
+                const newSubtask = { titulo: event.text.replace('Iniciando ', '').replace('Pesquisando ', '').replace('Calculating ', '').replace('...', '') };
+                setAnalysisSubtasks(prev => [...prev, newSubtask]);
+                setAnalysisStatuses(prev => ({ ...prev, [currentSubtaskIdx]: 'running' }));
+                setAnalysisStep(currentSubtaskIdx + 1);
+              }
+
+              // Also put the current thought as a temporary opiniao for the active step if it's empty
+              if (currentSubtaskIdx >= 0) {
+                setAnalysisResults(prev => {
+                  if (prev[currentSubtaskIdx]?.opiniao) return prev;
+                  return {
+                    ...prev,
+                    [currentSubtaskIdx]: {
+                      ...(prev[currentSubtaskIdx] || {}),
+                      opiniao: event.text
+                    }
+                  };
+                });
+              }
+            } else if (event.type === 'tool') {
+              if (currentSubtaskIdx >= 0) {
+                setAnalysisResults(prev => {
+                  const res = prev[currentSubtaskIdx] || { intelligence_tools_used: [] };
+                  const tools = [...(res.intelligence_tools_used || [])];
+                  const existingIdx = tools.findIndex(t => t.tool === event.tool);
+                  if (existingIdx >= 0) {
+                    tools[existingIdx] = event;
+                  } else {
+                    tools.push(event);
+                  }
+                  return { ...prev, [currentSubtaskIdx]: { ...res, intelligence_tools_used: tools } };
+                });
+              }
+            } else if (event.type === 'step_result') {
+              const idx = currentSubtaskIdx >= 0 ? currentSubtaskIdx : 0;
+              setAnalysisSubtasks(prev => {
+                const copy = [...prev];
+                if (copy[idx]) copy[idx].titulo = event.title || copy[idx].titulo;
+                else copy[idx] = { titulo: event.title };
+                return copy;
+              });
+              setAnalysisResults(prev => ({
+                ...prev,
+                [idx]: {
+                  ...(prev[idx] || {}),
+                  opiniao: event.opiniao || event.opinion,
+                  sources: event.sources || []
+                }
+              }));
+              setAnalysisStatuses(prev => ({ ...prev, [idx]: 'done' }));
             } else if (event.type === 'result') {
               const result = event.data;
               if (!result.success) throw new Error(result.error || 'Falha na análise');
@@ -208,11 +275,20 @@ export default function Home() {
     >
       {/* Analyzing Stage / Loading Particle */}
       {isAnalyzing ? (
-        <ParticleLoader progress={growthProgress} thoughts={agentThoughts} />
+        <div className="flex-1 relative overflow-hidden rounded-3xl mb-8 mr-8 h-full bg-white/80 backdrop-blur-2xl border border-white/60 shadow-2xl">
+          <AnalysisExecutionLoader
+            subtasks={analysisSubtasks}
+            statuses={analysisStatuses}
+            results={analysisResults}
+            businessName={businessName}
+            isExecuting={isAnalyzing}
+            currentStep={analysisStep}
+          />
+        </div>
       ) : (
-        /* Chat Onboarding Stage */
-        <div className="p-6 h-full flex items-center justify-center relative">
-          <div className="w-full max-w-2xl flex flex-col" style={{ height: 'calc(100vh - 130px)', minHeight: '560px' }}>
+        <div className="relative w-full h-full">
+          {/* Chat Onboarding Stage - Fixed at 40% width to match task chat proportion */}
+          <div className="w-[40%] min-w-0 h-full flex flex-col items-start pr-8 pb-8" style={{ flex: '0 0 40%', maxWidth: '40%' }}>
             <GrowthChat
               onProfileReady={handleChatProfileReady}
               loading={false}
@@ -222,7 +298,7 @@ export default function Home() {
           {/* Error Message Float */}
           {error && (
             <div
-              className="absolute top-6 left-1/2 -translate-x-1/2 z-50 p-4 rounded-xl text-center"
+              className="absolute top-6 left-1/4 -translate-x-1/2 z-50 p-4 rounded-xl text-center"
               style={{
                 backgroundColor: 'var(--color-destructive-muted)',
                 border: '1px solid rgba(239,68,68,0.2)',
@@ -247,5 +323,5 @@ export default function Home() {
         </div>
       )}
     </SidebarLayout>
-  );
+  )
 }

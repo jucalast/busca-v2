@@ -76,7 +76,16 @@ def assist(req: ActionAssistRequest):
 
 @router.post("/chat")
 def chat(req: ActionChatRequest):
-    return do_chat(req.model_dump())
+    return StreamingResponse(
+        do_chat(req.model_dump()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 @router.post("/dimension-chat")
 def dimension_chat(req: ActionDimensionChatRequest):
@@ -165,5 +174,14 @@ def get_dashboard_metrics(current_user: dict = Depends(get_current_user)):
             "total_analyses": analyses,
             "failed_tasks": failed_tasks
         }
+    }
+
+@router.get("/usage-metrics")
+def get_llm_usage_metrics():
+    from app.services.intelligence.usage_tracker import usage_tracker
+    usage = usage_tracker.get_current_usage()
+    return {
+        "success": True,
+        "usage": usage
     }
 

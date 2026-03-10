@@ -24,14 +24,18 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body
-        className={`${inter.className} ${inter.variable} antialiased min-h-screen`}
-        style={{ backgroundColor: 'var(--color-bg)' }}
+        className={`${inter.className} ${inter.variable} antialiased min-h-screen relative`}
       >
-        <NextAuthProvider>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </NextAuthProvider>
+        {/* Global Glass Background Layer */}
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-[50px] z-0 pointer-events-none" />
+
+        <div className="relative z-10">
+          <NextAuthProvider>
+            <AuthProvider>
+              {children}
+            </AuthProvider>
+          </NextAuthProvider>
+        </div>
       </body>
     </html>
   );

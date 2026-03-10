@@ -5,6 +5,7 @@ import PillarWorkspace from '@/features/workspace/components/pillar-workspace';
 import BusinessMindMap from '@/features/analysis/components/business-mind-map';
 import SidebarLayout from '@/components/layout/sidebar';
 import ParticleLoader from '@/features/shared/components/particle-loader';
+import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -42,6 +43,11 @@ export default function AnalysisClientWrapper({
     const [isReanalyzing, setIsReanalyzing] = useState(false);
     const [reanalyzeProgress, setReanalyzeProgress] = useState('');
     const [reanalyzeThoughts, setReanalyzeThoughts] = useState<string[]>([]);
+    const [reanalyzeEvents, setReanalyzeEvents] = useState<any[]>([]);
+    const [reanalyzeSubtasks, setReanalyzeSubtasks] = useState<any[]>([]);
+    const [reanalyzeStatuses, setReanalyzeStatuses] = useState<Record<number, 'waiting' | 'running' | 'done' | 'error'>>({});
+    const [reanalyzeResults, setReanalyzeResults] = useState<Record<number, any>>({});
+    const [reanalyzeStep, setReanalyzeStep] = useState(0);
 
     const { setRightSidebarContent } = useSidebar();
 
@@ -53,8 +59,13 @@ export default function AnalysisClientWrapper({
         }
 
         setIsReanalyzing(true);
-        setReanalyzeProgress('Iniciando nova análise...');
+        setReanalyzeProgress('Iniciando análise estratégica...');
         setReanalyzeThoughts([]);
+        setReanalyzeEvents([]);
+        setReanalyzeSubtasks([]);
+        setReanalyzeStatuses({});
+        setReanalyzeResults({});
+        setReanalyzeStep(0);
 
         try {
             const res = await fetch('/api/growth', {
@@ -80,6 +91,8 @@ export default function AnalysisClientWrapper({
             const decoder = new TextDecoder();
             let buffer = '';
 
+            let currentSubtaskIdx = -1;
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -92,25 +105,87 @@ export default function AnalysisClientWrapper({
                     const line = part.trim();
                     if (!line.startsWith('data: ')) continue;
 
-                    const payload = JSON.parse(line.slice(6));
-                    if (payload.type === 'thought') {
-                        setReanalyzeThoughts(prev => [payload.text, ...prev].slice(0, 15));
-                        setReanalyzeProgress(payload.text);
-                    } else if (payload.type === 'result') {
-                        const data = payload.data;
-                        if (!data.success) throw new Error(data.error || 'Falha na reanálise');
+                    try {
+                        const payload = JSON.parse(line.slice(6));
 
-                        // refresh state and route (reuse same page if business_id unchanged)
-                        setGrowthData(data);
-                        setProfile(data.profile);
-                        setMindMapPillarStates({});
-                        setMindMapCompletedTasks({});
+                        if (payload.type === 'thought') {
+                            setReanalyzeEvents(prev => [...prev, payload]);
+                            setReanalyzeThoughts(prev => [payload.text, ...prev].slice(0, 15));
+                            setReanalyzeProgress(payload.text);
+                            // If it sounds like a new major step, create a running subtask
+                            if (payload.text.includes('Iniciando') || payload.text.includes('Pesquisando') || payload.text.includes('Calculando') || payload.text.includes('Analisando')) {
+                                currentSubtaskIdx++;
+                                const newSubtask = { titulo: payload.text.replace('Iniciando ', '').replace('Pesquisando ', '').replace('Calculating ', '').replace('...', '') };
+                                setReanalyzeSubtasks(prev => [...prev, newSubtask]);
+                                setReanalyzeStatuses(prev => ({ ...prev, [currentSubtaskIdx]: 'running' }));
+                                setReanalyzeStep(currentSubtaskIdx + 1);
+                            }
 
-                        if (data.business_id && data.business_id !== currentBusinessId) {
-                            router.push(`/analysis/${data.business_id}`);
+                            // Also put the current thought as a temporary opiniao for the active step if it's empty
+                            if (currentSubtaskIdx >= 0) {
+                                setReanalyzeResults(prev => {
+                                    if (prev[currentSubtaskIdx]?.opiniao) return prev;
+                                    return {
+                                        ...prev,
+                                        [currentSubtaskIdx]: {
+                                            ...(prev[currentSubtaskIdx] || {}),
+                                            opiniao: payload.text
+                                        }
+                                    };
+                                });
+                            }
+                        } else if (payload.type === 'tool') {
+                            setReanalyzeEvents(prev => [...prev, payload]);
+                            if (currentSubtaskIdx >= 0) {
+                                setReanalyzeResults(prev => {
+                                    const res = prev[currentSubtaskIdx] || { intelligence_tools_used: [] };
+                                    const tools = [...(res.intelligence_tools_used || [])];
+                                    const existingIdx = tools.findIndex(t => t.tool === payload.tool);
+                                    if (existingIdx >= 0) {
+                                        tools[existingIdx] = payload;
+                                    } else {
+                                        tools.push(payload);
+                                    }
+                                    return { ...prev, [currentSubtaskIdx]: { ...res, intelligence_tools_used: tools } };
+                                });
+                            }
+                        } else if (payload.type === 'step_result') {
+                            setReanalyzeEvents(prev => [...prev, payload]);
+                            // Find the matching subtask or use current
+                            const idx = currentSubtaskIdx >= 0 ? currentSubtaskIdx : 0;
+                            setReanalyzeSubtasks(prev => {
+                                const copy = [...prev];
+                                if (copy[idx]) copy[idx].titulo = payload.title || copy[idx].titulo;
+                                else copy[idx] = { titulo: payload.title };
+                                return copy;
+                            });
+                            setReanalyzeResults(prev => ({
+                                ...prev,
+                                [idx]: {
+                                    ...(prev[idx] || {}),
+                                    opiniao: payload.opiniao || payload.opinion,
+                                    sources: payload.sources || []
+                                }
+                            }));
+                            setReanalyzeStatuses(prev => ({ ...prev, [idx]: 'done' }));
+                        } else if (payload.type === 'result') {
+                            const data = payload.data;
+                            if (!data.success) throw new Error(data.error || 'Falha na reanálise');
+
+                            // refresh state and route (reuse same page if business_id unchanged)
+                            setGrowthData(data);
+                            setProfile(data.profile);
+                            setMindMapPillarStates({});
+                            setMindMapCompletedTasks({});
+
+                            if (data.business_id && data.business_id !== currentBusinessId) {
+                                router.push(`/analysis/${data.business_id}`);
+                            }
+                        } else if (payload.type === 'error') {
+                            throw new Error(payload.message || 'Erro na reanálise');
                         }
-                    } else if (payload.type === 'error') {
-                        throw new Error(payload.message || 'Erro na reanálise');
+                    } catch (e) {
+                        console.error("Error parsing analysis stream payload:", e, line);
                     }
                 }
             }
@@ -166,7 +241,14 @@ export default function AnalysisClientWrapper({
 
             {isReanalyzing && (
                 <div className="absolute inset-0 z-50">
-                    <ParticleLoader progress={reanalyzeProgress} thoughts={reanalyzeThoughts} />
+                    <AnalysisExecutionLoader
+                        subtasks={reanalyzeSubtasks}
+                        statuses={reanalyzeStatuses}
+                        results={reanalyzeResults}
+                        businessName={profile?.nome_negocio || profile?.nome || 'Seu Negócio'}
+                        isExecuting={isReanalyzing}
+                        currentStep={reanalyzeStep}
+                    />
                 </div>
             )}
         </div>

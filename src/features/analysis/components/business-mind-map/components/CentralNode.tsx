@@ -19,8 +19,8 @@ export function CentralNode({ scoreGeral, userProfile }: CentralNodeProps) {
 
             {/* Score ring */}
             <div className="relative w-[110px] h-[110px] mt-1">
-                <svg viewBox="0 0 110 110" className="absolute inset-0 rounded-full" style={{ backgroundColor: '#0a0a0c' }}>
-                    <circle cx="55" cy="55" r="49" fill="#0a0a0c" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+                <div className="absolute inset-0 rounded-full bg-white shadow-sm" />
+                <svg viewBox="0 0 110 110" className="absolute inset-0 rounded-full">
                     <circle
                         cx="55" cy="55" r="49"
                         fill="none"
@@ -36,14 +36,14 @@ export function CentralNode({ scoreGeral, userProfile }: CentralNodeProps) {
                     <span className="text-2xl font-bold" style={{ color }}>
                         {scoreGeral}
                     </span>
-                    <span className="text-[7px] text-zinc-500 uppercase tracking-widest">Score</span>
+                    <span className="text-[7px] text-gray-500 uppercase tracking-widest">Score</span>
                 </div>
             </div>
 
             {/* Business info */}
             <div className="absolute top-[150px] flex flex-col items-center w-[200px]">
-                <p className="text-[12px] font-extrabold text-white truncate w-full text-center" style={{ lineHeight: '1.2' }}>{userProfile.name}</p>
-                <p className="text-[10px] text-zinc-400 truncate w-full text-center mt-1">{userProfile.segment}</p>
+                <p className="text-[12px] font-extrabold text-gray-800 truncate w-full text-center" style={{ lineHeight: '1.2' }}>{userProfile.name}</p>
+                <p className="text-[10px] text-gray-600 truncate w-full text-center mt-1">{userProfile.segment}</p>
             </div>
         </div>
     );

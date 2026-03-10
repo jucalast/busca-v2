@@ -83,8 +83,10 @@ class TrendAnalyzer:
             "source": "google_trends",
         }
         
-        if not client:
-            result["error"] = "pytrends não disponível"
+        if not client or not keyword or not keyword.strip():
+            if client and (not keyword or not keyword.strip()):
+                print(f"  ⚠️ TrendAnalyzer: keyword vazia. Pulando.", file=sys.stderr)
+            result["error"] = "pytrends não disponível ou keyword vazia"
             return result
         
         try:
@@ -180,8 +182,10 @@ class TrendAnalyzer:
             "generated_at": datetime.now().isoformat(),
         }
         
-        if not client:
-            result["error"] = "pytrends não disponível"
+        if not client or not keyword or not keyword.strip():
+            if client and (not keyword or not keyword.strip()):
+                print(f"  ⚠️ TrendAnalyzer: keyword vazia. Pulando.", file=sys.stderr)
+            result["error"] = "pytrends não disponível ou keyword vazia"
             return result
         
         try:
@@ -252,8 +256,10 @@ class TrendAnalyzer:
             "generated_at": datetime.now().isoformat(),
         }
         
-        if not client:
-            result["error"] = "pytrends não disponível"
+        if not client or not keyword or not keyword.strip():
+            if client and (not keyword or not keyword.strip()):
+                print(f"  ⚠️ TrendAnalyzer: keyword vazia. Pulando.", file=sys.stderr)
+            result["error"] = "pytrends não disponível ou keyword vazia"
             return result
         
         try:
@@ -326,8 +332,10 @@ class TrendAnalyzer:
             "generated_at": datetime.now().isoformat(),
         }
         
-        if not client:
-            result["error"] = "pytrends não disponível"
+        if not client or not keyword or not keyword.strip():
+            if client and (not keyword or not keyword.strip()):
+                print(f"  ⚠️ TrendAnalyzer: keyword vazia. Pulando.", file=sys.stderr)
+            result["error"] = "pytrends não disponível ou keyword vazia"
             return result
         
         try:

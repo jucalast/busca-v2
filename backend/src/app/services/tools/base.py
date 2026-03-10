@@ -114,8 +114,14 @@ class ToolResult:
         }
         if self.structured_data:
             result["structured_data"] = self.structured_data
+        
+        # Merge all metadata, including fields starting with '_' (tokens, actual model, etc)
         if self.metadata:
-            result["metadata"] = self.metadata
+            # Transfer underscored keys (internal metadata) to parent result
+            result.update({k: v for k, v in self.metadata.items() if k.startswith('_')})
+            # Keep rest in metadata field
+            result["metadata"] = {k: v for k, v in self.metadata.items() if not k.startswith('_')}
+            
         return result
 
 
@@ -233,6 +239,11 @@ class ToolPlugin(ABC):
         Post-process the raw LLM JSON into a structured ToolResult.
         Override for tool-specific post-processing (table extraction, form building, etc.).
         """
+        # Capture all metadata fields starting with '_' (tokens, etc.)
+        meta = {k: v for k, v in llm_result.items() if k.startswith('_')}
+        if "metadata" in llm_result and isinstance(llm_result["metadata"], dict):
+            meta.update(llm_result["metadata"])
+
         return ToolResult(
             success=True,
             artifact_type=self.artifact_types[0] if self.artifact_types else "documento",
@@ -246,6 +257,7 @@ class ToolPlugin(ABC):
             impacto_estimado=llm_result.get("impacto_estimado", ""),
             entregavel_titulo=llm_result.get("entregavel_titulo", ""),
             entregavel_tipo=llm_result.get("entregavel_tipo", ""),
+            metadata=meta
         )
     
     def _get_export_formats(self) -> List[str]:

@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.services.search.search_service import search_duckduckgo
@@ -82,13 +83,16 @@ def _build_schema_description(schema: dict, depth: int = 0) -> str:
 # LLM Service Functions
 # ═══════════════════════════════════════════════════════════════════
 
-def call_llm(api_key: str, prompt: str, temperature: float = 0.2, model: str = "llama-3.3-70b-versatile", force_json: bool = False) -> str:
+def call_llm(prompt: str, temperature: float = 0.2, provider: str = "groq", json_mode: bool = False) -> Any:
     """Call LLM service with error handling."""
     try:
-        # This would be the actual LLM call implementation
-        # For now, keeping the original interface
-        from app.core.llm_service import call_llm as _call_llm
-        return _call_llm(api_key, prompt, temperature, model, force_json)
+        from app.core.llm_router import call_llm as router_call
+        return router_call(
+            provider=provider,
+            prompt=prompt,
+            temperature=temperature,
+            json_mode=json_mode
+        )
     except Exception as e:
         raise PillarExecutionError(f"LLM service failed: {str(e)}")
 
@@ -243,29 +247,23 @@ Retorne SOMENTE um objeto JSON com exatamente estes campos (sem texto extra, sem
 Todos os valores devem ser específicos para "{nome}". Não use valores de exemplo."""
 
         try:
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise PillarExecutionError("GROQ_API_KEY environment variable not set")
-                
-            raw = call_llm(
-                api_key, prompt,
+            result = call_llm(
+                prompt=prompt,
                 temperature=0.2,
-                model="llama-3.3-70b-versatile",
-                force_json=False,
+                provider="groq",
+                json_mode=True
             )
-            result = _extract_json(raw)
         except Exception as e:
-            thought(f"Modelo principal falhou, tentando alternativo...")
+            thought(f"Modelo principal falhou, tentando fallback...")
             try:
-                raw = call_llm(
-                    api_key, prompt,
-                    temperature=0.2,
-                    model="llama-3.1-8b-instant",
-                    force_json=False,
+                result = call_llm(
+                    prompt=prompt,
+                    temperature=0.3,
+                    provider="gemini",
+                    json_mode=True
                 )
-                result = _extract_json(raw)
             except Exception as e2:
-                raise PillarExecutionError(f"Both LLM models failed: {str(e)}, {str(e2)}")
+                raise PillarExecutionError(f"Both LLM providers failed: {str(e)}, {str(e2)}")
 
         # ── Step 4: Save results ──
         thought("Salvando resultados no banco de dados...")

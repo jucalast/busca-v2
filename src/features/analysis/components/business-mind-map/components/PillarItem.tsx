@@ -36,7 +36,7 @@ export function PillarItem({ p, togglePillar, hoveredNode, setHoveredNode }: Pil
                     <div className="text-right min-w-0 flex-1">
                         <div className="flex items-center justify-between w-full gap-1.5">
                             <ChevronRight
-                                className="w-3 h-3 flex-shrink-0 text-zinc-600 transition-transform duration-300"
+                                className="w-3 h-3 flex-shrink-0 text-gray-600 transition-transform duration-300"
                                 style={{ transform: p.isExpanded ? 'rotate(180deg)' : 'rotate(180deg) scaleX(-1)' }}
                             />
                             <div className="flex items-center justify-end gap-1.5 min-w-0">
@@ -46,13 +46,13 @@ export function PillarItem({ p, togglePillar, hoveredNode, setHoveredNode }: Pil
                                         {pillarScore}
                                     </span>
                                 )}
-                                <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
+                                <span className="text-[12px] font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
                             </div>
                         </div>
                         {p.tarefas.length > 0 && (
                             <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                                <span className="text-[9px] text-zinc-600">{p.done.size}/{p.tarefas.length}</span>
-                                <div className="h-1 w-14 bg-zinc-800 rounded-full overflow-hidden">
+                                <span className="text-[9px] text-gray-600">{p.done.size}/{p.tarefas.length}</span>
+                                <div className="h-1 w-14 bg-gray-300 rounded-full overflow-hidden">
                                     <div className="h-full rounded-full transition-all duration-700"
                                         style={{ width: `${(p.done.size / p.tarefas.length) * 100}%`, backgroundColor: p.meta.color }} />
                                 </div>
@@ -71,7 +71,7 @@ export function PillarItem({ p, togglePillar, hoveredNode, setHoveredNode }: Pil
                     <div className="text-left min-w-0 flex-1">
                         <div className="flex items-center justify-between w-full gap-1.5">
                             <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-[12px] font-semibold text-zinc-200 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
+                                <span className="text-[12px] font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">{p.meta.label}</span>
                                 {pillarScore > 0 && (
                                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0"
                                         style={{ color: scoreColor(pillarScore), backgroundColor: scoreBg(pillarScore) }}>
@@ -80,17 +80,17 @@ export function PillarItem({ p, togglePillar, hoveredNode, setHoveredNode }: Pil
                                 )}
                             </div>
                             <ChevronRight
-                                className="w-3 h-3 flex-shrink-0 text-zinc-600 transition-transform duration-300"
+                                className="w-3 h-3 flex-shrink-0 text-gray-600 transition-transform duration-300"
                                 style={{ transform: p.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
                             />
                         </div>
                         {p.tarefas.length > 0 && (
                             <div className="flex items-center gap-1.5 mt-0.5">
-                                <div className="h-1 w-14 bg-zinc-800 rounded-full overflow-hidden">
+                                <div className="h-1 w-14 bg-gray-300 rounded-full overflow-hidden">
                                     <div className="h-full rounded-full transition-all duration-700"
                                         style={{ width: `${(p.done.size / p.tarefas.length) * 100}%`, backgroundColor: p.meta.color }} />
                                 </div>
-                                <span className="text-[9px] text-zinc-600">{p.done.size}/{p.tarefas.length}</span>
+                                <span className="text-[9px] text-gray-600">{p.done.size}/{p.tarefas.length}</span>
                             </div>
                         )}
                     </div>

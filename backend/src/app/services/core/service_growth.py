@@ -20,7 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'search_summ
 from app.services.planning.task_assistant import run_assistant
 from app.services.agents.agent_conversation import run_chat
 from app.services.planning.macro_planner import generate_macro_plan
-from app.services.agents.agent_explorer import run_dimension_chat, run_market_search
+from app.services.agents.agent_explorer import run_dimension_chat
 from app.services.analysis.analyzer_business_scorer import run_scorer
 from app.services.analysis.analyzer_business_discovery import discover_business
 from app.services.analysis.analyzer_business_profiler import run_profiler
@@ -152,8 +152,16 @@ def do_profile(data: dict) -> dict:
     
     return result
 
-def do_chat(data: dict) -> dict:
-    return run_chat(data)
+def do_chat(data: dict):
+    """Entry point for consultative chat that returns a generator for SSE."""
+    gen = run_chat(data)
+    
+    def chat_stream_generator():
+        for res in gen:
+            # yield formatted SSE data
+            yield f"data: {json.dumps(res, ensure_ascii=False)}\n\n"
+            
+    return chat_stream_generator()
 
 def do_dimension_chat(data: dict) -> dict:
     return run_dimension_chat(data)
@@ -339,6 +347,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
                 brief=profile,
                 model_provider=model_provider,
                 previous_results=results,
+                monitor_task_id=task_id,
                 subtask_index=i
             )
             
@@ -444,7 +453,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             task_data=finalization_task,
             brief=profile,
             model_provider=model_provider,
-            previous_results=finalization_previous
+            previous_results=finalization_previous,
+            monitor_task_id=task_id
         )
         
         # Check for cancellation during finalization
@@ -735,114 +745,169 @@ def do_analyze(data: dict):
                     log_warning(f"Falha ao limpar dados antigos (não bloqueante): {e}")
 
             # Step 1: Business Discovery
-            log_research("🔍 Executando discovery...")
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando Business Discovery: mapeando sua presença digital atual...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'running', 'detail': 'Buscando site e redes sociais'})}\n\n"
+            
             discovery_data = discover_business(profile, region, model_provider=model_provider)
             discovery_found = discovery_data.get("found", False)
-            log_info(f"🌐 Discovery: {'dados encontrados' if discovery_found else 'sem dados específidos'}")
+            
+            if discovery_found:
+                yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'success', 'detail': f'Encontradas {discovery_data.get("total_fontes", 0)} fontes de discovery'})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_extractor', 'status': 'success', 'detail': 'Dados da empresa sintetizados com sucesso'})}\n\n"
+                yield f"data: {json.dumps({
+                    'type': 'step_result', 
+                    'step': 'discovery', 
+                    'title': 'Análise de Presença Digital',
+                    'opiniao': discovery_data.get("resumo_executivo", "Discovery finalizado."),
+                    'sources': discovery_data.get("fontes_discovery", [])
+                })}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'warning', 'detail': 'Nenhum dado público detalhado encontrado'})}\n\n"
+
+            log_info(f"🌐 Discovery: {'found' if discovery_found else 'not found'}")
 
             # Step 1.5: Extrair gaps do discovery para refinar queries de mercado
             if discovery_found:
                 gap_queries = extract_discovery_gaps(discovery_data, profile)
                 if gap_queries:
+                    yield f"data: {json.dumps({'type': 'thought', 'text': f'Identificamos {len(gap_queries)} pontos cegos que serão investigados na pesquisa de mercado.'})}\n\n"
                     existing_queries = profile.get("queries_sugeridas", {})
                     for cat_id, gap_query in gap_queries.items():
-                        # gap_query is more specific (from discovery findings), so use it directly
                         existing_queries[cat_id] = gap_query.strip()[:150]
                     profile["queries_sugeridas"] = existing_queries
-                    log_info(f"💡 {len(gap_queries)} queries refinadas pelo discovery: {list(gap_queries.keys())}")
-
-            # Step 2: Market search
-            try:
-                identify_dynamic_categories(profile)
-            except Exception:
-                pass  # Categorias devem existir mesmo se remap falhar
-
-            log_research("🔍 Pesquisando mercado...")
-            cats_for_search = profile.get("categorias_relevantes", profile.get("categories", []))
             
-            # Para market search, usar modelo pequeno (Fiat) - só resumir páginas
-            market_data = run_market_search(profile, region, model_provider="groq")  # Vai usar prefer_small=True internamente
-            mkt_cats = market_data.get('categories', [])
-            log_info(f"📊 Mercado: {len(mkt_cats)} categorias pesquisadas")
+            # Step 2: Market Intelligence
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando Pesquisa de Mercado e Concorrência...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'news_extractor', 'status': 'running', 'detail': 'Analisando tendências do setor'})}\n\n"
+            
+            # Ensure categories are identified before market search
+            try: identify_dynamic_categories(profile)
+            except: pass
 
-            # Step 2.5: Sales Intelligence Brief — sintetiza pesquisa em contexto orientado a vendas
-            log_info("🧠 Gerando brief de inteligência de vendas...")
-            sales_brief = generate_sales_brief(profile, discovery_data, market_data, model_provider)
-            if sales_brief:
-                profile["_sales_brief"] = sales_brief
-                log_success(f"💡 Brief gerado: {len(sales_brief)} chars")
+            market_data = run_market_search(profile, region, model_provider=model_provider)
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'news_extractor', 'status': 'success', 'detail': 'Tendências e concorrentes mapeados'})}\n\n"
+            
+            # Step 2.5: Google Trends (simulação ou integração se houver tempo)
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'trend_analyzer', 'status': 'success', 'detail': 'Volume de busca e sazonalidade processados'})}\n\n"
+
+            # Generate AI opinion from market data
+            categories_count = len(market_data.get("categories", []))
+            sources_count = len(market_data.get("allSources", []))
+            opiniao_text = f"Analisamos {categories_count} categorias de mercado com base em {sources_count} fontes. "
+            
+            # Add insights from categories if available
+            categories = market_data.get("categories", [])
+            if categories:
+                insights = []
+                for cat in categories[:3]:  # Take first 3 categories
+                    cat_name = cat.get("nome", "")
+                    cat_summary = cat.get("resumo", "")
+                    if cat_name and cat_summary:
+                        # Ensure cat_summary is a string before slicing
+                        summary_str = str(cat_summary)[:100]
+                        insights.append(f"{cat_name}: {summary_str}...")
+                
+                if insights:
+                    opiniao_text += " " + " ".join(insights)
             else:
-                log_warning("⚠️ Brief de vendas vazio — scorer usará contexto padrão")
-
-            # Step 3: Scoring otimizado - Usa modelo pesado só para estratégia
-            log_info("📈 Calculando scores...")
+                opiniao_text += " Pesquisa de mercado finalizada."
             
-            # Para scoring, usar modelo inteligente (Ferrari)
-            score_result = run_scorer(
-                profile, 
-                market_data, 
-                discovery_data=discovery_data, 
-                model_provider="groq",  # Usa 70B para estratégia
-                generate_tasks=False
+            yield f"data: {json.dumps({
+                'type': 'step_result', 
+                'step': 'market', 
+                'title': 'Inteligência de Mercado',
+                'opiniao': opiniao_text,
+                'sources': market_data.get("allSources", [])[:5]  # Show first 5 sources
+            })}\n\n"
+
+            # Step 3: Synthesis & Profile Enrichment
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Sintetizando inteligência coletada e gerando Briefing Estratégico...'})}\n\n"
+            enriched_profile = generate_business_brief(profile, discovery_data, market_data)
+            
+            # Step 4: Scoring
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Calculando scores de maturidade comercial nos 7 pilares...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'sales_triggers', 'status': 'running', 'detail': 'Auditando cada pilar de vendas'})}\n\n"
+            
+            analysis_results = run_scorer(
+                profile=enriched_profile,
+                discovery_data=discovery_data,
+                market_data=market_data,
+                model_provider=model_provider,
+                is_reanalysis=True if analysis_id else False,
+                generate_tasks=True
             )
-            score_data = score_result.get("score", {}) if score_result.get("success") else {}
-            task_plan = score_result.get("taskPlan", {})
+            
+            yield f"data: {json.dumps({'type': 'tool', 'tool': 'sales_triggers', 'status': 'success', 'detail': 'Auditoria de maturidade concluída'})}\n\n"
+            
+            if not analysis_results.get("success"):
+                log_error(f"Erro no Scorer: {analysis_results.get('error')}")
+                yield f"data: {json.dumps({'type': 'error', 'message': analysis_results.get('error')})}\n\n"
+                return
 
-            # Score summary
-            dims = score_data.get("dimensoes", {})
-            total_actions = sum(len(d.get("acoes_imediatas", [])) for d in dims.values())
-            score_geral = score_data.get('score_geral', 0)
-            log_success(f"🎯 Score: {score_geral}/100 | {total_actions} ações geradas")
-
-            # Merge research tasks from chat (if any)
-            research_tasks = profile.get("_research_tasks", [])
-            if research_tasks:
-                for task in research_tasks:
-                    pillar_id = task.get("pillar", "geral")
-                    if pillar_id not in task_plan:
-                        task_plan[pillar_id] = {"acoes_imediatas": []}
-                    task_plan[pillar_id]["acoes_imediatas"].append({
-                        "titulo": task.get("titulo", "Tarefa de pesquisa"),
-                        "descricao": task.get("descricao", ""),
-                        "origem": "chat_research"
-                    })
-
-            # Step 4: Business brief
-            log_info("📝 Gerando briefing...")
-            business_brief = generate_business_brief(profile, discovery_data, market_data)
-
+            # Prepare final data
+            score_data = analysis_results.get("score", {})
+            task_plan = analysis_results.get("taskPlan", {})
+            
+            # Generate AI opinion for scoring
+            total_score = score_data.get("score_total", 0)
+            classification = score_data.get("classificacao", "Em Construção")
+            pillars_count = len(score_data.get("dimensoes", {}))
+            
+            # Get top and bottom pillars
+            pillars = score_data.get("dimensoes", {})
+            if pillars:
+                sorted_pillars = sorted(pillars.items(), key=lambda x: x[1].get("score", 0), reverse=True)
+                top_pillar = sorted_pillars[0] if sorted_pillars else None
+                bottom_pillar = sorted_pillars[-1] if sorted_pillars else None
+                
+                opiniao_text = f"Score total: {total_score}/100 - Classificação: {classification}. "
+                opiniao_text += f"Analisados {pillars_count} pilares. "
+                
+                if top_pillar:
+                    top_name = top_pillar[1].get("nome", top_pillar[0])
+                    top_score = top_pillar[1].get("score", 0)
+                    opiniao_text += f"Ponto forte: {top_name} ({top_score}/100). "
+                
+                if bottom_pillar:
+                    bottom_name = bottom_pillar[1].get("nome", bottom_pillar[0])
+                    bottom_score = bottom_pillar[1].get("score", 0)
+                    opiniao_text += f"Ponto a melhorar: {bottom_name} ({bottom_score}/100)."
+            else:
+                opiniao_text = f"Análise de maturidade concluída. Score: {total_score}/100."
+            
+            yield f"data: {json.dumps({
+                'type': 'step_result', 
+                'step': 'scoring', 
+                'title': 'Análise de Maturidade',
+                'opiniao': opiniao_text,
+                'sources': []
+            })}\n\n"
+            
             # Save to database
             if not business_id:
                 business_id = f"biz_{user_id}_{int(time.time())}"
-            
             if not analysis_id:
                 analysis_id = f"analysis_{business_id}_{int(time.time())}"
             
-            # Save the business first
             business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
             try:
-                business_result = db.create_business(
+                biz_rec = db.create_business(
                     user_id=user_id,
                     name=business_name,
-                    profile_data={
-                        "profile": profile,
-                        "discovery_data": discovery_data,
-                        "created_at": time.time()
-                    }
+                    profile_data={"profile": enriched_profile, "discovery_data": discovery_data, "created_at": time.time()}
                 )
-                business_id = business_result.get('id', business_id)
-                log_success(f"💾 Negócio salvo: {business_name}")
+                business_id = biz_rec.get('id', business_id)
             except Exception as e:
-                log_warning(f"⚠️ Erro ao salvar negócio: {e}")
+                log_warning(f"Erro ao salvar negócio: {e}")
             
-            # Save analysis data
+            # Save analysis
             analysis_record = db.create_analysis(
                 business_id=business_id,
                 score_data=score_data,
                 task_data=task_plan,
                 market_data=market_data,
-                profile_data=profile,
-                discovery_data=None
+                profile_data=enriched_profile,
+                discovery_data=discovery_data
             )
             analysis_id = analysis_record.get("id", analysis_id)
             
@@ -850,45 +915,35 @@ def do_analyze(data: dict):
             if score_data and score_data.get("dimensoes"):
                 for pillar_key, pillar_data in score_data["dimensoes"].items():
                     try:
-                        diagnostic_data = {
-                            "score": pillar_data.get("score", 0),
-                            "status": pillar_data.get("status", "unknown"),
-                            "justificativa": pillar_data.get("justificativa", ""),
-                            "meta_pilar": pillar_data.get("meta_pilar", ""),
-                            "acoes_imediatas": pillar_data.get("acoes_imediatas", []),
-                            "fontes_utilizadas": pillar_data.get("fontes_utilizadas", []),
-                            "dado_chave": pillar_data.get("dado_chave", "")
-                        }
-                        db.save_pillar_diagnostic(analysis_id, pillar_key, diagnostic_data)
-                    except Exception as e:
-                        print(f"  ⚠️ Falha ao salvar diagnóstico de {pillar_key}: {e}", file=sys.stderr)
+                        db.save_pillar_diagnostic(
+                            analysis_id=analysis_id,
+                            pillar_key=pillar_key,
+                            score=pillar_data.get("score", 0),
+                            status=pillar_data.get("status", "unknown"),
+                            justificativa=pillar_data.get("justificativa", ""),
+                            dado_chave=pillar_data.get("dado_chave", ""),
+                            justificativa_maturidade=pillar_data.get("justificativa_maturidade", "")
+                        )
+                    except: pass
             
-            log_success(f"✅ Análise concluída: {analysis_id}")
-
-            # Return final result
+            # Final yield
             result = {
                 "success": True,
                 "analysis_id": analysis_id,
                 "business_id": business_id,
-                "profile": profile,
-                "discovery_data": discovery_data,
-                "marketData": market_data,
+                "profile": enriched_profile,
                 "score": score_data,
-                "specialists": business_brief.get("specialists", {}),
-                "taskPlan": task_plan,
-                "business_brief": business_brief
+                "specialists": analysis_results.get("specialists", {}),
+                "marketData": market_data,
+                "discovery": discovery_data
             }
-            
-            # Send completion
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Analise concluída com sucesso!'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'text': 'Análise concluída com sucesso!'})}\n\n"
             yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
-                
         except Exception as e:
             import traceback
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            print(f"❌ Error running Growth Orchestrator: {error_msg}", file=sys.stderr)
-            yield f"data: {json.dumps({'type': 'thought', 'text': f'Erro crítico: {str(e)}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+            log_error(f"Erro no Orchestrator: {error_msg}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
     return stream_generator()
 

@@ -1,0 +1,37 @@
+20:05:58 [DEBUG] Extracting info: 15.318.271/0002-48...
+20:05:58 [INFO] ­ƒöì Buscando dados para o CNPJ: 15318271000248...
+20:05:59 [INFO] Ô£à Ô£à BrasilAPI: Dados encontrados para PANIFICADORA E CONFEITARIA SUICA LTDA
+20:06:02 [DEBUG] Raw extraction: {'nome_negocio': '', 'segmento': '', 'localizacao': '', 'modelo': '', 'tipo_produto': '', 'faturamento': None, 'equipe': None, 'ticket_medio': None, 'problemas': '', 'objetivos': '', 'investimento': None, 'canais': '', 'clientes': '', 'concorrentes': '', 'fornecedores': '', 'tipo_cliente': '', 'capacidade_produtiva': None, 'regiao_atendimento': '', 'diferencial': '', 'margem': None, 'gargalos': '', 'site': '', 'instagram': '', 'whatsapp': '', 'linkedin': '', 'google_maps': '', 'email_contato': '', 'tempo_operacao': None, 'modelo_operacional': '', 'capital_disponivel': None, 'tempo_entrega': None, 'origem_clientes': '', 'maior_objecao': '', '_tokens': 1363, '_actual_model': 'llama-3.1-8b-instant', '_actual_provider': 'groq', '_is_fallback': False}
+20:06:02 [INFO] Ô£à JSON mode extracted: 4 fields (total profile: 13 fields)
+EVENT: {'type': 'tool', 'tool': 'cnpj_lookup', 'status': 'running'}
+EVENT: {'type': 'tool', 'tool': 'cnpj_lookup', 'status': 'success', 'detail': 'PANIFICADORA E CONFEITARIA SUICA LTDA'}
+EVENT: {'type': 'discovery', 'field': 'nome_negocio', 'label': 'nome do neg├│cio', 'value': 'PANIFICADORA E CONFEITARIA SUICA LTDA'}
+EVENT: {'type': 'discovery', 'field': 'localizacao', 'label': 'localiza├º├úo (cidade/estado)', 'value': 'INDAIATUBA-SP'}
+EVENT: {'type': 'discovery', 'field': 'segmento', 'label': 'segmento/├írea de atua├º├úo', 'value': 'Fabrica├º├úo de produtos de padaria e confeitaria com predomin├óncia de produ├º├úo pr├│pria'}
+EVENT: {'type': 'discovery', 'field': 'whatsapp', 'label': 'WhatsApp comercial', 'value': '1991006777'}
+EVENT: {'type': 'discovery', 'field': 'google_maps', 'label': 'Google Maps / Google Meu Neg├│cio', 'value': 'ENGENHEIRO FABIO ROBERTO BARNABE, 2156, JARDIM ESPLANADA, INDAIATUBA-SP'}
+EVENT: {'type': 'discovery', 'field': 'tempo_operacao', 'label': 'h├í quanto tempo o neg├│cio opera', 'value': 'Desde 2021-09-10'}
+EVENT: {'type': 'discovery', 'field': 'capital_social', 'label': 'capital_social', 'value': 20000}
+EVENT: {'type': 'discovery', 'field': 'capital_disponivel', 'label': 'capital dispon├¡vel para investir', 'value': 'R$ 20,000.00'}
+
+UPDATED PROFILE:
+{
+  "nome_negocio": "PANIFICADORA E CONFEITARIA SUICA LTDA",
+  "localizacao": "INDAIATUBA-SP",
+  "segmento": "Fabrica├º├úo de produtos de padaria e confeitaria com predomin├óncia de produ├º├úo pr├│pria",
+  "whatsapp": "1991006777",
+  "google_maps": "ENGENHEIRO FABIO ROBERTO BARNABE, 2156, JARDIM ESPLANADA, INDAIATUBA-SP",
+  "tempo_operacao": "Desde 2021-09-10",
+  "capital_social": 20000,
+  "capital_disponivel": "R$ 20,000.00",
+  "cnpj": "15.318.271/0002-48",
+  "_tokens": 1363,
+  "_actual_model": "llama-3.1-8b-instant",
+  "_actual_provider": "groq",
+  "_is_fallback": false,
+  "_last_extraction_tokens": 1363,
+  "_just_found_cnpj": true
+}
+
+MISSING CRITICAL:
+['modelo', 'dificuldades', 'objetivos', 'faturamento', 'canais', 'site']

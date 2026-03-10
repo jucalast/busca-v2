@@ -97,6 +97,9 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         print(f"  ❌ Erro ao resumir {cat.get('nome', '')}: {e}", file=sys.stderr)
         resumo = {"erro": f"Não foi possível gerar resumo: {str(e)[:200]}"}
 
+    # Capture tokens from summary call
+    tokens = getattr(resumo, "_tokens", 0) if isinstance(resumo, str) else resumo.get("_tokens", 0)
+
     return {
         "id": cat_id,
         "nome": cat.get("nome", ""),
@@ -104,7 +107,8 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         "cor": cat.get("cor", "#71717a"),
         "query_usada": query,
         "resumo": resumo,
-        "fontes": sources
+        "fontes": sources,
+        "_tokens": tokens
     }
 
 
@@ -193,11 +197,15 @@ def run_dimension_chat(input_data: dict) -> dict:
         except Exception as e2:
             reply = f"Desculpe, nao consegui gerar uma resposta. Erro: {str(e2)[:200]}"
 
+    # Capture tokens from reply call
+    tokens = getattr(reply, "_tokens", 0) if isinstance(reply, str) else reply.get("_tokens", 0)
+
     return {
         "success": True,
         "reply": reply,
         "sources": sources,
         "searchQuery": search_query,
+        "_tokens": tokens
     }
 
 def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = "groq") -> dict:

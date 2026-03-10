@@ -7,7 +7,7 @@ import json
 import sys
 import time
 import hashlib
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Callable
 from datetime import datetime, timedelta
 
 from app.services.common import log_cache, log_research
@@ -270,21 +270,25 @@ class UnifiedResearchEngine:
         segmento: str,
         task_context: Optional[Dict] = None,
         force_refresh: bool = False,
-        subtask_index: int = 0
+        subtask_index: int = 0,
+        cancellation_check: Optional[Callable[[], None]] = None
     ) -> Dict[str, Any]:
         """
         Pesquisa de subtarefas (micro level).
         Usado na expansão e execução de subtarefas.
-        
-        IMPORTANTE: Cada subtask_index gera queries DIFERENTES para evitar
-        repetição de conteúdo entre subtarefas.
         """
-        # Cache key DEVE incluir subtask_index para pesquisas diferenciadas
+        # Extrair ferramenta sugerida pelo Auditor
+        ferramenta_hint = ""
+        if task_context:
+            ferramenta_hint = task_context.get("ferramenta", "")
+            
+        # Cache key DEVE incluir subtask_index e ferramenta_hint
         cache_key = self._generate_cache_key("subtask", {
-            "task_title": task_title[:50],  # Limitar para cache mais eficiente
+            "task_title": task_title[:50],
             "pillar_key": pillar_key,
             "segmento": segmento,
-            "subtask_index": subtask_index  # CRÍTICO: diferenciar cache por subtarefa
+            "subtask_index": subtask_index,
+            "ferramenta": ferramenta_hint
         })
         
         # Verificar cache
@@ -294,14 +298,16 @@ class UnifiedResearchEngine:
                 print(f"  📦 Subtask research from cache: {task_title[:30]}...", file=sys.stderr)
                 return cached
         
-        # Construir query específica (com variação por subtask_index para evitar duplicação)
-        query = self._build_subtask_query(task_title, task_desc, pillar_key, segmento, subtask_index)
+        # Construir query específica
+        query = self._build_subtask_query(task_title, task_desc, pillar_key, segmento, subtask_index, ferramenta_hint=ferramenta_hint)
         
         print(f"  🔍 Subtask research: {task_title[:30]}...", file=sys.stderr)
+        if ferramenta_hint:
+            print(f"    💎 Elite Tool Hint: {ferramenta_hint}", file=sys.stderr)
         print(f"    Query: {query[:80]}...", file=sys.stderr)
         
-        # Executar pesquisa — 5 resultados para mais diversidade de dados
-        search_results = search_duckduckgo(query, max_results=5, region='br-pt')
+        # Executar pesquisa
+        search_results = search_duckduckgo(query, max_results=5, region='br-pt', cancellation_check=cancellation_check)
         
         research_data = {
             "task_title": task_title,
@@ -332,6 +338,10 @@ class UnifiedResearchEngine:
             
             # Extração de conteúdo via web_extractor (trafilatura) com fallback
             if i < 3:
+                # Check cancellation BEFORE each scrape
+                if cancellation_check:
+                    cancellation_check()
+                    
                 try:
                     from app.services.intelligence.intelligence_hub import intel_hub
                     content = intel_hub.extract_content(url, timeout=5, max_chars=4000)
@@ -339,6 +349,10 @@ class UnifiedResearchEngine:
                     content = scrape_page(url, timeout=5)
                 if content:
                     research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:4000]}\n\n"
+                
+                # Check cancellation between scrapes
+                if cancellation_check:
+                    cancellation_check()
         
         # ── ENRIQUECIMENTO INTEL para subtarefas (TODOS os pilares) ──
         subtask_tools_used = []
@@ -589,55 +603,50 @@ class UnifiedResearchEngine:
         task_desc: str,
         pillar_key: str,
         segmento: str,
-        subtask_index: int = 0
+        subtask_index: int = 0,
+        ferramenta_hint: str = ""
     ) -> str:
         """Constrói query de INTELIGÊNCIA SETORIAL para subtarefa.
         
-        Objetivo: encontrar DADOS REAIS sobre o setor e compradores,
-        NÃO tutoriais de 'como fazer'.
+        Objetivo: encontrar DADOS REAIS sobre o setor e compradores.
         
-        Estratégia:
-        - Strip TODOS os verbos de ação e palavras meta-task
-        - Manter apenas palavras-ASSUNTO (persona, dores, necessidades etc)
-        - Combinar com inteligência do pilar (3 termos de dados reais)
-        - Variar termos de busca por subtask_index para evitar resultados duplicados
+        Usa o ferramenta_hint para direcionar a busca se disponível.
         """
         import unicodedata
         def _norm(text: str) -> str:
-            """Strip accents for comparison: 'relatório' → 'relatorio'"""
             return ''.join(
                 c for c in unicodedata.normalize('NFD', text.lower())
                 if unicodedata.category(c) != 'Mn'
             )
         
-        # Stop words (ALL normalized/unaccented for _norm comparison)
+        # Stop words
         stop_words = {
-            # Conectivos
             "o", "a", "os", "as", "de", "do", "da", "dos", "das", "em", "para",
             "com", "sem", "um", "uma", "que", "por", "no", "na", "nos", "nas",
             "ao", "pelo", "pela", "se", "e", "ou", "mas", "como", "sua",
             "seu", "seus", "suas", "este", "esta", "esse", "essa", "isto",
             "sao", "ser", "ter", "mais", "sobre", "entre", "apos", "ate",
-            # Verbos de ação → buscam tutoriais genéricos
             "criar", "desenvolver", "implementar", "definir", "analisar",
             "pesquisar", "coletar", "identificar", "elaborar", "estabelecer",
             "mapear", "levantar", "realizar", "executar", "gerar", "produzir",
             "selecionar", "aplicar", "montar", "estruturar", "planejar",
             "consolidar", "validar", "compilar", "detalhar", "formatar",
-            # Meta-task: sobre o ENTREGÁVEL, não sobre o ASSUNTO do setor
             "documento", "relatorio", "questionario", "formulario", "ferramenta",
             "template", "modelo", "plano", "guia", "manual", "lista",
             "online", "digital", "resultados", "insights", "estrategia",
             "pesquisa", "fontes", "dados", "escopo", "objetivos",
             "perguntas", "respostas", "analise", "etapas", "passos",
             "conteudo", "informacoes", "criterios", "tabela", "estudo",
-            "principais", "melhores", "novos", "novas", "possiveis",
-            "coletados", "existentes", "atuais", "disponiveis", "necessarios",
         }
         
-        all_words = (task_title + " " + task_desc).lower().split()
+        # Combine title and desc
+        base_text = task_title + " " + task_desc
+        if ferramenta_hint:
+            base_text = f"{ferramenta_hint} {base_text}"
+            
+        all_words = base_text.lower().split()
         keywords = [w for w in all_words if _norm(w) not in stop_words and len(w) > 2]
-        # Deduplicate preservando ordem (por forma normalizada)
+        
         seen = set()
         unique_kw = []
         for w in keywords:
@@ -646,8 +655,7 @@ class UnifiedResearchEngine:
                 seen.add(nw)
                 unique_kw.append(w)
         
-        # Inteligência setorial por pilar — termos que buscam DADOS REAIS
-        # Cada pilar tem variantes para que subtasks diferentes busquem ângulos DIFERENTES
+        # Inteligência setorial por pilar
         pillar_intel_variants = {
             "publico_alvo": [
                 "perfil comprador B2B necessidades comportamento decisão",
@@ -686,12 +694,10 @@ class UnifiedResearchEngine:
             ],
         }
         variants = pillar_intel_variants.get(pillar_key, [["dados setor mercado análise"]])
-        # Rotate through variants based on subtask_index to get diverse search results
         variant_idx = subtask_index % len(variants)
         intel = variants[variant_idx]
-        intel_words = intel.split()[:3]  # Top 3 intelligence terms
+        intel_words = intel.split()[:3]
         
-        # Build: segmento + subject keywords (sem sobreposição) + intelligence
         parts = []
         used_norms = set()
         
@@ -700,7 +706,12 @@ class UnifiedResearchEngine:
             for sw in segmento.lower().split():
                 used_norms.add(_norm(sw))
         
-        # Subject keywords que não sobrepõem segmento
+        # Add tool hint early if present
+        if ferramenta_hint:
+            parts.append(ferramenta_hint)
+            for hw in ferramenta_hint.lower().split():
+                used_norms.add(_norm(hw))
+        
         added = 0
         for kw in unique_kw:
             if _norm(kw) not in used_norms and added < 3:
@@ -708,17 +719,14 @@ class UnifiedResearchEngine:
                 used_norms.add(_norm(kw))
                 added += 1
         
-        # Intel terms que não sobrepõem o que já está
         for iw in intel_words:
             if _norm(iw) not in used_norms:
                 parts.append(iw)
                 used_norms.add(_norm(iw))
         
         query = " ".join(parts)
-        
-        # Se query muito curta (tudo foi stripped), usar segmento + intel completo
         if len(query.split()) < 4:
-            query = f"{segmento} {intel}"
+            query = f"{segmento} {intel} {ferramenta_hint}".strip()
         
         return query
     

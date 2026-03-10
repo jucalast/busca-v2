@@ -2183,10 +2183,16 @@ def save_background_task_progress(
             created_at, updated_at
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(analysis_id, task_id) DO UPDATE SET
-            status = excluded.status,
-            current_step = excluded.current_step,
+            status = CASE 
+                WHEN background_tasks.status = 'cancelled' THEN 'cancelled' 
+                ELSE excluded.status 
+            END,
+            current_step = CASE
+                WHEN background_tasks.status = 'cancelled' THEN background_tasks.current_step
+                ELSE excluded.current_step
+            END,
             total_steps = excluded.total_steps,
-            result_data = COALESCE(excluded.result_data, result_data),
+            result_data = COALESCE(excluded.result_data, background_tasks.result_data),
             error_message = excluded.error_message,
             updated_at = excluded.updated_at
     ''', (
@@ -2242,11 +2248,15 @@ def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
         cached_at_iso = cache_entry["cached_at"].isoformat()
         research_type = cache_entry.get("research_type", "unknown")
         
-        # Insert ou replace
+        # Insert ou replace (PostgreSQL syntax)
         cursor.execute("""
-            INSERT OR REPLACE INTO research_cache 
+            INSERT INTO research_cache 
             (cache_key, data, cached_at, research_type) 
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (cache_key) DO UPDATE SET
+                data = EXCLUDED.data,
+                cached_at = EXCLUDED.cached_at,
+                research_type = EXCLUDED.research_type
         """, (cache_key, data_json, cached_at_iso, research_type))
         
         conn.commit()
@@ -2303,11 +2313,14 @@ def save_research_result(research_type: str, cache_key: str, data: dict) -> bool
         data_json = json.dumps(data, default=str)
         created_at = datetime.now().isoformat()
         
-        # Insert ou replace
+        # Insert ou replace (PostgreSQL syntax)
         cursor.execute("""
-            INSERT OR REPLACE INTO research_results 
+            INSERT INTO research_results 
             (research_type, cache_key, data, created_at) 
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (research_type, cache_key) DO UPDATE SET
+                data = EXCLUDED.data,
+                created_at = EXCLUDED.created_at
         """, (research_type, cache_key, data_json, created_at))
         
         conn.commit()
