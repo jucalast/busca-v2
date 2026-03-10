@@ -331,7 +331,7 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         from app.core.llm_router import call_llm
         
         result = call_llm(
-            provider="groq",
+            provider="auto",
             prompt=prompt,
             temperature=0.1,  # Baixa temperatura para extração
             json_mode=True,   # JSON mode nativo!
@@ -783,7 +783,7 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     yield {"type": "thought", "text": "Processando sua resposta..."}
     
     result = call_llm(
-        provider="groq",
+        provider="auto",
         prompt=prompt,
         temperature=0.7,
         json_mode=False

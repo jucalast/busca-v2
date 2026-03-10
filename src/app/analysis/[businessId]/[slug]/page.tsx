@@ -20,7 +20,7 @@ export default async function AnalysisSlugPage({ params }: { params: Promise<{ b
     try {
         // SSR Data Fetch: Pedindo o Business ID direto do Python sem API Request.
         const result = await runOrchestrator('get-business', {
-            aiModel: 'groq',
+            aiModel: 'auto',
             business_id: businessId,
         }, 30000);
 

@@ -308,6 +308,10 @@ def _get_all_sources_for_dimension(dim_key: str, market_data: dict) -> list:
 
 def extract_restrictions(profile: dict) -> dict:
     """Extract business restrictions from profile for context-aware scoring."""
+    # Handle nesting from profiler output
+    if "profile" in profile and isinstance(profile["profile"], dict) and "restricoes_criticas" in profile["profile"]:
+        profile = profile["profile"]
+
     restricoes = profile.get("restricoes_criticas", {})
     perfil = profile.get("perfil", {})
     num_func = str(perfil.get("num_funcionarios", "")).lower()
@@ -334,9 +338,11 @@ def extract_restrictions(profile: dict) -> dict:
 
 
 def _compute_objective_score(dim_key: str, profile: dict) -> int:
-    """Compute a deterministic partial score based on concrete profile data.
-    IMPROVED: Now checks for data quality/length, not just existence.
-    Returns 0-100 based on what data the business has for this dimension."""
+    """Compute a deterministic partial score based on concrete profile data."""
+    # Handle nesting from profiler output
+    if "profile" in profile and isinstance(profile["profile"], dict) and "perfil" in profile["profile"]:
+        profile = profile["profile"]
+        
     perfil = profile.get("perfil", profile)
     score = 0
     
@@ -458,7 +464,7 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
                      discovery_text: str = "",
                      strategic_intel: dict = None,
                      chain_context: str = "",
-                     model_provider: str = "groq",
+                     model_provider: str = "auto",
                      contexto_dinamico: str = "") -> dict:
     """Score a single sales pillar with focused, specific analysis.
     Now receives chain_context from upstream pillars for interconnected analysis
@@ -551,17 +557,17 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
     else:
         discovery_fairness = "\n⚠️ NOTA: Use os dados do Discovery como evidência."
 
-    prompt = f"""Você é o Auditor Estratégico Sênior do Hub de Especialistas. Sua missão é avaliar a MATURIDADE, VERACIDADE e PROFISSIONALISMO do pilar "{dim_cfg['label']}".
+    prompt = f"""Você é o Consultor Estratégico de Crescimento do Hub de Especialistas. Sua missão é avaliar a MATURIDADE e o POTENCIAL de execução do pilar "{dim_cfg['label']}".
 
-SEU FOCO EXCLUSIVO: {dim_cfg['foco']}
+SEU FOCO: {dim_cfg['foco']}
 {escopo_text}
-Sua análise deve ser EXTREMAMENTE CRÍTICA. Não aceite respostas rasas.
+Sua análise deve ser criteriosa e profissional, valorizando a clareza e a profundidade dos dados fornecidos.
 
-CRITÉRIOS DE PONTUAÇÃO (Rigor Máximo):
-1. PROFISSIONALISMO: O dado é profundo? (Ex: "Mulheres" = Amador/Score Baixo. "Mães de 30 anos buscando recolocação em Tech" = Profissional/Score Alto).
-2. EFICÁCIA: Com os dados atuais, um time de execução conseguiria criar campanhas REAIS hoje?
-3. VERACIDADE: O que o cliente diz condiz com a INTELIGÊNCIA DE MERCADO real? {discovery_fairness}
-4. INTELIGÊNCIA: Há diferenciação estratégica ou o negócio está apenas seguindo clichês?
+CRITÉRIOS DE AVALIAÇÃO (Foco em Excelência Prática):
+1. PROFISSIONALISMO: O dado permite uma execução real? (Ex: "Mulheres" = Genérico/Melhorável. "Donas de casa em Indaiatuba interessadas em produtos artesanais" = Profissional/Validado).
+2. VIABILIDADE: As sugestões levam em conta as restrições de capital e equipe do negócio?
+3. COERÊNCIA: O que o cliente diz faz sentido para o mercado atual? {discovery_fairness}
+4. DIFERENCIAÇÃO: O negócio tem clareza de como se destaca dos concorrentes?
 
 NEGÓCIO: {nome} | {segmento} | {perfil.get('localizacao','?')} | Equipe: {_eq} | Capital: {_cap} | Ticket: {_tick}
 Canais: {perfil.get('canais_venda','?')} | Diferencial: {_dif_val} | Origem clientes: {_orig}
@@ -573,11 +579,17 @@ Objeção: {_obj} | Cliente ideal: {_cli}{digital_presence_block}
 
 {contexto_dinamico}
 
+DIRETRIZ DE PONTUAÇÃO:
+- 0-30: Dados inexistentes ou extremamente vagos.
+- 40-60: Dados básicos presentes, mas falta profundidade estratégica ou diferencial claro.
+- 70-85: Dados profissionais, bem estruturados e prontos para execução de marketing.
+- 90-100: Excelência absoluta, dados profundos e diferencial competitivo muito forte.
+
 REGRAS DE RETORNO:
-1. Score 0-100 (100 = VALIDADO, PROFISSIONAL e ESCALÁVEL).
-2. 3-5 ações ULTRA-ESPECÍFICAS que CORRIGEM os gaps de profissionalismo.
-3. CADA AÇÃO deve citar uma ferramenta de elite para otimização (Ex: Google Trends, LinkedIn Ads, Search Console, CRM Pipeline, Facebook Library).
-4. JUSTIFIQUE: Diagnóstico honesto e estratégico sobre maturidade e veracidade.
+1. Score 0-100 refletindo a maturidade para crescimento.
+2. 3-5 ações PRÁTICAS e ESPECÍFICAS para elevar o nível do pilar.
+3. CADA AÇÃO deve citar uma ferramenta útil (Ex: Google Trends, Meta Library, CRM, LinkedIn).
+4. JUSTIFIQUE: Diagnóstico equilibrado e encorajador, apontando os pontos fortes e o que falta para a excelência.
 
 JSON:
 {{
@@ -615,10 +627,12 @@ JSON:
         
         # Blend with objective score
         obj_score = _compute_objective_score(dim_key, profile)
-        blended = round(result["score"] * 0.6 + obj_score * 0.4)
-        result["score"] = blended
-        result["_score_llm"] = result["score"]
+        llm_score = result.get("score", 50)
+        blended = round(llm_score * 0.6 + obj_score * 0.4)
+        
+        result["_score_llm"] = llm_score
         result["_score_objetivo"] = obj_score
+        result["score"] = blended
         
         if blended >= 70: result["status"] = "forte"
         elif blended >= 40: result["status"] = "atencao"
@@ -629,7 +643,19 @@ JSON:
         return result
     except Exception as e:
         log_error(f"Erro no Scorer para {dim_key}: {e}")
-        return {"score": 50, "status": "atencao", "justificativa": f"Erro técnico na análise.", "acoes_imediatas": [], "peso": dim_cfg["peso"]}
+        # Even on LLM error, compute objective score so we don't return a flat 50
+        obj_score = _compute_objective_score(dim_key, profile)
+        # In case of technical error, we trust the objective score more
+        return {
+            "score": obj_score, 
+            "status": "forte" if obj_score >= 70 else "atencao" if obj_score >= 40 else "critico",
+            "justificativa": f"Nota baseada na qualidade dos dados fornecidos (Auditoria de IA indisponível).",
+            "acoes_imediatas": [],
+            "peso": dim_cfg["peso"],
+            "_score_llm": 50,
+            "_score_objetivo": obj_score,
+            "error": str(e)
+        }
 
 
 def _dedup_actions_cross_dimension(all_tasks: list) -> list:
@@ -661,6 +687,10 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
     Runs 7 scoring dimensions sequentially.
     NOW: Uses 'Strategic Intel' from Intel Hub for deeper auditing.
     """
+    # Normalize profile if it's the full result from run_profiler
+    if "success" in profile and "profile" in profile and isinstance(profile["profile"], dict):
+        log_debug("Normalizing profile object in run_scorer")
+        profile = profile["profile"]
     from app.services.agents.engine_specialist import get_dynamic_persona_context
     contexto_dinamico = get_dynamic_persona_context(profile)
     sales_brief = profile.get("_sales_brief", "")

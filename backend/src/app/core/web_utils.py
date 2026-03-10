@@ -60,7 +60,7 @@ _SCRAPE_BLOCKLIST = [
     "twitter.com", "x.com", "threads.net",
 ]
 
-def scrape_page(url: str, timeout: int = 2, cancellation_check=None) -> str:
+def scrape_page(url: str, timeout: int = 5, cancellation_check=None) -> str:
     """Scrape text content from a webpage URL with cancellation support.
     Uses trafilatura for high-quality extraction, falls back to BS4.
     Skips social media sites that require API access."""
@@ -88,7 +88,11 @@ def scrape_page(url: str, timeout: int = 2, cancellation_check=None) -> str:
         # Fallback: BS4 clássico
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
-        response = requests.get(url, headers=headers, timeout=timeout)
+        # Silenciar avisos de SSL se necessário (opcional, mas limpa o log)
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        response = requests.get(url, headers=headers, timeout=timeout, verify=False)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')

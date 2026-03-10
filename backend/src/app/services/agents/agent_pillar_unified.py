@@ -546,9 +546,8 @@ class UnifiedPillarAgent:
             pillar_key=pillar_key
         )
         
-        # Chamar LLM
         result = call_llm(
-            provider="groq",
+            provider="auto",
             prompt=prompt,
             temperature=0.3,
             json_mode=True

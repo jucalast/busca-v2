@@ -385,9 +385,9 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
             print(f"    📝 {cat_id}: {query}", file=sys.stderr)
 
     # Limit categories to reduce LLM calls and rate limits
-    if len(categories) > 5:
-        print(f"  ⚠️ Limitando para 5 categorias principais para evitar rate limits", file=sys.stderr)
-        categories = categories[:5]
+    if len(categories) > 7:
+        print(f"  ⚠️ Limitando para 7 categorias principais para evitar rate limits", file=sys.stderr)
+        categories = categories[:7]
 
     if not categories:
         from app.services.analysis.analyzer_business_profiler import _VALID_PILLAR_IDS
@@ -431,20 +431,16 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
     categories_result = []
     all_sources = []
 
-    # Parallel execution with max 2 workers to respect rate limits
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_to_cat = {
-            executor.submit(process_category, cat, queries, perfil_data, description, restricoes, region, api_key, model_provider): cat 
-            for cat in categories
-        }
-        
-        for future in concurrent.futures.as_completed(future_to_cat):
-            try:
-                result = future.result()
-                categories_result.append(result)
-                all_sources.extend(result.get("fontes", []))
-            except Exception as exc:
-                print(f"  ❌ Generated an exception: {exc}", file=sys.stderr)
+    # Sequential execution to respect rate limits and allow more pillars
+    for cat in categories:
+        try:
+            result = process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider)
+            categories_result.append(result)
+            all_sources.extend(result.get("fontes", []))
+            # Small delay between pillars to further stabilize rate limits
+            time.sleep(0.5)
+        except Exception as exc:
+            print(f"  ❌ Error processing category '{cat.get('id')}': {exc}", file=sys.stderr)
 
     unique_sources = list(dict.fromkeys(all_sources))
 

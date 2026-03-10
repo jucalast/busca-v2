@@ -2,11 +2,18 @@
 
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Sparkles, Zap } from 'lucide-react';
 import Image from 'next/image';
 import LLMUsageIndicator from './llm-usage-indicator';
 
 const MODEL_OPTIONS = [
+    {
+        value: 'auto',
+        label: 'Automático',
+        sub: 'Elite Priority',
+        icon: Sparkles,
+        accent: '#8b5cf6',
+    },
     {
         value: 'gemini',
         label: 'Gemini',
@@ -149,14 +156,18 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                             onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
                             onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent'; }}
                         >
-                            <Image
-                                src={opt.logo}
-                                alt={opt.label}
-                                width={18}
-                                height={18}
-                                className="rounded shrink-0 object-contain"
-                                style={{ filter: 'none' }}
-                            />
+                            {opt.icon ? (
+                                <opt.icon className="w-[18px] h-[18px] shrink-0" style={{ color: opt.accent }} />
+                            ) : (
+                                <Image
+                                    src={opt.logo || ''}
+                                    alt={opt.label}
+                                    width={18}
+                                    height={18}
+                                    className="rounded shrink-0 object-contain"
+                                    style={{ filter: 'none' }}
+                                />
+                            )}
 
                             <div className="flex-1 flex items-center gap-1.5 text-left min-w-0 whitespace-nowrap">
                                 <span
@@ -190,14 +201,18 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
-                <Image
-                    src={selected.logo}
-                    alt={selected.label}
-                    width={16}
-                    height={16}
-                    className="rounded shrink-0 object-contain"
-                    style={{ filter: 'none' }}
-                />
+                {selected.icon ? (
+                    <selected.icon className="w-4 h-4 shrink-0" style={{ color: selected.accent }} />
+                ) : (
+                    <Image
+                        src={selected.logo || ''}
+                        alt={selected.label}
+                        width={16}
+                        height={16}
+                        className="rounded shrink-0 object-contain"
+                        style={{ filter: 'none' }}
+                    />
+                )}
                 <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-secondary)' }}>{selected.label}</span>
                 <ChevronDown
                     className={`w-2.5 h-2.5 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}

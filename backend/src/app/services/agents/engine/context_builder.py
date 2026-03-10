@@ -346,7 +346,7 @@ def _detect_supply_chain_context(dna: dict) -> str:
 
     try:
         result = call_llm(
-            provider="groq",
+            provider="auto",
             prompt=prompt,
             temperature=0.1,
             json_mode=True,

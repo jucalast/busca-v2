@@ -332,7 +332,7 @@ def _run_discovery_search(query_spec: dict, region: str = "br-pt") -> dict:
     }
 
 
-def _synthesize_discovery(raw_results: list, hints: dict, model_provider: str = "groq") -> dict:
+def _synthesize_discovery(raw_results: list, hints: dict, model_provider: str = "auto") -> dict:
     """Use LLM to extract structured insights from raw discovery data.
     Produces a clean discovery_data dict that feeds into the scorer."""
     
@@ -473,7 +473,7 @@ JSON:
     }
 
 
-def discover_business(profile: dict, region: str = "br-pt", model_provider: str = None) -> dict:
+def discover_business(profile: dict, region: str = "br-pt", model_provider: str = "auto") -> dict:
     """
     Main entry point. Searches for the ACTUAL business online using chat data.
     
@@ -706,7 +706,7 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
     return "\n".join(lines)
 
 
-def generate_sales_brief(profile: dict, discovery_data: dict, market_data: dict, model_provider: str = "groq") -> str:
+def generate_sales_brief(profile: dict, discovery_data: dict, market_data: dict, model_provider: str = "auto") -> str:
     """Generate a focused sales intelligence brief from all research data.
 
     Synthesizes discovery + market findings into a ~400-word text that answers:

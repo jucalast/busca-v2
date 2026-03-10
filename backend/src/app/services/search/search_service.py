@@ -11,7 +11,7 @@ class Struct:
     def __init__(self, **entries):
         self.__dict__.update(entries)
 
-def summarize_with_groq(text, query, api_key, model_provider="groq"):
+def summarize_with_groq(text, query, api_key, model_provider="auto"):
     if not api_key:
         raise ValueError("Chave da API não configurada. Adicione GROQ_API_KEY ou GEMINI_API_KEY no .env.")
 
@@ -28,7 +28,7 @@ Texto Base:
 
     return call_llm(provider=model_provider, prompt=prompt)
 
-def run_simple_search(args, model_provider="groq"):
+def run_simple_search(args, model_provider="auto"):
     """Original simple search mode."""
     results = search_duckduckgo(args.query, getattr(args, 'max_results', 8), getattr(args, 'region', 'br-pt'))
     
@@ -115,7 +115,7 @@ BUSINESS_CATEGORIES = [
     },
 ]
 
-def generate_business_queries(description, api_key, model_provider="groq"):
+def generate_business_queries(description, api_key, model_provider="auto"):
     categories_detail = ""
     for cat in BUSINESS_CATEGORIES:
         categories_detail += f'    "{cat["id"]}": {cat["foco"]} (CUIDADO: {cat["nao_falar"]})\n'
@@ -153,7 +153,7 @@ JSON:
 }}"""
     return call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
 
-def search_and_summarize_category(category, query, business_description, api_key, region, max_results=6, max_pages=2, model_provider="groq"):
+def search_and_summarize_category(category, query, business_description, api_key, region, max_results=6, max_pages=2, model_provider="auto"):
     print(f"  [{category['icone']}] Buscando: {query}", file=sys.stderr)
     
     results = search_duckduckgo(query, max_results=max_results, region=region)
@@ -332,7 +332,7 @@ DADOS DA INTERNET:
         "fontes": sources
     }
 
-def run_business_analysis(args, model_provider="groq"):
+def run_business_analysis(args, model_provider="auto"):
     description = args.query
     
     if model_provider == "gemini":
@@ -377,10 +377,10 @@ def run_business_analysis(args, model_provider="groq"):
 
 def search_simple(data: Dict[str, Any]) -> Dict[str, Any]:
     args = Struct(**data)
-    result = run_simple_search(args, model_provider=getattr(args, 'modelProvider', 'groq'))
+    result = run_simple_search(args, model_provider=getattr(args, 'modelProvider', 'auto'))
     return result
 
 def search_business(data: Dict[str, Any]) -> Dict[str, Any]:
     args = Struct(**data)
-    result = run_business_analysis(args, model_provider=getattr(args, 'modelProvider', 'groq'))
+    result = run_business_analysis(args, model_provider=getattr(args, 'modelProvider', 'auto'))
     return result

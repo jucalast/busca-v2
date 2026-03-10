@@ -245,7 +245,11 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, loading = false
         toggle: toggleVoice
     } = useVoiceInput({ onTranscript: onVoiceSuccess });
 
-    const progressValue = messages.length * 5; // Fake progress
+    // Real progress calculation based on extracted fields
+    const profileFields = Object.keys(extractedProfile).filter(k => !k.startsWith('_')).length;
+    const progressValue = readyForAnalysis
+        ? 100
+        : Math.min(10 + (profileFields * 2.5), 90);
     const currentBusinessName = extractedProfile.nome_negocio || 'Seu Negócio';
 
     return (

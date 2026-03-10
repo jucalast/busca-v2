@@ -83,7 +83,7 @@ def _build_schema_description(schema: dict, depth: int = 0) -> str:
 # LLM Service Functions
 # ═══════════════════════════════════════════════════════════════════
 
-def call_llm(prompt: str, temperature: float = 0.2, provider: str = "groq", json_mode: bool = False) -> Any:
+def call_llm(prompt: str, temperature: float = 0.2, provider: str = "auto", json_mode: bool = False) -> Any:
     """Call LLM service with error handling."""
     try:
         from app.core.llm_router import call_llm as router_call
@@ -250,7 +250,7 @@ Todos os valores devem ser específicos para "{nome}". Não use valores de exemp
             result = call_llm(
                 prompt=prompt,
                 temperature=0.2,
-                provider="groq",
+                provider="auto",
                 json_mode=True
             )
         except Exception as e:

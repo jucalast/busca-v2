@@ -189,7 +189,7 @@ Retorne APENAS o JSON."""
 
     try:
         result = call_llm(
-            provider="groq",
+            provider="auto",
             prompt=prompt,
             temperature=0.3,
             json_mode=True
@@ -330,7 +330,7 @@ Responda de forma direta e útil:"""
 
     try:
         reply = call_llm(
-            provider="groq",
+            provider="auto",
             prompt=prompt,
             temperature=0.4,
             json_mode=False

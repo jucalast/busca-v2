@@ -15,7 +15,7 @@ from app.services.common import (
 # Imports específicos deste módulo
 import concurrent.futures
 
-def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="groq"):
+def process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider="auto"):
     """Helper function to process a single category in a thread."""
     cat_id = cat.get("id", "")
     query = queries.get(cat_id, f"{cat.get('nome', '')} {perfil_data.get('segmento', '')}")
@@ -124,7 +124,7 @@ DIMENSION_LABELS = {
 
 def run_dimension_chat(input_data: dict) -> dict:
     """AI chat focused on a specific business dimension with internet search."""
-    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "groq")))
+    model_provider = input_data.get("aiModel", input_data.get("model_provider", os.environ.get("GLOBAL_AI_MODEL", "auto")))
 
     dimension = input_data.get("dimension", "")
     context = input_data.get("context", {})
@@ -208,7 +208,7 @@ def run_dimension_chat(input_data: dict) -> dict:
         "_tokens": tokens
     }
 
-def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = "groq") -> dict:
+def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str = "auto") -> dict:
     if model_provider == "gemini":
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:

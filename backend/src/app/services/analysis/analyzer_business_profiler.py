@@ -65,10 +65,10 @@ ESTRUTURA DO JSON:
 {{
     "perfil": {{
         "nome": "nome do negócio",
-        "segmento": "segmento detalhado",
+        "segmento": "segmento detalhado (máximo 5 palavras)",
         "localizacao": "cidade/estado",
         "modelo_negocio": "B2B / B2C / D2C / Misto",
-        "tipo_oferta": "produto / serviço / ambos",
+        "tipo_oferta": "produto / serviço / ambos (escolha APENAS UM, não retorne o placeholder literal)",
         "porte": "micro / pequena / média",
         "tempo_mercado": "tempo em operação",
         "ticket_medio_estimado": "valor",
@@ -198,6 +198,23 @@ def identify_dynamic_categories(profile: dict) -> list:
     Extract the ordered list of relevant categories from the LLM-generated profile.
     Safety net: remaps invalid IDs to the closest valid pillar key.
     """
+    _DEFAULT_PILLAR_META = {
+        "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6",
+                         "foco": "quem compra, personas, segmentos, comportamento de compra"},
+        "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6",
+                     "foco": "posicionamento, diferencial competitivo, proposta de valor"},
+        "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899",
+                              "foco": "presença visual, design, credibilidade, prova social"},
+        "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981",
+                         "foco": "canais de venda, distribuição, logística, prospecção"},
+        "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B",
+                             "foco": "SEO, conteúdo, redes sociais orgânico, presença online"},
+        "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444",
+                         "foco": "anúncios, Google Ads, Meta Ads, campanhas pagas"},
+        "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1",
+                            "foco": "funil, conversão, precificação, objeções, pós-venda"},
+    }
+
     categories = profile.get("categorias_relevantes", [])
 
     if not categories:
@@ -230,25 +247,14 @@ def identify_dynamic_categories(profile: dict) -> list:
             log_debug(f"Duplicate pillar ID '{cat_id}', skipping")
             continue
         seen_ids.add(cat_id)
+        
+        # Auto-fill missing icon/color from defaults if missing or placeholder in LLM output
+        if not cat.get("icone") or cat.get("icone") == "emoji":
+            cat["icone"] = _DEFAULT_PILLAR_META.get(cat_id, {}).get("icone", "🔍")
+        if not cat.get("cor") or cat.get("cor") == "#hex" or not cat.get("cor").startswith("#"):
+            cat["cor"] = _DEFAULT_PILLAR_META.get(cat_id, {}).get("cor", "#64748b")
+            
         fixed.append(cat)
-
-    # Auto-fill missing pillars with defaults so all 7 always get market data
-    _DEFAULT_PILLAR_META = {
-        "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6",
-                         "foco": "quem compra, personas, segmentos, comportamento de compra"},
-        "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6",
-                     "foco": "posicionamento, diferencial competitivo, proposta de valor"},
-        "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899",
-                              "foco": "presença visual, design, credibilidade, prova social"},
-        "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981",
-                         "foco": "canais de venda, distribuição, logística, prospecção"},
-        "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B",
-                             "foco": "SEO, conteúdo, redes sociais orgânico, presença online"},
-        "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444",
-                         "foco": "anúncios, Google Ads, Meta Ads, campanhas pagas"},
-        "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1",
-                            "foco": "funil, conversão, precificação, objeções, pós-venda"},
-    }
 
     present_ids = {c.get("id") for c in fixed}
     for pid, meta in _DEFAULT_PILLAR_META.items():
@@ -313,7 +319,7 @@ def identify_dynamic_categories(profile: dict) -> list:
     return fixed
 
 
-def run_profiler(onboarding_data: dict, model_provider: str = "groq") -> dict:
+def run_profiler(onboarding_data: dict, model_provider: str = "auto") -> dict:
     """
     Main entry point. Takes onboarding data, returns full profile + categories.
     """

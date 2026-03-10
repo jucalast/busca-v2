@@ -38,22 +38,22 @@ LIMITS = {
         "tokens_per_minute": 150000
     },
     "groq": {
-        "daily_requests": 500,      
-        "requests_per_minute": 30,
-        "tokens_per_minute": 30000,   # Increased from 6000 to allow larger prompts
-        "daily_tokens": 1000000       # Increased from 100k to allow more daily use
-    },
-    "openrouter": {
-        "daily_requests": 200,      
-        "requests_per_minute": 20,
-        "tokens_per_minute": 100000,
-        "daily_tokens": 5000000
-    },
-    "sambanova": {
         "daily_requests": 1000,      
         "requests_per_minute": 30,
-        "tokens_per_minute": 1000000,
-        "daily_tokens": 10000000
+        "tokens_per_minute": 30000,   # Back to 30k (safer for free tier)
+        "daily_tokens": 500000        # 500k is a safer assumption than 2M
+    },
+    "openrouter": {
+        "daily_requests": 50,       # Free tier limit
+        "requests_per_minute": 20,
+        "tokens_per_minute": 100000,
+        "daily_tokens": 500000
+    },
+    "sambanova": {
+        "daily_requests": 25,       # SambaNova free is very restrictive
+        "requests_per_minute": 10,
+        "tokens_per_minute": 250000,
+        "daily_tokens": 500000
     },
     "deepseek": {
         "daily_requests": 500,      
@@ -62,10 +62,10 @@ LIMITS = {
         "daily_tokens": 2000000
     },
     "cerebras": {
-        "daily_requests": 1000,     
-        "requests_per_minute": 30,
+        "daily_requests": 100,      
+        "requests_per_minute": 20,
         "tokens_per_minute": 100000,
-        "daily_tokens": 5000000
+        "daily_tokens": 1000000     # Official 1M tokens/day limit
     }
 }
 
@@ -163,7 +163,7 @@ class LLMUsageTracker:
             client.hset(day_key, "requests", limit)
             client.expire(day_key, 86400 * 2)
         except Exception:
-            pass
+            self._redis = None # Force rejuvenation on next call if network died
 
     def track_request(self, provider: str, prompt: str, response_text: str = "", model: str = "", headers: Dict[str, str] = None, prompt_tokens: int = 0, completion_tokens: int = 0):
         """Records a request and estimates token usage, syncing with headers if provided."""

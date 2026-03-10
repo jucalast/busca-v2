@@ -172,6 +172,9 @@ _GROQ_BROKEN_MODELS: set = set()
 _GROQ_TPD_EXHAUSTED: set = set()
 _GEMINI_EXHAUSTED_MODELS: set = set()
 
+# Circuit Breaker: Providers that failed completely are disabled for X minutes
+_PROVIDER_COOLDOWN: Dict[str, float] = {}
+
 
 def _sleep_with_cancellation(seconds: float, cancellation_check: Callable[[], None] = None):
     """Sleep in small increments to allow instant cancellation."""
@@ -268,7 +271,8 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                 if (is_model_error or is_tpd or is_payload_too_large) and mi < len(models) - 1:
                     reason = "indisponível" if is_model_error else "cota esgotada (TPD)" if is_tpd else "prompt muito grande"
                     print(f"  ⚠️ Modelo {model} {reason}. Trocando...", file=sys.stderr)
-                    _GROQ_BROKEN_MODELS.add(model)
+                    if is_model_error or is_tpd:
+                         _GROQ_TPD_EXHAUSTED.add(model) # Only mark as exhausted for fatal/daily errors
                     break
 
                 # JSON generation failure → try SAME model without constraint, then next
@@ -278,11 +282,11 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                         client, msg_payload, model, temperature
                     )
                     if extracted is not None:
-                        return extracted, 0, model # Estimação não disponível aqui
-                    # This model can't produce usable output — mark as broken for session
-                    _GROQ_BROKEN_MODELS.add(model)
+                        return extracted, 0, model 
+                    
+                    # Don't mark as broken permanently, just skip for this specific call chain if needed
                     if mi < len(models) - 1:
-                        print(f"  ➡️ {model} marcado como broken. Pulando para próximo modelo...", file=sys.stderr)
+                        print(f"  ➡️ {model} falhou no JSON. Tentando próximo modelo...", file=sys.stderr)
                         break
                     raise
 
@@ -304,11 +308,15 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                         print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
                         break
                     raise
-                # TPM (per-minute) — always wait and retry aggressively
+                # TPM (per-minute) — wait less, fallback faster
                 elif is_rate_limit and attempt < max_retries - 1:
                     retry_secs = _parse_retry_wait(error_msg)
-                    wait = retry_secs if retry_secs > 0 else (attempt + 1) * 30
-                    wait = min(wait, 120)  # Cap at 2 min
+                    wait = retry_secs if retry_secs > 0 else (attempt + 1) * 2 # Reduced from 30s to 2s
+                    wait = min(wait, 15)  # Cap at 15s instead of 120s
+                    # If wait is too long, just skip to next model
+                    if wait > 10 and mi < len(models) - 1:
+                        print(f"  🔄 Rate limit alto em {model} ({wait}s). Pulando para próximo...", file=sys.stderr)
+                        break
                     print(f"  ⏳ Rate limit em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
                     _sleep_with_cancellation(wait, cancellation_check)
                     continue
@@ -752,13 +760,7 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
     else:
         # Normal/Short prompt: Elite/Balanced priority chain
         # User requested: OpenRouter, SambaNova, Cerebras first, then Groq, Gemini.
-        elite_providers = ["openrouter", "sambanova", "cerebras"]
-        
-        # Balance elite providers if using 'auto' to avoid hitting same limits
-        import random
-        random.shuffle(elite_providers)
-        
-        fallback_chain = elite_providers + ["groq", "gemini"]
+        fallback_chain = ["openrouter", "sambanova", "cerebras", "groq", "gemini"]
     
     chain = fallback_chain.copy()
     
@@ -782,7 +784,18 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
         chain[-1], chain[-2] = chain[-2], chain[-1]
     
     errors = []
+    now = time.time()
     for provider in chain:
+        # Check if provider is in cooldown
+        if provider in _PROVIDER_COOLDOWN:
+            if now < _PROVIDER_COOLDOWN[provider]:
+                # Skip cooled down provider unless it's the only one left OR explicitly requested
+                if len(chain) > 1 and provider != actual_provider:
+                     # print(f"  ⏭️ Provedor {provider} em cooldown. Pulando...", file=sys.stderr)
+                     continue
+            else:
+                del _PROVIDER_COOLDOWN[provider]
+
         try:
             res, tokens, used_model = None, 0, None
             
@@ -822,14 +835,25 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
                 if not can_call: continue
                 res, tokens, used_model = call_openrouter(api_key, prompt, temperature, json_mode, messages, cancellation_check=cancellation_check)
 
+            # SUCCESS: Clear cooldown if it was set
+            if provider in _PROVIDER_COOLDOWN:
+                del _PROVIDER_COOLDOWN[provider]
+            
             if res:
                 return _process_llm_response(res, tokens, used_model, provider, provider != original_provider, json_mode)
 
         except Exception as e:
-            if "Task cancelled" in str(e): raise
-            errors.append(f"{provider}: {str(e)}")
-            print(f"⚠️ {provider} falhou: {str(e)[:100]}. Tentando próximo...", file=sys.stderr)
-            continue
+             err_msg = str(e)
+             errors.append(f"{provider} failed: {err_msg}")
+             
+             # If provider failed all internal retries, put it on cooldown (5 minutes)
+             # but only for transient/rate-limit errors, not for bad prompts
+             is_rate_limit = "429" in err_msg or "rate" in err_msg.lower() or "limit" in err_msg.lower() or "quota" in err_msg.lower()
+             if is_rate_limit or "Todos os modelos" in err_msg:
+                 print(f"  🛑 Provedor {provider} falhou criticamente. Entrando em cooldown de 5 min.", file=sys.stderr)
+                 _PROVIDER_COOLDOWN[provider] = time.time() + 300 # 5 minutes
+             
+             continue
     
     raise Exception(f"Todos os provedores de LLM falharam: {' | '.join(errors)}")
 

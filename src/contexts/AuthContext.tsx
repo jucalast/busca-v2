@@ -45,9 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Global AI Model preference
   const [aiModel, setAiModel] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('global_ai_model') || 'gemini';
+      return localStorage.getItem('global_ai_model') || 'auto';
     }
-    return 'gemini';
+    return 'auto';
   });
 
   // Load purely custom session from localStorage on mount
