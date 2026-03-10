@@ -673,7 +673,32 @@ _FIELD_LABELS_PT = {
 
 def _compute_missing_fields(profile: dict) -> tuple:
     """Compute which critical and bonus fields are still missing, organized by groups."""
-    filled = {k for k, v in profile.items() if v is not None and v != "" and v != [] and str(v).lower() not in ("null", "none")}
+    def _is_field_filled(value):
+        if not value or str(value).lower() in ("null", "none", "", "desconhecido"):
+            return False
+        # Generic logic: any meaningful data counts as filled
+        val_str = str(value).strip()
+        
+        # Empty or meaningless responses
+        if len(val_str) < 3:
+            return False
+            
+        # Common negative responses that don't count as filled
+        negative_responses = ["não possui", "não tem", "nao possui", "nao tem", "sem", "nenhum"]
+        if val_str.lower() in negative_responses:
+            return False
+            
+        # Any other response with meaningful content counts as filled
+        # This includes: numbers, text with specific details, URLs, ranges, etc.
+        return True
+    
+    filled = {k for k, v in profile.items() if _is_field_filled(v)}
+    
+    # Debug: Log which fields are considered filled
+    log_debug(f"Campos preenchidos: {sorted(filled)}")
+    log_debug(f"Campos faltando: {sorted([f for f in BONUS_FIELDS if f not in filled])}")
+    if 'equipe' in profile:
+        log_debug(f"Valor do campo equipe: '{profile.get('equipe')}' -> Preenchido: {_is_field_filled(profile.get('equipe'))}")
     
     missing_critical = [f for f in CRITICAL_FIELDS if f not in filled]
     missing_bonus = [f for f in BONUS_FIELDS if f not in filled]
@@ -749,8 +774,27 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     # Logic for ready_now: All critical must be filled, and we need at least some minimal bonus info
     has_critical = len(missing_critical) == 0
     
-    # Check if we have enough "real" data (not just "Não possui" or "Desconhecido" for everything)
-    real_data_count = len([k for k, v in updated_profile.items() if v and str(v).lower() not in ("null", "none", "", "desconhecido", "não possui")])
+    # Check if we have enough "real" data (not just empty/null values)
+    def _is_valid_data(value):
+        if not value or str(value).lower() in ("null", "none", "", "desconhecido"):
+            return False
+        # Generic logic: any meaningful data counts as valid
+        val_str = str(value).strip()
+        
+        # Empty or meaningless responses
+        if len(val_str) < 3:
+            return False
+            
+        # Common negative responses that don't count as valid data
+        negative_responses = ["não possui", "não tem", "nao possui", "nao tem", "sem", "nenhum"]
+        if val_str.lower() in negative_responses:
+            return False
+            
+        # Any other response with meaningful content counts as valid
+        # This includes: numbers, text with specific details, URLs, ranges, etc.
+        return True
+    
+    real_data_count = len([k for k, v in updated_profile.items() if _is_valid_data(v)])
     
     # We want at least some bonus fields to be filled OR all groups to have some progress
     groups_with_progress = len([g for g in group_status.values() if not g["is_complete"] and g["count_missing"] < g["total"]])

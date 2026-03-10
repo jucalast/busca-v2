@@ -1022,3 +1022,68 @@ def do_specialist_tasks(data: dict) -> dict:
         brief=profile,
         model_provider=data.get("aiModel", "groq")
     )
+
+def do_register(data: dict) -> dict:
+    """Register a new user."""
+    from app.core import database as db
+    email = data.get("email")
+    password = data.get("password")
+    name = data.get("name")
+    
+    if not email or not password:
+        return {"success": False, "error": "Email e senha são obrigatórios"}
+    
+    try:
+        user = db.register_user(email, password, name)
+        # Auto-login after registration
+        login_result = db.login_user(email, password)
+        
+        if not login_result:
+             return {"success": True, "user": user, "session": None, "access_token": None}
+             
+        return {"success": True, **login_result}
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": f"Erro ao registrar: {str(e)}"}
+
+def do_login(data: dict) -> dict:
+    """Login a user."""
+    from app.core import database as db
+    email = data.get("email")
+    password = data.get("password")
+    
+    if not email or not password:
+        return {"success": False, "error": "Email e senha são obrigatórios"}
+    
+    result = db.login_user(email, password)
+    
+    if result:
+        return {"success": True, **result}
+    else:
+        return {"success": False, "error": "Email ou senha inválidos"}
+
+def do_logout(data: dict) -> dict:
+    """Logout a user."""
+    from app.core import database as db
+    token = data.get("token")
+    
+    if token:
+        db.delete_session(token)
+    
+    return {"success": True}
+
+def do_validate_session(data: dict) -> dict:
+    """Validate a user session."""
+    from app.core import database as db
+    token = data.get("token")
+    
+    if not token:
+        return {"success": False, "error": "Token não fornecido"}
+    
+    session = db.validate_session(token)
+    
+    if session:
+        return {"success": True, "session": session}
+    else:
+        return {"success": False, "error": "Sessão inválida ou expirada"}

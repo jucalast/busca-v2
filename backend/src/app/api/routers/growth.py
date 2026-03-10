@@ -10,7 +10,8 @@ from app.schemas.requests import (
     ActionExpandSubtasksRequest, ActionAITryUserTaskRequest,
     ActionExecuteAllSubtasksRequest, ActionPollBackgroundStatusRequest,
     ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest,
-    PillarStateRequest, AnalysisTasksRequest, DeleteBusinessRequest, ProductionAgentRequest
+    PillarStateRequest, AnalysisTasksRequest, DeleteBusinessRequest, ProductionAgentRequest,
+    ActionRegisterRequest, ActionLoginRequest, ActionLogoutRequest, ActionValidateSessionRequest
 )
 from app.services.core.service_growth import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
@@ -19,10 +20,26 @@ from app.services.core.service_growth import (
     do_execute_all_subtasks, do_get_background_status,
     do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task,
     do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_delete_business,
-    do_run_production_pillar_agent
+    do_run_production_pillar_agent, do_register, do_login, do_logout, do_validate_session
 )
 
 router = APIRouter()
+
+@router.post("/register")
+def register(req: ActionRegisterRequest):
+    return do_register(req.model_dump())
+
+@router.post("/login")
+def login(req: ActionLoginRequest):
+    return do_login(req.model_dump())
+
+@router.post("/logout")
+def logout(req: ActionLogoutRequest):
+    return do_logout(req.model_dump())
+
+@router.post("/validate-session")
+def validate_session(req: ActionValidateSessionRequest):
+    return do_validate_session(req.model_dump())
 
 @router.post("/redo-subtasks")
 def redo_subtasks(req: ActionRedoSubtasksRequest):

@@ -402,12 +402,12 @@ JSON:
   "analise_competitiva_resumo": "Síntese em 2-3 frases: posicionamento competitivo de {nome}, principal vulnerabilidade e maior oportunidade de diferenciação para vender mais",
   "dados_mercado_local": {{ "preco_medio_regiao": null, "tendencias": [], "oportunidades": [] }},
   "problemas_detectados": [],
-  "resumo_executivo": "Dados insuficientes para análise completa"
+  "resumo_executivo": "Análise baseada nos dados encontrados"
 }}"""
 
     # Use the central balancer with requested priority (OpenRouter, SambaNova, Cerebras first)
     try:
-        log_llm(f"Sintetizando discovery com balanceamento centralizado...")
+        log_llm(f"Discovery Synthesis: Chamando LLM para extrair insights. Tamanho dos dados brutos: {len(raw_block)} chars.")
         result = call_llm(provider=None, prompt=prompt, temperature=0.2, json_mode=True)
         
         # Validate result structure
@@ -424,8 +424,53 @@ JSON:
             result["dados_mercado_local"] = {}
         if "problemas_detectados" not in result:
             result["problemas_detectados"] = []
-        if "resumo_executivo" not in result:
-            result["resumo_executivo"] = "Análise parcial dos dados"
+        # Generate better summary based on what was actually found
+        pd = result.get("presenca_digital", {})
+        concorrentes = result.get("concorrentes_encontrados", [])
+        
+        found_items = []
+        for canal in ["instagram", "site", "linkedin", "whatsapp", "google_maps", "email"]:
+            if pd.get(canal, {}).get("encontrado"):
+                found_items.append(canal)
+        
+        n_comp = len(concorrentes)
+        
+        # Let AI generate the summary based on actual findings
+        if found_items or n_comp > 0:
+            # Build context for AI to generate opinion
+            context_parts = []
+            if found_items:
+                context_parts.append(f"presença digital em {len(found_items)} canais: {', '.join(found_items)}")
+            if n_comp > 0:
+                context_parts.append(f"{n_comp} concorrentes identificados")
+            
+            context = f"Baseado nos dados encontrados: {', '.join(context_parts)}."
+            
+            # Use AI to generate opinion
+            ai_prompt = f"""Com base nesta análise de negócios para "{nome}" ({segmento}, {loc}), gere uma opinião direta e concisa:
+
+{context}
+
+Dados brutos:
+{raw_block[:1000]}
+
+REGRAS:
+- Responda como um consultor de negócios experiente
+- Seja direto e prático (máximo 2 frases)
+- Dê sua opinião sobre o que esses dados significam
+- Use linguagem profissional e acessível
+- Não use emojis ou linguagem genérica
+
+Opinião:"""
+            
+            try:
+                log_llm("Discovery Synthesis: Chamando LLM para gerar resumo executivo.")
+                ai_summary = call_llm(provider="auto", prompt=ai_prompt, temperature=0.7, json_mode=False)
+                result["resumo_executivo"] = str(ai_summary).strip() if ai_summary else "Análise baseada nos dados encontrados"
+            except:
+                result["resumo_executivo"] = "Análise baseada nos dados encontrados"
+        else:
+            result["resumo_executivo"] = "Dados limitados para análise - pouca informação digital disponível"
         if "analise_competitiva_resumo" not in result:
             result["analise_competitiva_resumo"] = ""
         
@@ -450,10 +495,10 @@ JSON:
         return result
         
     except Exception as e:
-        log_error(f"Erro ao sintetizar discovery: {e}")
+        log_error(f"Erro na API ao sintetizar discovery: {repr(e)}")
     
     # If all providers failed, return basic structure
-    log_warning("Todos os provedores falharam para síntese de discovery")
+    log_warning("API de síntese de Discovery falhou. Retornando estrutura de fallback.")
     return {
         "found": False, 
         "error": "All providers failed",
@@ -765,6 +810,7 @@ Seja ESPECÍFICO. Use os dados encontrados. Mencione o segmento ({segmento}) e o
 NÃO seja genérico — cada ponto deve ser diretamente aplicável a ESTE negócio."""
 
     try:
+        log_llm(f"Sales Brief: Chamando LLM para gerar brief. Discovery: {len(discovery_summary)} chars, Market: {len(market_highlights)} chars.")
         result = call_llm(provider=model_provider, prompt=prompt, temperature=0.25, json_mode=False)
         if isinstance(result, dict):
             # LLM returned JSON despite json_mode=False — extract text content
@@ -774,7 +820,8 @@ NÃO seja genérico — cada ponto deve ser diretamente aplicável a ESTE negóc
             return str(brief_text)[:2500]
         return str(result)[:2500]
     except Exception as e:
-        log_error(f"Erro ao gerar sales brief: {e}")
+        log_error(f"Erro na API ao gerar sales brief: {repr(e)}")
+        log_warning("API de Sales Brief falhou. Retornando brief de fallback.")
         # Return minimal fallback so scorer still works
         return (
             f"NEGÓCIO: {nome} ({segmento}). "

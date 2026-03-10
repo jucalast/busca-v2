@@ -625,8 +625,8 @@ def call_openrouter(api_key: str, prompt: str, temperature: float = 0.3, json_mo
         # Mid-size context
         models = [m for m in models if "gemini" in m or "70b" in m or "instruct" in m]
 
-    for mi, model in enumerate(models[:4]): # Try at most 4 models to avoid long waits
-        for attempt in range(2): # 2 attempts per model instead of max_retries
+    for mi, model in enumerate(models[:6]): # Try up to 6 models for better success rate
+        for attempt in range(1): # Single attempt per model for faster failover
             try:
                 # Synchronous cancellation check
                 if cancellation_check: cancellation_check()
@@ -670,17 +670,17 @@ def call_openrouter(api_key: str, prompt: str, temperature: float = 0.3, json_mo
 
                 if is_model_error and mi < len(models) - 1:
                     print(f"  ⚠️ OpenRouter modelo {model} indisponível. Trocando...", file=sys.stderr)
-                    break
+                    break  # Immediate switch without delay
 
-                # Spend limit exceeded on a specific provider - try next model
+                # Spend limit exceeded on a specific provider - try next model immediately
                 if is_spend_limit and mi < len(models) - 1:
                     print(f"  🔄 OpenRouter spend limit em {model}. Trocando modelo...", file=sys.stderr)
-                    break
+                    break  # Immediate switch without delay
                 elif is_spend_limit:
                     raise
 
                 if is_rate_limit and attempt < 1:
-                    wait = 5 # Fixed short wait for OpenRouter free models
+                    wait = 2 # Reduced wait time for faster OpenRouter model switching
                     print(f"  ⏳ OpenRouter rate limit em {model}. Aguardando {wait}s...", file=sys.stderr)
                     _sleep_with_cancellation(wait, cancellation_check)
                     continue
@@ -846,12 +846,13 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
              err_msg = str(e)
              errors.append(f"{provider} failed: {err_msg}")
              
-             # If provider failed all internal retries, put it on cooldown (5 minutes)
+             # If provider failed all internal retries, put it on cooldown (2 minutes for OpenRouter, 5 for others)
              # but only for transient/rate-limit errors, not for bad prompts
              is_rate_limit = "429" in err_msg or "rate" in err_msg.lower() or "limit" in err_msg.lower() or "quota" in err_msg.lower()
              if is_rate_limit or "Todos os modelos" in err_msg:
-                 print(f"  🛑 Provedor {provider} falhou criticamente. Entrando em cooldown de 5 min.", file=sys.stderr)
-                 _PROVIDER_COOLDOWN[provider] = time.time() + 300 # 5 minutes
+                 cooldown_duration = 120 if provider == "openrouter" else 300  # 2 minutes for OpenRouter, 5 for others
+                 print(f"  🛑 Provedor {provider} falhou criticamente. Entrando em cooldown de {cooldown_duration//60} min.", file=sys.stderr)
+                 _PROVIDER_COOLDOWN[provider] = time.time() + cooldown_duration
              
              continue
     

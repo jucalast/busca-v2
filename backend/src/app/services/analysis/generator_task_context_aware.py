@@ -109,10 +109,11 @@ def generate_context_aware_tasks(
         }
         
     except Exception as e:
-        print(f"  ❌ Context-aware task generation failed for {pillar_key}: {str(e)}", file=sys.stderr)
+        log_error(f"Geração de tarefas context-aware para '{pillar_key}' falhou: {repr(e)}")
         return {
             "success": False,
-            "error": str(e)
+            "error": str(e),
+            "pillar_key": pillar_key
         }
 
 
@@ -250,6 +251,7 @@ def _generate_pillar_tasks_with_llm(
     prompt = _build_context_aware_prompt(pillar_key, context, specialist, research_content)
     
     # Chamar LLM
+    print(f"  🧠 TaskGen ({pillar_key}): Chamando LLM para gerar tarefas. Contexto: {len(prompt)} chars, Pesquisa: {len(research_content)} chars.", file=sys.stderr)
     result = call_llm(
         provider=model_provider,
         prompt=prompt,
@@ -259,9 +261,14 @@ def _generate_pillar_tasks_with_llm(
 
     # call_llm with json_mode=True returns the parsed dict directly (not a wrapper)
     if result is None:
+        log_error(f"TaskGen ({pillar_key}): Retorno da API foi nulo.")
         raise Exception("LLM call failed: no response")
-    if isinstance(result, dict) and result.get("error") and not result.get("tarefas"):
-        raise Exception(f"LLM call failed: {result.get('error')}")
+
+    if not isinstance(result, dict) or not result.get("tarefas"):
+        log_warning(f"TaskGen ({pillar_key}): Retorno da API em formato inesperado ou sem tarefas. Chaves recebidas: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+        if isinstance(result, dict) and result.get("error"):
+            raise Exception(f"LLM call failed: {result.get('error')}")
+        # If it's just missing tasks, we'll let it proceed and the fallback will be triggered.
 
     # result IS the parsed content
     parsed = result if isinstance(result, dict) else {}

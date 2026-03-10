@@ -614,6 +614,7 @@ JSON:
 }}"""
 
     log_debug(f"Pilar {dim_key} - Auditoria Iniciada")
+    log_llm(f"Scorer ({dim_key}): Chamando LLM para auditoria. Discovery: {'Sim' if discovery_text.strip() else 'Não'}, Market: {'Sim' if market_text.strip() else 'Não'}, Intel: {'Sim' if strategic_intel else 'Não'}.")
 
     try:
         result = call_llm(provider=model_provider, prompt=prompt)
@@ -642,7 +643,8 @@ JSON:
         result["peso"] = dim_cfg["peso"]
         return result
     except Exception as e:
-        log_error(f"Erro no Scorer para {dim_key}: {e}")
+        log_error(f"Erro na API do Scorer para '{dim_key}': {repr(e)}")
+        log_warning(f"Scorer ({dim_key}): Retornando score de fallback baseado em dados objetivos devido a erro na API.")
         # Even on LLM error, compute objective score so we don't return a flat 50
         obj_score = _compute_objective_score(dim_key, profile)
         # In case of technical error, we trust the objective score more

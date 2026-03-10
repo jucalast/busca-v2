@@ -149,7 +149,10 @@ EXEMPLOS DE COMO ADAPTAR O FOCO (SEMPRE gere TODOS os 7 IDs):
 NUNCA invente IDs como "credibilidade_e_confianca", "logistica_sob_encomenda", "marketing_organico_de_baixo_custo".
 SEMPRE use EXATAMENTE: publico_alvo, branding, identidade_visual, canais_venda, trafego_organico, trafego_pago, processo_vendas."""
 
-    return call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
+    log_llm(f"Profiler: Chamando LLM para gerar perfil inicial. Tamanho dos dados: {len(json.dumps(onboarding_data))} chars.")
+    result = call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
+    log_debug("Profiler: Perfil inicial recebido do LLM.")
+    return result
 
 
 _VALID_PILLAR_IDS = {
@@ -293,17 +296,17 @@ def identify_dynamic_categories(profile: dict) -> list:
     localizacao = perfil_data.get("localizacao", perfil_data.get("cidade_estado", ""))
     dificuldade = perfil_data.get("dificuldades", "")[:60]
 
-    # Queries orientadas à pergunta real do dono: "por que não vendo mais e o que fazer?"
-    _dif_snippet = dificuldade[:50] if dificuldade else ""
+    # Queries de fallback aprimoradas, usando as dificuldades para maior especificidade
+    _dif_snippet = f"superar dificuldade {dificuldade}" if dificuldade else ""
     _loc_snippet = localizacao[:30] if localizacao else ""
     _QUERY_TEMPLATES = {
-        "publico_alvo": f"quem compra {segmento} perfil comprador ideal como conquistar clientes {segmento} {_loc_snippet}".strip(),
-        "branding": f"como se diferenciar concorrência {segmento} proposta de valor única ganhar credibilidade vender mais",
-        "identidade_visual": f"como apresentação visual aumenta vendas {segmento} credibilidade profissional converter clientes",
+        "publico_alvo": f"quem compra {segmento} perfil comprador ideal como conquistar clientes {_loc_snippet} {_dif_snippet}".strip(),
+        "branding": f"como se diferenciar concorrência {segmento} proposta de valor única ganhar credibilidade {_dif_snippet}".strip(),
+        "identidade_visual": f"como apresentação visual aumenta vendas {segmento} credibilidade profissional converter clientes online",
         "canais_venda": f"melhores canais para vender {segmento} onde clientes compram {_loc_snippet} como aumentar vendas {_dif_snippet}".strip(),
-        "trafego_organico": f"como atrair clientes sem pagar anúncio {segmento} SEO local conteúdo que gera leads orgânicos",
-        "trafego_pago": f"anúncios que vendem {segmento} Meta Ads Google Ads como reduzir custo por cliente adquirido",
-        "processo_vendas": f"como vender mais {segmento} contornar objeções técnicas fechamento {_dif_snippet} converter leads".strip(),
+        "trafego_organico": f"como atrair clientes sem pagar anúncio {segmento} SEO local conteúdo que gera leads {_dif_snippet}".strip(),
+        "trafego_pago": f"anúncios que vendem para {segmento} Meta Ads Google Ads como reduzir custo por cliente {_dif_snippet}".strip(),
+        "processo_vendas": f"como vender mais {segmento} contornar objeções fechamento de vendas {_dif_snippet}".strip(),
     }
 
     queries = profile["queries_sugeridas"]
@@ -375,10 +378,11 @@ def run_profiler(onboarding_data: dict, model_provider: str = "auto") -> dict:
         }
 
     except Exception as e:
-        log_error(f"Erro ao gerar perfil: {e}")
+        error_details = repr(e)
+        log_error(f"Falha crítica na geração do perfil: {error_details}")
         return {
             "success": False,
-            "erro": f"Erro ao gerar perfil de negócio: {str(e)[:200]}"
+            "erro": f"Erro ao gerar perfil de negócio: {str(e)[:250]}"
         }
 
 

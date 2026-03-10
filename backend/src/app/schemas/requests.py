@@ -95,6 +95,22 @@ class ActionRedoPillarRequest(BaseModel):
     analysis_id: str
     pillar_key: str
 
+# Auth actions schemas
+class ActionRegisterRequest(BaseGrowthRequest):
+    email: str
+    password: str
+    name: Optional[str] = None
+
+class ActionLoginRequest(BaseGrowthRequest):
+    email: str
+    password: str
+
+class ActionLogoutRequest(BaseGrowthRequest):
+    token: Optional[str] = None
+
+class ActionValidateSessionRequest(BaseGrowthRequest):
+    token: str
+
 # Typed schemas for endpoints that previously used dict
 class PillarStateRequest(BaseModel):
     analysis_id: str
