@@ -38,7 +38,7 @@ interface UsePillarNavigationProps {
     setTaskSubtasksClear: React.Dispatch<React.SetStateAction<Record<string, any>>>;
     setCompletedTasksClear: React.Dispatch<React.SetStateAction<Record<string, Set<string>>>>;
     setExpandedTaskIdsClear: React.Dispatch<React.SetStateAction<Set<string>>>;
-    handleAutoExecute: (pillarKey: string, task: TaskItem) => void;
+    handleAutoExecute: (pillarKey: string, task: TaskItem, skipTrigger?: boolean) => void;
 }
 
 export function usePillarNavigation({
@@ -349,7 +349,7 @@ export function usePillarNavigation({
 
                         if (pollResult.success && pollResult.progress && pollResult.progress.status === 'running') {
                             console.log(`🔄 Re-mounting background task polling for: ${task.id}`);
-                            handleAutoExecute(selectedPillar, task);
+                            handleAutoExecute(selectedPillar, task, true);
                             break;
                         }
                     } catch (err) {

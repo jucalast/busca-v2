@@ -26,7 +26,7 @@ Regras:
 Texto Base:
 {text[:20000]}"""
 
-    return call_llm(provider=model_provider, prompt=prompt)
+    return call_llm(model_provider, prompt=prompt)
 
 def run_simple_search(args, model_provider="auto"):
     """Original simple search mode."""
@@ -151,7 +151,7 @@ JSON:
         "precificacao": "query"
     }}
 }}"""
-    return call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
+    return call_llm(model_provider, prompt=prompt, temperature=0.2, json_mode=True)
 
 def search_and_summarize_category(category, query, business_description, api_key, region, max_results=6, max_pages=2, model_provider="auto"):
     print(f"  [{category['icone']}] Buscando: {query}", file=sys.stderr)
@@ -317,7 +317,7 @@ ESTRUTURA DO JSON:
 DADOS DA INTERNET:
 {aggregated_text[:18000]}"""
         
-        resumo = call_llm(provider=model_provider, prompt=prompt, temperature=0.3)
+        resumo = call_llm(model_provider, prompt=prompt, temperature=0.3)
     except Exception as e:
         print(f"  ❌ Erro ao resumir {category['nome']}: {e}", file=sys.stderr)
         resumo = {"erro": f"Não foi possível gerar resumo: {str(e)[:200]}"}

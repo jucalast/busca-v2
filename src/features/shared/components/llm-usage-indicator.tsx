@@ -52,16 +52,16 @@ export default function LLMUsageIndicator({ provider }: { provider: string }) {
     const fmt = (n: number) => n > 1000 ? (n / 1000).toFixed(1) + 'k' : n;
 
     const getStatusColor = () => {
-        if (isBlocked) return 'var(--color-destructive)';
-        if (status === 'warning') return 'var(--color-warning)';
-        return 'var(--color-text-secondary)';
+        if (isBlocked) return '#ef4444';
+        if (status === 'warning') return '#f59e0b';
+        return 'rgba(255,255,255,0.5)';
     };
 
     return (
         <div className="flex items-center gap-1 px-1 py-0.5 rounded" title={isBlocked ? "Limite atingido (Requisições ou Tokens)" : "Uso de cota LLM"}>
             <span className="text-[11px] font-medium whitespace-nowrap" style={{ color: getStatusColor(), opacity: status === 'ok' ? 0.8 : 1 }}>
                 {daily.requests}/{fmt(daily.limit_requests)} req
-                {daily.limit_tokens > 0 && daily.tokens > 0 && ` • ${fmt(daily.tokens)}/${fmt(daily.limit_tokens)} tk`}
+                {daily.limit_tokens > 0 && daily.tokens > 0 && ` • ${fmt(daily.tokens)}/${fmt(daily.limit_tokens)} tokens`}
             </span>
         </div>
     );

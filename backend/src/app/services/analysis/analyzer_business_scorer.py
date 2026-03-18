@@ -617,7 +617,7 @@ JSON:
     log_llm(f"Scorer ({dim_key}): Chamando LLM para auditoria. Discovery: {'Sim' if discovery_text.strip() else 'Não'}, Market: {'Sim' if market_text.strip() else 'Não'}, Intel: {'Sim' if strategic_intel else 'Não'}.")
 
     try:
-        result = call_llm(provider=model_provider, prompt=prompt)
+        result = call_llm("groq", prompt=prompt, json_mode=True, prefer_small=True)
         # Ensure expected fields
         result.setdefault("score", 50)
         result.setdefault("status", "atencao")
@@ -711,10 +711,12 @@ def _dedup_actions_cross_dimension(all_tasks: list) -> list:
     return deduped
 
 
-def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, strategic_intel: dict = None, model_provider: str = None, generate_tasks: bool = True, is_reanalysis: bool = False) -> dict:
+def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, strategic_intel: dict = None, 
+               model_provider: str = None, generate_tasks: bool = True, is_reanalysis: bool = False,
+               analysis_id: str = None, on_pillar_complete: callable = None) -> dict:
     """
-    Runs 7 scoring dimensions sequentially.
-    NOW: Uses 'Strategic Intel' from Intel Hub for deeper auditing.
+    Runs 7 scoring dimensions with hybrid sequential/parallel execution.
+    NOW: Supports real-time persistence (on_pillar_complete).
     """
     # Normalize profile if it's the full result from run_profiler
     if "success" in profile and "profile" in profile and isinstance(profile["profile"], dict):
@@ -739,7 +741,10 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
     chain_summaries = {}
     total_tokens = 0
 
-    for i, dim_key in enumerate(DIMENSION_ORDER):
+    # Phase 2: Hybrid Sequential/Parallel execution
+    # Step 1: Sequential Base (Strategic core)
+    base_pillars = ["publico_alvo", "branding", "identidade_visual", "canais_venda"]
+    for dim_key in base_pillars:
         dim_cfg = dict(DIMENSIONS[dim_key])
         dim_cfg["peso"] = dynamic_weights.get(dim_key, dim_cfg["peso"])
         
@@ -760,30 +765,112 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
         total_tokens += result.get("_tokens", 0)
         dimensoes[dim_key] = result
         chain_summaries[dim_key] = _extract_chain_summary(dim_key, result)
-
+        
+        # Persist immediately if callback provided
+        if on_pillar_complete and analysis_id:
+            on_pillar_complete(analysis_id, dim_key, result)
+        
+        # Collect tasks...
         for j, acao in enumerate(result.get("acoes_imediatas", [])):
             titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
             ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
             como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
-            
-            # Se a ferramenta não estiver no título, adicionamos para clareza
-            if ferramenta and ferramenta.lower() not in titulo.lower():
-                titulo = f"{titulo} usando {ferramenta}"
-                
+            if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
             all_tasks.append({
-                "id": f"task_{dim_key}_{j+1}",
-                "titulo": titulo,
-                "ferramenta": ferramenta,
-                "categoria": dim_key,
+                "id": f"task_{dim_key}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dim_key,
                 "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
                 "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
                 "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
-                "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "",
-                "descricao": como_fazer or titulo,
+                "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
             })
             previous_action_titles.append(titulo)
 
-        if i < len(DIMENSION_ORDER) - 1: time.sleep(1)
+    # Step 2: Parallel Traffic (Canais dependencies met)
+    traffic_pillars = ["trafego_organico", "trafego_pago"]
+    print(f"🚀 Scorer: Processando pilares de tráfego em paralelo...", file=sys.stderr)
+    
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_to_dim = {}
+        for dim_key in traffic_pillars:
+            dim_cfg = dict(DIMENSIONS[dim_key])
+            dim_cfg["peso"] = dynamic_weights.get(dim_key, dim_cfg["peso"])
+            market_text = _filter_market(dim_key, market_data)
+            dim_sources = _get_all_sources_for_dimension(dim_key, market_data)
+            disc_text = format_discovery_for_scorer(discovery_data, dim_key=dim_key) if discovery_data else ""
+            chain_ctx = _build_chain_context(dim_key, chain_summaries)
+            
+            future = executor.submit(
+                _score_dimension, dim_key, dim_cfg, profile, market_text, dim_sources, 
+                restricoes, api_key, previous_action_titles, disc_text, strategic_intel, 
+                chain_ctx, model_provider, contexto_dinamico
+            )
+            future_to_dim[future] = dim_key
+
+        for future in concurrent.futures.as_completed(future_to_dim):
+            dk = future_to_dim[future]
+            try:
+                res = future.result()
+                dimensoes[dk] = res
+                total_tokens += res.get("_tokens", 0)
+                
+                # Update summaries and persist traffic pillars immediately
+                chain_summaries[dk] = _extract_chain_summary(dk, res)
+                if on_pillar_complete and analysis_id:
+                    on_pillar_complete(analysis_id, dk, res)
+                    
+                for j, acao in enumerate(res.get("acoes_imediatas", [])):
+                    titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
+                    ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
+                    como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
+                    if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
+                    all_tasks.append({
+                        "id": f"task_{dk}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dk,
+                        "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
+                        "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
+                        "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
+                        "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
+                    })
+                    previous_action_titles.append(titulo)
+            except Exception as e:
+                log_error(f"Erro paralelo Scorer ({dk}): {e}")
+
+    # Step 3: Sequential Final (Processo de Vendas depends on traffic)
+    final_pillars = ["processo_vendas"]
+    for dim_key in final_pillars:
+        dim_cfg = dict(DIMENSIONS[dim_key])
+        dim_cfg["peso"] = dynamic_weights.get(dim_key, dim_cfg["peso"])
+        market_text = _filter_market(dim_key, market_data)
+        dim_sources = _get_all_sources_for_dimension(dim_key, market_data)
+        disc_text = format_discovery_for_scorer(discovery_data, dim_key=dim_key) if discovery_data else ""
+        chain_ctx = _build_chain_context(dim_key, chain_summaries)
+        
+        result = _score_dimension(
+            dim_key, dim_cfg, profile, market_text, dim_sources, restricoes, api_key,
+            previous_actions=previous_action_titles, discovery_text=disc_text,
+            strategic_intel=strategic_intel, chain_context=chain_ctx,
+            model_provider=model_provider, contexto_dinamico=contexto_dinamico
+        )
+        dimensoes[dim_key] = result
+        
+        # Persist final pillar
+        if on_pillar_complete and analysis_id:
+            on_pillar_complete(analysis_id, dim_key, result)
+            
+        # Final tasks processing...
+        for j, acao in enumerate(result.get("acoes_imediatas", [])):
+            titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
+            ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
+            como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
+            if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
+            all_tasks.append({
+                "id": f"task_{dim_key}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dim_key,
+                "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
+                "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
+                "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
+                "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
+            })
+            previous_action_titles.append(titulo)
     
     all_tasks = _dedup_actions_cross_dimension(all_tasks)
 

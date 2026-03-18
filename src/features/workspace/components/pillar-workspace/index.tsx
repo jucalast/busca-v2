@@ -7,6 +7,7 @@ import {
 import { useSession } from 'next-auth/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 // ─── Constants & Types ───
 import { PILLAR_META } from './constants';
@@ -28,7 +29,7 @@ import { TaskProgressBar } from './components/TaskProgressBar';
 import { FocusedTaskView } from './components/FocusedTaskView';
 import { TasksList } from './components/TasksList';
 import { DepBadge } from './components/DepBadge';
-import RateLimitWarning from '@/features/shared/components/rate-limit-warning';
+
 import TaskErrorBanner from '@/features/shared/components/task-error-banner';
 
 export default function PillarWorkspace({
@@ -47,6 +48,7 @@ export default function PillarWorkspace({
 }: PillarWorkspaceProps) {
     const { data: session } = useSession();
     const { aiModel: authAiModel } = useAuth();
+    const { isDark } = useSidebar();
     const router = useRouter();
     const DEFAULT_TASK_AI_MODEL = 'groq';
     const currentAiModel = aiModel || authAiModel || DEFAULT_TASK_AI_MODEL;
@@ -78,6 +80,7 @@ export default function PillarWorkspace({
     const [autoExecStatuses, setAutoExecStatuses] = useState<Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>>({});
     const [subtasksUpdateKey, setSubtasksUpdateKey] = useState(0);
     const abortControllersRef = useRef<Record<string, AbortController>>({});
+    const pollingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
     // ─── UI Preferences ───
     const [selectedTaskAiModel, setSelectedTaskAiModel] = useState<string>(currentAiModel);
@@ -158,7 +161,8 @@ export default function PillarWorkspace({
         setSubtasksUpdateKey,
         setError,
         setExpandingTask,
-        abortControllersRef
+        abortControllersRef,
+        pollingIntervalsRef
     );
 
     const {
@@ -298,10 +302,8 @@ export default function PillarWorkspace({
 
 
         return (
-            <div className="h-full flex relative overflow-hidden rounded-3xl mb-8 mr-8 gap-4">
-                {/* Background vibrancy is handled by body in globals.css */}
-
-                {/* Left Column - Header and Documents (Glass Sidebar) */}
+            <div className="h-full flex relative overflow-hidden">
+                {/* Left Column - Info & Docs (Slate Background for separation) */}
                 <PillarHeader
                     selectedPillar={selectedPillar}
                     plan={plan}
@@ -319,12 +321,17 @@ export default function PillarWorkspace({
                     openFolders={openFolders}
                     setOpenFolders={setOpenFolders}
                     loadingDoc={loadingDoc}
+                    done={done}
                 />
 
-                {/* Right Column - Tasks Area (Solid White Background now) */}
-                <div className="w-[40%] min-w-0 flex flex-col pt-0 relative z-10 overflow-hidden bg-white rounded-3xl p-6 border border-gray-200">
-                    {/* Header bar with Sequoia Wallpaper Glass Effect */}
-                    <div className="bg-white border-b border-gray-200 z-[120]">
+                {/* Right Column - Tasks Area (Pure White / Dark Surface) */}
+                <div className={`flex-1 min-w-0 flex flex-col pt-0 relative z-10 transition-colors duration-300 ${
+                    isDark ? 'bg-[--color-bg]' : 'bg-white'
+                }`}>
+                    {/* Progress Bar Header */}
+                    <div className={`border-b z-[120] px-8 py-2 transition-colors duration-300 ${
+                        isDark ? 'bg-[--color-bg] border-white/5' : 'bg-white border-gray-100'
+                    }`}>
                         <TaskProgressBar
                             totalTasks={totalTasks}
                             completedCount={completedCount}
@@ -336,15 +343,17 @@ export default function PillarWorkspace({
                         />
                     </div>
 
-                    {/* === CONTENT AREA === */}
+                    {/* Content Scroll Area */}
                     <div className="flex-1 flex flex-col overflow-hidden relative">
-                        <div className="px-8 mt-4">
-                            {/* Dependencies */}
+                        <div className="flex-1 overflow-y-auto px-12 py-8 pb-32 custom-scrollbar">
+                            {/* Banners & Errors */}
                             {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
-                                <div className="mb-6 p-4 rounded-2xl bg-white border border-gray-200">
-                                    <div className="flex items-center gap-2 mb-3 px-1">
+                                <div className={`mb-8 p-5 rounded-xl border transition-colors duration-300 ${
+                                    isDark ? 'bg-white/5 border-white/5' : 'bg-gray-50 border-gray-100'
+                                }`}>
+                                    <div className="flex items-center gap-2 mb-3">
                                         <Link2 size={16} className="text-blue-500" />
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Dependências do Plano</span>
+                                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Dependências</span>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {(deps.blockers || []).map((b: any) => <DepBadge key={b.pillar} dep={b} />)}
@@ -354,30 +363,25 @@ export default function PillarWorkspace({
                             )}
 
                             {showRateLimitWarning && rateLimitError && (
-                                <div className="mb-6">
-                                    <TaskErrorBanner
-                                        error={rateLimitError}
-                                        onClose={handleCloseRateLimitWarning}
-                                        modelName={selectedTaskAiModel}
-                                    />
+                                <div className="mb-8">
+                                    <TaskErrorBanner error={rateLimitError} onClose={handleCloseRateLimitWarning} modelName={selectedTaskAiModel} />
                                 </div>
                             )}
 
                             {error && (
-                                <div className="mb-6 p-4 rounded-2xl bg-red-50/50 border border-red-100 backdrop-blur-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-2 h-2 rounded-full bg-red-500" />
-                                        <span className="text-[13px] font-medium text-red-600">{error}</span>
+                                <div className={`mb-8 p-4 rounded-xl border flex items-center justify-between transition-colors duration-300 ${
+                                    isDark ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-100'
+                                }`}>
+                                    <div className={`flex items-center gap-3 text-[13px] font-medium ${isDark ? 'text-red-400' : 'text-red-600'}`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-red-400' : 'bg-red-500'}`} />
+                                        <span>{error}</span>
                                     </div>
-                                    <button onClick={() => setError('')} className="text-[11px] font-bold uppercase tracking-wider text-red-400 hover:text-red-500 transition-colors">Dispensar</button>
+                                    <button onClick={() => setError('')} className="text-[11px] font-bold text-red-400 uppercase hover:text-red-500 transition-colors">Dispensar</button>
                                 </div>
                             )}
-                        </div>
 
-                        {/* Tasks List Area - No inner scroll here, relying on outer if needed or list's own */}
-                        <div className="flex-1 px-4 pb-28 overflow-y-auto overflow-x-hidden flex flex-col relative" style={{ scrollbarWidth: 'none' }}>
-                            {/* Focused Task View */}
-                            {focusedTaskId && (
+                            {/* Main Task Views */}
+                            {focusedTaskId ? (
                                 <FocusedTaskView
                                     focusedTaskId={focusedTaskId}
                                     visibleTasks={visibleTasks}
@@ -407,11 +411,8 @@ export default function PillarWorkspace({
                                     showRateLimitWarning={showRateLimitWarning}
                                     handleCloseRateLimit={handleCloseRateLimitWarning}
                                 />
-                            )}
-
-                            {/* Regular Tasks List */}
-                            {!focusedTaskId && (
-                                <div className="max-w-4xl mx-auto w-full">
+                            ) : (
+                                <div className="max-w-4xl">
                                     <TasksList
                                         visibleTasks={visibleTasks}
                                         selectedPillar={selectedPillar}
@@ -429,18 +430,9 @@ export default function PillarWorkspace({
                                         autoExecTotal={autoExecTotal}
                                         setFocusedTaskId={setFocusedTaskId}
                                         setExpandedTaskIds={setExpandedTaskIds}
+                                        handleStopExecution={handleStopExecution}
                                     />
                                 </div>
-                            )}
-
-                            {/* Global Rate Limit Toast */}
-                            {showRateLimitWarning && rateLimitError && (
-                                <RateLimitWarning
-                                    currentModel={selectedTaskAiModel}
-                                    onModelChange={handleModelChange}
-                                    onRetry={handleRetryWithNewModel}
-                                    isRetrying={isRetrying}
-                                />
                             )}
                         </div>
                     </div>

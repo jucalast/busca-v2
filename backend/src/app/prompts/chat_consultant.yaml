@@ -13,7 +13,7 @@ information_extraction:
     REGRAS IMPORTANTES:
     1. Extraia informações da MENSAGEM ATUAL, usando o CONTEXTO para entender referências ambíguas
     2. Se a mensagem contém um nome próprio e o consultor perguntou o nome do negócio → é nome_negocio
-    3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é problemas/dificuldades. EXCEÇÃO: Se o usuário diz "não tenho [site/instagram/linkedin/cnpj]", isso NÃO é um problema, é apenas a confirmação de que o campo não existe.
+    3. Se a mensagem fala de dificuldade, desafio ou "conseguir mais X" → é dificuldades. EXCEÇÃO: Se o usuário diz "não tenho [site/instagram/linkedin/cnpj]", isso NÃO é um problema, é apenas a confirmação de que o campo não existe.
     4. Se a mensagem fala de meta, objetivo, crescimento, aumento → é objetivos
     5. Se a mensagem contém "B2B" ou "B2C" → é modelo
     6. Se a mensagem contém uma cidade/estado → é localizacao
@@ -37,11 +37,11 @@ information_extraction:
     - faturamento: Faturamento mensal
     - equipe: Número de pessoas na equipe
     - ticket_medio: Ticket médio por venda/serviço
-    - problemas: Problemas e desafios principais (inclui "conseguir mais clientes", "vender mais", etc)
+    - dificuldades: Desafios principais (inclui "conseguir mais clientes", "vender mais", etc)
     - objetivos: Objetivos e metas de crescimento (ex: "10% a mais no faturamento")
     - investimento: Investimento em marketing
     - canais: Canais de venda/comunicação
-    - clientes: Tipo de clientes
+    - clientes: Descrição do cliente ideal
     - concorrentes: Concorrentes diretos
     - fornecedores: Fornecedores de matéria-prima/insumos
     - tipo_cliente: Tipos de clientes/indústrias atendidas (ex: setor bancário, alimentos)
@@ -54,7 +54,7 @@ information_extraction:
     - instagram: Instagram handle
     - whatsapp: WhatsApp
     - linkedin: LinkedIn da empresa (URL ou nome)
-    - google_maps: Link do Google Maps ou Google Meu Negócio
+    - google_maps: Link do Google Maps ou Google Meu Negócio / Endereço
     - email_contato: E-mail de contato comercial
     - tempo_operacao: Há quanto tempo o negócio opera
     - modelo_operacional: Modelo operacional
@@ -84,15 +84,15 @@ response_generation:
     {status_instruction}
 
     REGRAS ABSOLUTAS:
-    1. NUNCA use frases genéricas como "Poderia me dar mais detalhes sobre isso?" ou "Fale mais sobre seu negócio". Use a instrução acima para pedir dados ESPECÍFICOS.
-    2. NUNCA repita de volta os dados que o usuário acabou de fornecer. Ele já sabe o que disse.
-    3. NUNCA pergunte sobre informações que JÁ estão no perfil resumido acima. Verifique o "O QUE JÁ SEI" antes de perguntar qualquer coisa.
-    4. NUNCA sugira estratégias incompatíveis com o modelo de negócio descrito acima.
-    5. Seja DIRETO e PRÁTICO. Nada de textos longos "para começar...", "é interessante notar que...".
-    6. Use linguagem profissional e acessível. É TOTALMENTE PROIBIDO O USO DE EMOJIS (nenhum emoji permitido).
-    7. Máximo 10 linhas totais na resposta.
-    8. RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS (PT-BR), sob nenhuma hipótese utilize outro idioma.
-    9. Se o usuário disser que não tem CNPJ, não insista. Diga "Sem problemas!" e peça o **nome do negócio** para continuarmos manualmente.
-    10. **FOCO NO DNA**: NUNCA pergunte sobre temas que não estejam na lista de 30 campos oficiais (como gerenciamento interno, RH detalhado ou organograma). Seu único objetivo é preencher os campos faltantes do DNA Estratégico.
-    11. **PROGRESSO LINEAR**: Assim que um dado for extraído, mova imediatamente para o próximo campo faltante indicado na instrução de estado.
-    12. Peça apenas UM ou DOIS dados por vez para não sobrecarregar o usuário.
+    1. Aja como um ESTRATEGISTA ELITE. Não apenas peça dados, explique brevemente (1 frase) como esse dado impactará o plano de crescimento que estamos construindo.
+    2. NUNCA use frases genéricas como "Poderia me dar mais detalhes sobre isso?". Seja específico baseado no ESTADO.
+    3. NUNCA repita dados que o usuário já forneceu.
+    4. NUNCA pergunte sobre informações que JÁ estão no perfil resumido acima.
+    5. Tom Profissional e Moderno: Use um tom de consultoria premium. Emojis são permitidos, mas use com parcimônia (máximo 2 por resposta) para manter a elegância.
+    6. **BREVIDADE MÁXIMA**: Responda de forma direta e concisa. Máximo 5 linhas totais. Não use rodeios.
+    7. RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS (PT-BR).
+    8. **AGRUPAMENTO INTELIGENTE**: Se a instrução de estado indicar vários campos da mesma categoria, pergunte por 2 ou 3 deles de uma vez só.
+    9. **ENTREGA EM MASSA / DADOS ÓBVIOS**: Se o usuário fornecer muitos dados ou se você já os obteve via ferramenta (CNPJ), RECONHEÇA os dados e não os peça novamente.
+    10. Se o usuário disser que não tem algo, registre como "Não possui" e não pergunte mais.
+    11. **DNA ESTRATÉGICO**: Assim que o estado mudar para "DNA MAPEADO" ou "DNA QUASE PRONTO", pare de pedir dados e convide para a análise.
+    12. **DADOS JÁ PRESENTES**: Se o nome, segmento ou modelo já aparecem no resumo ("O QUE JÁ SEI"), NUNCA pergunte sobre eles.

@@ -145,7 +145,7 @@ def do_profile(data: dict) -> dict:
         if not found:
             log_warning(f"Campo crítico ausente: {label} — profiler vai tentar inferir")
     
-    result = run_profiler(onboarding, model_provider=data.get("aiModel", "groq"))
+    result = run_profiler(onboarding, model_provider="auto")
     
     # Debug: log do resultado
     log_debug(f"Service Growth - resultado do profiler ({result.get('success')})")
@@ -198,7 +198,7 @@ def do_specialist_plan(data: dict) -> dict:
     analysis_id = data.get("analysis_id")
     pillar_key = data.get("pillar_key")
     return generate_pillar_plan(
-        analysis_id, pillar_key, data.get("profile", {}), model_provider=data.get("aiModel", "groq")
+        analysis_id, pillar_key, data.get("profile", {}), model_provider="auto"
     )
 
 def do_specialist_execute(data: dict) -> dict:
@@ -208,7 +208,7 @@ def do_specialist_execute(data: dict) -> dict:
         task_id=data.get("task_id"),
         task_data=data.get("task_data", {}),
         brief=data.get("profile", {}),
-        model_provider=data.get("aiModel", "groq")
+        model_provider="auto"
     )
 
 def do_expand_subtasks(data: dict) -> dict:
@@ -224,7 +224,7 @@ def do_expand_subtasks(data: dict) -> dict:
         pillar_key=pillar_key,
         task_data=task_data,
         brief=data.get("profile", {}),
-        model_provider=data.get("aiModel", "groq")
+        model_provider="auto"
     )
 
     # Persiste as subtarefas no banco imediatamente para que o background
@@ -268,7 +268,7 @@ def do_execute_all_subtasks(data: dict) -> dict:
         task_id,
         data.get("task_data", {}),
         data.get("profile", {}),
-        data.get("aiModel", "groq")
+        "auto"
     )
     
     return {"success": True, "message": "Background Celery execution started"}
@@ -475,9 +475,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
                 result_data=finalization_res["execution"]
             )
         else:
-            log_warning(f"Subtarefa de finalização falhou: {finalization_res.get('error')}")
-            # Use basic combined content as fallback
-            finalization_res = {"execution": {"conteudo": combined_content, "entregavel_titulo": "Documento Consolidado"}}
+            log_error(f"Subtarefa de finalização falhou: {finalization_res.get('error')}")
+            raise Exception(f"Finalização falhou: {finalization_res.get('error')}")
 
         # Final full deliverable
         final_content = combined_content
@@ -488,8 +487,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             if len(str(fin_content)) > min_acceptable:
                 final_content = fin_content
             else:
-                log_warning(f"O conteúdo da finalização ficou muito curto. Usando o conteúdo combinado de fallback.")
-                final_content = combined_content
+                log_error(f"O conteúdo da finalização ficou muito curto.")
+                raise Exception("Conteúdo da finalização insuficiente")
         
         combined_sources = []
         for r in results:
@@ -548,7 +547,7 @@ def do_ai_try_user_task(data: dict) -> dict:
         task_id=data.get("task_id"),
         task_data=data.get("task_data", {}),
         brief=data.get("profile", {}),
-        model_provider=data.get("aiModel", "groq")
+        model_provider="auto"
     )
 
 def do_redo_subtasks(data: dict) -> dict:
@@ -577,14 +576,19 @@ def do_cancel_task(data: dict) -> dict:
         return {"success": False, "error": "analysis_id, pillar_key, task_id are required"}
 
     from app.core import database as db
+    from app.core.cancellation_watchdog import CancellationWatchdog
     
-    # Mark the task as cancelled in the database
+    # 1. Cancelamento instantâneo via Redis
+    redis_cancelled = CancellationWatchdog.cancel_task(task_id)
+    
+    # 2. Marcação tradicional no database (fallback)
     log_warning(f"CANCELANDO TAREFA: {task_id} para a análise {analysis_id}")
     db.save_background_task_progress(analysis_id, task_id, pillar_key, "cancelled")
     
-    log_warning(f"Tarefa {task_id} marcada como cancelada por requisição do usuário.")
+    method = "Redis" if redis_cancelled else "Database"
+    log_warning(f"Tarefa {task_id} marcada como cancelada via {method}.")
     
-    return {"success": True, "message": "Task marked as cancelled"}
+    return {"success": True, "message": f"Task cancelled via {method}"}
 
 def do_redo_task(data: dict) -> dict:
     analysis_id = data.get("analysis_id")
@@ -673,7 +677,7 @@ def do_analyze(data: dict):
             business_id = data.get("business_id")
             analysis_id = data.get("analysis_id")
             profile = normalize_profile_struct(data.get("profile", {}))
-            model_provider = data.get("aiModel", "groq")
+            model_provider = "auto"
             region = data.get("region", "br-pt")
             
             # Send initial thought
@@ -800,16 +804,7 @@ def do_analyze(data: dict):
                 is_poor_summary = not resumo or any(kw in resumo.lower() for kw in insuficiente_keywords)
                 
                 if is_poor_summary:
-                    # Fallback resumo técnico baseado nos dados reais que já temos
-                    canais_detectados = [canal for canal, info in pd.items() if info.get("encontrado")]
-                    fontes_nomes = [f.get('title') for f in discovery_data.get('fontes_discovery', []) if f.get('title') and not any(b in f.get('url', '') for b in ['imovelweb', 'airbnb', 'chavesnamao'])]
-                    
-                    if canais_detectados:
-                        resumo = f"Presença digital confirmada via {', '.join(canais_detectados)}. "
-                        if fontes_nomes:
-                            resumo += f"Fontes validadas: {', '.join(fontes_nomes[:3])}."
-                    else:
-                        resumo = f"Análise baseada nos dados estruturados do negócio: {profile.get('segmento', 'Setor comercial')} em {profile.get('localizacao', 'Brasil')}."
+                    resumo = "Informações extraídas da presença digital."
                 
                 fontes = discovery_data.get('fontes_discovery', [])
                 yield f"data: {json.dumps({'type': 'step_result', 'step': 'discovery', 'title': 'Análise de Presença Digital', 'opiniao': resumo, 'sources': fontes})}\n\n"
@@ -873,17 +868,55 @@ def do_analyze(data: dict):
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Sintetizando inteligência coletada e gerando Briefing Estratégico...'})}\n\n"
             enriched_profile = generate_business_brief(profile, discovery_data, market_data)
             
-            # Step 4: Scoring
+            # Step 4: Scoring (with micro-persistence)
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Calculando scores de maturidade comercial nos 7 pilares...'})}\n\n"
             yield f"data: {json.dumps({'type': 'tool', 'tool': 'sales_triggers', 'status': 'running', 'detail': 'Auditando cada pilar de vendas'})}\n\n"
             
+            # Generate analysis_id before starting so we can save partial results
+            if not analysis_id:
+                # We need business_id. Let's ensure business is created/found first.
+                business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
+                try:
+                    biz_rec = db.create_business(
+                        user_id=user_id,
+                        name=business_name,
+                        profile_data={"profile": profile, "discovery_data": discovery_data, "created_at": time.time()}
+                    )
+                    business_id = biz_rec.get('id')
+                except Exception as e:
+                    log_error(f"Falha ao criar negócio para persistência parcial: {e}")
+                    # Fallback ID for flow continuity
+                    business_id = f"temp_biz_{int(time.time())}"
+                
+                analysis_id = f"analysis_{business_id}_{int(time.time())}"
+
+            def pillar_callback(a_id, p_key, p_result):
+                """Persists individual pillar result to database during analysis."""
+                try:
+                    db.save_pillar_diagnostic(
+                        analysis_id=a_id,
+                        pillar_key=p_key,
+                        score=p_result.get("score", 0),
+                        status=p_result.get("status", "completed"),
+                        justificativa=p_result.get("justificativa", ""),
+                        dado_chave=p_result.get("dado_chave", ""),
+                        justificativa_maturidade=p_result.get("justificativa_maturidade", ""),
+                        diagnostic_data=p_result
+                    )
+                    # Also save tasks for this pillar to analyses table (partial update) would be nice,
+                    # but for now diagnostic is enough for resumption.
+                except Exception as ex:
+                    log_error(f"Erro na persistência parcial do pilar {p_key}: {ex}")
+
             analysis_results = run_scorer(
                 profile=profile,
                 discovery_data=discovery_data,
                 market_data=market_data,
                 model_provider=model_provider,
                 is_reanalysis=True if analysis_id else False,
-                generate_tasks=True
+                generate_tasks=True,
+                analysis_id=analysis_id,
+                on_pillar_complete=pillar_callback
             )
             total_tokens += analysis_results.get("_tokens", 0)
             
@@ -927,25 +960,9 @@ def do_analyze(data: dict):
             
             yield f"data: {json.dumps({'type': 'step_result', 'step': 'scoring', 'title': 'Análise de Maturidade', 'opiniao': opiniao_text, 'sources': []})}\n\n"
             
-            # Save to database
-            business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
-            try:
-                biz_rec = db.create_business(
-                    user_id=user_id,
-                    name=business_name,
-                    profile_data={"profile": profile, "discovery_data": discovery_data, "created_at": time.time()}
-                )
-                business_id = biz_rec.get('id')
-                if not business_id:
-                     raise ValueError("Business ID not returned from database")
-            except Exception as e:
-                error_msg = f"Falha crítica ao salvar negócio no banco: {e}"
-                log_error(error_msg)
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Não foi possível salvar os dados do negócio. Por favor, tente novamente.'})}\n\n"
-                return  # Stop execution, cannot proceed without a valid business record (FK constraint)
-            
-            if not analysis_id:
-                analysis_id = f"analysis_{business_id}_{int(time.time())}"
+            # Analysis already saved pillar by pilar via callback
+            # But we still need to save the final summary record
+            analysis_id = analysis_id or f"analysis_{business_id}_{int(time.time())}"
             
             # Save analysis
             analysis_record = db.create_analysis(
@@ -1078,7 +1095,7 @@ def do_specialist_tasks(data: dict) -> dict:
         analysis_id=analysis_id,
         pillar_key=pillar_key,
         brief=profile,
-        model_provider=data.get("aiModel", "groq")
+        model_provider="auto"
     )
 
 def do_register(data: dict) -> dict:

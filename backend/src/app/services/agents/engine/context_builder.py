@@ -216,6 +216,7 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
     restricoes = profile.get("restricoes_criticas", {})
 
     # ── Business DNA (from user) ──
+    # Ensure all keys are present to avoid KeyErrors in downstream components
     dna = {
         "nome": perfil.get("nome", perfil.get("nome_negocio", "?")),
         "segmento": perfil.get("segmento", "?"),
@@ -236,6 +237,11 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
         "regiao_atendimento": perfil.get("regiao_atendimento", "?"),
         "origem_clientes": perfil.get("origem_clientes", "?"),
         "maior_objecao": perfil.get("maior_objecao", "?"),
+        "site": perfil.get("site", perfil.get("site_url", "?")),
+        "instagram": perfil.get("instagram", perfil.get("instagram_handle", "?")),
+        "facebook": perfil.get("facebook", "?"),
+        "linkedin": perfil.get("linkedin", perfil.get("linkedin_url", "?")),
+        "whatsapp": perfil.get("whatsapp", perfil.get("whatsapp_numero", "?")),
     }
 
     # ── Digital Footprint (from discovery) ──
@@ -250,15 +256,19 @@ def generate_business_brief(profile: dict, discovery_data: dict = None, market_d
                 if info.get("url"): summary_parts.append(info["url"][:60])
                 if info.get("engajamento_estimado"): summary_parts.append(f"eng: {info['engajamento_estimado']}")
                 if info.get("qualidade_seo"): summary_parts.append(f"SEO: {info['qualidade_seo']}")
-                footprint[canal] = " | ".join(summary_parts) if summary_parts else "presente"
+                info_text = " | ".join(summary_parts) if summary_parts else "presente"
+                footprint[canal] = info_text
                 
                 # ENRIQUECIMENTO AGRESSIVO: Se achamos algo no discovery, injetamos no DNA
-                if canal == "site" and dna["site"] in ["?", "N/A", ""]:
-                    dna["site"] = info.get("url")
-                elif canal == "instagram" and dna["instagram"] in ["?", "N/A", ""]:
-                    dna["instagram"] = info.get("handle") or info.get("url")
-                elif canal == "whatsapp" and dna["whatsapp"] in ["?", "N/A", ""]:
-                    dna["whatsapp"] = info.get("handle") or info.get("url")
+                # prioritizing discovery data over placeholder/empty user data
+                if canal == "site" and (dna["site"] in ["?", "N/A", "", None]):
+                    dna["site"] = info.get("url") or dna["site"]
+                elif canal == "instagram" and (dna["instagram"] in ["?", "N/A", "", None]):
+                    dna["instagram"] = info.get("handle") or info.get("url") or dna["instagram"]
+                elif canal == "whatsapp" and (dna["whatsapp"] in ["?", "N/A", "", None]):
+                    dna["whatsapp"] = info.get("numero") or dna["whatsapp"]
+                elif canal == "linkedin" and (dna["linkedin"] in ["?", "N/A", "", None]):
+                    dna["linkedin"] = info.get("url") or dna["linkedin"]
 
     # ── Market Intel Digest (from research) ──
     # Include visao_geral + top pontos_chave for richer specialist context

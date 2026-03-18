@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Loader2, CheckCircle2 } from 'lucide-react';
+import { useSidebar } from '@/contexts/SidebarContext';
 import TaskSubtasksDisplay from '@/features/workspace/components/task-subtasks-display';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
 
@@ -22,6 +23,7 @@ export default function AnalysisExecutionLoader({
     isExecuting,
     currentStep
 }: AnalysisExecutionLoaderProps) {
+    const { isDark } = useSidebar();
 
     // Mock task for TaskSubtasksDisplay
     const mockTask: TaskItem = {
@@ -34,7 +36,9 @@ export default function AnalysisExecutionLoader({
     const tid = 'reanalysis-meta';
 
     return (
-        <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-2xl flex flex-col items-center justify-center p-6 sm:pr-14 sm:pb-14 overflow-hidden rounded-3xl">
+        <div className={`absolute inset-0 z-[100] backdrop-blur-2xl flex flex-col items-center justify-center p-6 sm:pr-14 sm:pb-14 overflow-hidden rounded-3xl transition-all duration-700 ${
+            isDark ? 'bg-zinc-950/40' : 'bg-white/40'
+        }`}>
             {/* Background Particles (Animated) */}
             <div className="absolute inset-0 pointer-events-none opacity-40">
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] animate-pulse" />
@@ -48,10 +52,10 @@ export default function AnalysisExecutionLoader({
                         <Loader2 className="w-3 h-3 animate-spin text-accent" />
                         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Análise em Tempo Real</span>
                     </div>
-                    <h2 className="text-3xl font-medium text-zinc-900 mb-1">
+                    <h2 className={`text-3xl font-medium mb-1 transition-colors duration-300 ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                         {businessName || 'Seu Negócio'}
                     </h2>
-                    <p className="text-zinc-500 text-sm">
+                    <p className={`text-sm transition-colors duration-300 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                         Executando diagnóstico de ponta a ponta com Inteligência de Mercado.
                     </p>
                 </div>
@@ -76,7 +80,9 @@ export default function AnalysisExecutionLoader({
                 </div>
 
                 {/* Footer */}
-                <div className="mt-8 flex items-center justify-between border-t border-zinc-200 pt-6 text-zinc-500 text-[11px] font-medium tracking-widest uppercase">
+                <div className={`mt-8 flex items-center justify-between border-t pt-6 text-[11px] font-medium tracking-widest uppercase transition-colors duration-300 ${
+                    isDark ? 'border-white/10 text-zinc-500' : 'border-zinc-200 text-zinc-500'
+                }`}>
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
                             <span className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -99,11 +105,11 @@ export default function AnalysisExecutionLoader({
                     background: transparent;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(0, 0, 0, 0.1);
+                    background: ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'};
                     border-radius: 10px;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(0, 0, 0, 0.2);
+                    background: ${isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'};
                 }
             `}</style>
         </div>

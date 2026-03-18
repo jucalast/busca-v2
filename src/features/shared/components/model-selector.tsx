@@ -55,9 +55,10 @@ interface ModelSelectorProps {
     value: string;
     onChange: (value: string) => void;
     direction?: 'up' | 'down';
+    darkMode?: boolean;
 }
 
-export default function ModelSelector({ value, onChange, direction = 'up' }: ModelSelectorProps) {
+export default function ModelSelector({ value, onChange, direction = 'up', darkMode = false }: ModelSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -130,14 +131,14 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                     left: computedLeft,
                     width: dropdownWidth,
                     transform: dropdownTransform,
-                    backgroundColor: '#ffffff',
-                    border: '1px solid var(--color-border)',
-                    boxShadow: 'var(--shadow-popover)',
+                    backgroundColor: darkMode ? '#151417' : '#ffffff',
+                    border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--color-border)',
+                    boxShadow: darkMode ? '0 20px 50px rgba(0,0,0,0.5)' : 'var(--shadow-popover)',
                     animation: 'fade-in-up 0.12s ease-out',
                 }}
             >
                 <div className="px-2 pt-1.5 pb-1">
-                    <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Modelo</span>
+                    <span className="text-[9px] font-medium tracking-[0.15em]" style={{ color: darkMode ? 'rgba(255,255,255,0.5)' : 'var(--color-text-muted)' }}>AI Models</span>
                 </div>
 
                 {MODEL_OPTIONS.map((opt) => {
@@ -149,12 +150,18 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                                 onChange(opt.value);
                                 setIsOpen(false);
                             }}
-                            className="w-full flex items-center gap-2 px-2 py-2 rounded-md transition-all duration-150 cursor-pointer"
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-150 cursor-pointer group/item"
                             style={{
-                                backgroundColor: active ? 'var(--color-surface-active)' : 'transparent',
+                                backgroundColor: active 
+                                    ? (darkMode ? 'rgba(255,255,255,0.05)' : 'var(--color-surface-active)') 
+                                    : 'transparent',
                             }}
-                            onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)'; }}
-                            onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                            onMouseEnter={e => { 
+                                if (!active) e.currentTarget.style.backgroundColor = darkMode ? 'rgba(255,255,255,0.03)' : 'var(--color-surface-hover)'; 
+                            }}
+                            onMouseLeave={e => { 
+                                if (!active) e.currentTarget.style.backgroundColor = 'transparent'; 
+                            }}
                         >
                             {opt.icon ? (
                                 <opt.icon className="w-[18px] h-[18px] shrink-0" style={{ color: opt.accent }} />
@@ -165,18 +172,18 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                                     width={18}
                                     height={18}
                                     className="rounded shrink-0 object-contain"
-                                    style={{ filter: 'none' }}
+                                    style={{ filter: (darkMode && opt.logo?.includes('groq')) ? 'invert(1) brightness(2)' : 'none' }}
                                 />
                             )}
 
-                            <div className="flex-1 flex items-center gap-1.5 text-left min-w-0 whitespace-nowrap">
+                            <div className="flex-1 flex flex-col text-left min-w-0">
                                 <span
-                                    className="text-[11px] font-medium"
-                                    style={{ color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
+                                    className="text-[12px] font-medium tracking-tight"
+                                    style={{ color: active ? (darkMode ? '#fff' : 'var(--color-text-primary)') : (darkMode ? 'rgba(255,255,255,0.85)' : 'var(--color-text-secondary)') }}
                                 >
                                     {opt.label}
                                 </span>
-                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{opt.sub}</span>
+                                <span className="text-[9px] font-medium opacity-60 tracking-tighter" style={{ color: darkMode ? '#fff' : 'var(--color-text-muted)' }}>{opt.sub}</span>
                             </div>
 
                             {active && (
@@ -196,9 +203,9 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
         <div ref={ref} className="relative">
             <button
                 onClick={handleToggle}
-                className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150 cursor-pointer"
+                className="flex items-center gap-2 h-8 px-2.5 rounded-lg transition-all duration-150 cursor-pointer"
                 style={{ backgroundColor: 'transparent' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = darkMode ? 'rgba(255,255,255,0.05)' : 'var(--color-surface-hover)')}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
                 {selected.icon ? (
@@ -210,10 +217,12 @@ export default function ModelSelector({ value, onChange, direction = 'up' }: Mod
                         width={16}
                         height={16}
                         className="rounded shrink-0 object-contain"
-                        style={{ filter: 'none' }}
+                        style={{ filter: (darkMode && selected.logo?.includes('groq')) ? 'invert(1) brightness(2)' : 'none' }}
                     />
                 )}
-                <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-secondary)' }}>{selected.label}</span>
+                <span className="text-[11px] font-medium tracking-[0.05em]" style={{ color: darkMode ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)' }}>
+                    {selected.label}
+                </span>
                 <ChevronDown
                     className={`w-2.5 h-2.5 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
                     style={{ color: 'var(--color-text-muted)' }}

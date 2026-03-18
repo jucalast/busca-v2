@@ -4,7 +4,6 @@ import React from 'react';
 import {
     Loader2, ChevronRight, RefreshCw, Users, AlertCircle, RotateCcw
 } from 'lucide-react';
-import { useSidebar } from '@/contexts/SidebarContext';
 import { ScoreRing } from './ScoreRing';
 import { ScoreGauge } from './ScoreGauge';
 import { PILLAR_META, PILLAR_ORDER } from '../constants';
@@ -62,7 +61,6 @@ export function SpecialistGrid({
     error,
     setError
 }: SpecialistGridProps) {
-    const { isDark } = useSidebar();
     const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>({ x: 80, y: 150, scale: 0.85 });
     const [isMounted, setIsMounted] = React.useState(false);
 
@@ -174,20 +172,18 @@ export function SpecialistGrid({
             >
                 {/* macOS Style Glass Chip Card */}
                 <div
-                    className={`w-72 h-[72px] rounded-2xl px-5 transition-all duration-300 overflow-hidden relative flex items-center justify-between pointer-events-auto border shadow-sm ${
-                        isDark 
-                        ? 'bg-zinc-900 border-white/10 hover:border-white/20' 
-                        : 'bg-white border-gray-200 hover:border-gray-300'
-                    }`}
+                    className="w-72 h-[72px] rounded-2xl px-5 transition-all duration-300 overflow-hidden relative flex items-center justify-between pointer-events-auto bg-white border border-gray-200 shadow-sm"
                     onMouseEnter={e => {
                         e.currentTarget.style.borderColor = `${hoverColor}40`;
                         e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
                         e.currentTarget.style.boxShadow = `0 12px 30px -10px ${hoverColor}20`;
+                        e.currentTarget.style.backgroundColor = 'white';
                     }}
                     onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
                         e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                        e.currentTarget.style.boxShadow = isDark ? '0 4px 30px rgba(0,0,0,0.2)' : '0 4px 30px rgba(0,0,0,0.03)';
+                        e.currentTarget.style.boxShadow = '0 4px 30px rgba(0,0,0,0.03)';
+                        e.currentTarget.style.backgroundColor = 'white';
                     }}
                 >
                     <div className="flex flex-col gap-1 truncate pr-4">
@@ -195,9 +191,7 @@ export function SpecialistGrid({
                             {meta.label}
                         </h3>
                         <div className="flex items-center gap-3">
-                            <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-md transition-colors duration-300 ${
-                                isDark ? 'bg-white/5' : 'bg-black/5'
-                            }`}>
+                            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-black/5">
                                 <span className="text-[9px] font-bold uppercase tracking-wider opacity-60" style={{ color: 'var(--color-text-primary)' }}>
                                     Score
                                 </span>
@@ -213,9 +207,7 @@ export function SpecialistGrid({
                         {isLoading ? (
                             <Loader2 size={16} className="animate-spin" style={{ color: hoverColor }} />
                         ) : (
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 ${
-                                isDark ? 'bg-white/10' : 'bg-black/5'
-                            }`}>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <ChevronRight size={14} style={{ color: 'var(--color-text-primary)' }} />
                             </div>
                         )}
@@ -226,7 +218,7 @@ export function SpecialistGrid({
     };
 
     return (
-        <div className={`min-h-full relative z-20 overflow-hidden transition-colors duration-300 ${isDark ? 'bg-[--color-bg]' : 'bg-white'}`}>
+        <div className="min-h-full relative z-20 overflow-hidden bg-white">
             <div className="flex flex-col">
                 {/* Score Gauge Header */}
                 <div className="relative z-[100]">
@@ -244,20 +236,12 @@ export function SpecialistGrid({
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={resetTransform}
-                                className={`h-9 px-4 rounded-xl border transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
-                                    isDark 
-                                    ? 'bg-zinc-900 border-white/10 text-zinc-400 hover:text-white' 
-                                    : 'bg-white border-black/5 text-zinc-600 hover:text-zinc-900'
-                                }`}
+                                className="h-9 px-4 rounded-xl border border-black/5 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center gap-2"
                             >
-                                <RotateCcw size={14} />
-                                <span className="text-[11px] font-bold">Centralizar Vista</span>
+                                <RotateCcw size={14} className="text-zinc-500" />
+                                <span className="text-[11px] font-bold text-zinc-600">Centralizar Vista</span>
                             </button>
-                            <div className={`h-9 px-4 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center ${
-                                isDark 
-                                ? 'bg-white/5 border-white/5 text-white/40' 
-                                : 'bg-black/5 border-black/5 text-zinc-500'
-                            }`}>
+                            <div className="h-9 px-4 rounded-xl border border-black/5 bg-black/5 text-[10px] text-zinc-500 font-bold uppercase tracking-widest flex items-center">
                                 Arraste p/ Mover
                             </div>
                         </div>
@@ -266,14 +250,10 @@ export function SpecialistGrid({
 
                 {error && (
                     <div className="px-6 py-2">
-                        <div className={`p-4 rounded-2xl border backdrop-blur-sm flex items-center justify-between transition-colors duration-300 ${
-                            isDark 
-                            ? 'bg-red-500/10 border-red-500/20' 
-                            : 'bg-red-50/50 border-red-100'
-                        }`}>
+                        <div className="p-4 rounded-2xl bg-red-50/50 border border-red-100 backdrop-blur-sm flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <AlertCircle size={16} className="text-red-500" />
-                                <span className={`text-[13px] font-medium ${isDark ? 'text-red-400' : 'text-red-600'}`}>{error}</span>
+                                <span className="text-[13px] font-medium text-red-600">{error}</span>
                             </div>
                             <button onClick={() => setError('')} className="text-[11px] font-bold uppercase tracking-wider text-red-400">Fechar</button>
                         </div>
@@ -284,10 +264,10 @@ export function SpecialistGrid({
                 <div className="w-full -mt-[40px] relative z-0 overflow-hidden select-none">
                     <div
                         ref={boardRef}
-                        className="w-full relative min-h-[90vh] outline-none cursor-grab active:cursor-grabbing transition-colors duration-300"
+                        className="w-full relative min-h-[90vh] outline-none cursor-grab active:cursor-grabbing"
                         style={{
-                            backgroundColor: isDark ? 'var(--color-bg)' : '#f8fafc',
-                            backgroundImage: `radial-gradient(${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.15)'} 1.5px, transparent 0)`,
+                            backgroundColor: '#f8fafc',
+                            backgroundImage: `radial-gradient(rgba(0,0,0,0.1) 1.5px, transparent 0)`,
                             backgroundSize: '32px 32px',
                             backgroundPosition: `${transform.x}px ${transform.y}px`
                         }}
@@ -323,7 +303,7 @@ export function SpecialistGrid({
                                             <path
                                                 d="M 4 3 L 10 8 L 4 13"
                                                 fill="none"
-                                                stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'}
+                                                stroke="rgba(0,0,0,0.1)"
                                                 strokeWidth="2.5"
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
@@ -364,7 +344,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 96 C 36 96, 40 32, 76 32 L 96 32"
                                             fill="none"
-                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
@@ -372,7 +352,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 96 C 36 96, 40 160, 76 160 L 96 160"
                                             fill="none"
-                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? PILLAR_META['publico_alvo'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['publico_alvo'] || (completedTasks['publico_alvo']?.size ?? 0) > 0) ? "url(#arrowhead-publico_alvo)" : "url(#arrowhead-inactive)")}
@@ -392,7 +372,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 32 C 36 32, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? PILLAR_META['branding'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? PILLAR_META['branding'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['branding'] || (completedTasks['branding']?.size ?? 0) > 0) ? "url(#arrowhead-branding)" : "url(#arrowhead-inactive)")}
@@ -400,7 +380,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 160 C 36 160, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? PILLAR_META['identidade_visual'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? PILLAR_META['identidade_visual'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['identidade_visual'] || (completedTasks['identidade_visual']?.size ?? 0) > 0) ? "url(#arrowhead-identidade_visual)" : "url(#arrowhead-inactive)")}
@@ -419,7 +399,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 96 C 36 96, 40 32, 76 32 L 96 32"
                                             fill="none"
-                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
@@ -427,7 +407,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 96 C 36 96, 40 160, 76 160 L 96 160"
                                             fill="none"
-                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? PILLAR_META['canais_venda'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['canais_venda'] || (completedTasks['canais_venda']?.size ?? 0) > 0) ? "url(#arrowhead-canais_venda)" : "url(#arrowhead-inactive)")}
@@ -447,7 +427,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 32 C 36 32, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? PILLAR_META['trafego_organico'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? PILLAR_META['trafego_organico'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['trafego_organico'] || (completedTasks['trafego_organico']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_organico)" : "url(#arrowhead-inactive)")}
@@ -455,7 +435,7 @@ export function SpecialistGrid({
                                         <path
                                             d="M 0 160 C 36 160, 40 96, 76 96 L 96 96"
                                             fill="none"
-                                            stroke={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? PILLAR_META['trafego_pago'].color : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)'))}
+                                            stroke={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? PILLAR_META['trafego_pago'].color : 'rgba(0,0,0,0.1)')}
                                             strokeWidth="3"
                                             strokeOpacity={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "0.4" : "0.1")}
                                             markerEnd={((pillarStates['trafego_pago'] || (completedTasks['trafego_pago']?.size ?? 0) > 0) ? "url(#arrowhead-trafego_pago)" : "url(#arrowhead-inactive)")}

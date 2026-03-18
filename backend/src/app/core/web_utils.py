@@ -42,7 +42,7 @@ def _get_pypdf():
     return _pypdf
 
 def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', cancellation_check=None) -> list:
-    """Perform a web search using DuckDuckGo with cancellation support."""
+    """Perform a web search using DuckDuckGo with cancellation support and exponential backoff retry."""
     # Validate query
     if not query or not query.strip() or len(query.strip()) < 3:
         print(f"Erro na busca DuckDuckGo: query is mandatory or too short", file=sys.stderr)
@@ -54,23 +54,41 @@ def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', c
         print(f"Erro na busca DuckDuckGo: invalid query", file=sys.stderr)
         return []
     
-    try:
-        with DDGS() as ddgs:
-            results = []
-            for i, result in enumerate(ddgs.text(query, max_results=max_results, region=region)):
-                # Check cancellation every few results
-                if cancellation_check and i % 2 == 0:
-                    try:
-                        cancellation_check()
-                    except Exception:
+    max_retries = 3
+    base_delay = 2 # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            with DDGS() as ddgs:
+                results = []
+                # Use a specific timeout for the generator if possible or just rely on with block
+                for i, result in enumerate(ddgs.text(query, max_results=max_results, region=region)):
+                    # Check cancellation every few results
+                    if cancellation_check and i % 2 == 0:
+                        try:
+                            cancellation_check()
+                        except Exception:
+                            break
+                    results.append(result)
+                    if len(results) >= max_results:
                         break
-                results.append(result)
-                if len(results) >= max_results:
-                    break
-        return results
-    except Exception as e:
-        print(f"Erro na busca DuckDuckGo: {e}", file=sys.stderr)
-        return []
+                return results
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = any(x in err_str for x in ["429", "ratelimit", "too many requests", "throttle"])
+            
+            if attempt < max_retries - 1:
+                wait_time = base_delay * (2 ** attempt)
+                print(f"  ⚠️ Busca falhou (tentativa {attempt+1}/{max_retries}): {e}. Retrying em {wait_time}s...", file=sys.stderr)
+                time.sleep(wait_time)
+                
+                # If it's a rate limit, maybe try to simplify the query slightly or just wait
+                if is_rate_limit:
+                    time.sleep(wait_time) # Extra wait for rate limit
+            else:
+                print(f"  ❌ Busca DuckDuckGo falhou definitivamente após {max_retries} tentativas: {e}", file=sys.stderr)
+    
+    return []
 
 # Domains that block scraping or return useless content without API
 _SCRAPE_BLOCKLIST = [

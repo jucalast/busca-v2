@@ -1,6 +1,8 @@
 import React from 'react';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 export function StackedSources({ sources, max = 3 }: { sources: string[]; max?: number }) {
+    const { isDark } = useSidebar();
     if (!sources || sources.length === 0) return null;
 
     const uniqueSources = Array.from(new Set(sources));
@@ -20,7 +22,9 @@ export function StackedSources({ sources, max = 3 }: { sources: string[]; max?: 
                     return (
                         <div
                             key={i}
-                            className="bg-[var(--color-surface-1)] rounded-full flex items-center justify-center overflow-hidden transition-all duration-200 hover:-translate-y-0.5"
+                            className={`rounded-full flex items-center justify-center overflow-hidden transition-all duration-200 hover:-translate-y-0.5 ${
+                                isDark ? 'bg-zinc-900' : 'bg-white'
+                            }`}
                             style={{
                                 width: 20,
                                 height: 20,

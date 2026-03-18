@@ -656,6 +656,42 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
+        // ━━━ Action: Check Execution Status ━━━
+        if (action === 'check-execution-status') {
+            const { analysisId } = body;
+            
+            // Simple check: return false since we don't have persistent backend tracking
+            // In a real implementation, this would check Redis/database for active Celery tasks
+            return NextResponse.json({ hasActiveExecution: false });
+        }
+
+        // ━━━ Action: AI Try User Task (Streaming) ━━━
+        if (action === 'ai-try-user-task-stream') {
+            const { analysis_id, pillar_key, task_id, task_data, profile, business_id } = body;
+            if (!analysis_id || !pillar_key || !task_id) {
+                return NextResponse.json({ error: 'analysis_id, pillar_key, and task_id are required' }, { status: 400 });
+            }
+
+            const stream = runOrchestratorStreaming({
+                aiModel,
+                action: 'ai-try-user-task',
+                analysis_id,
+                pillar_key,
+                task_id,
+                task_data: task_data || {},
+                profile: profile || {},
+                business_id: business_id || null,
+            }, 300000, jwtToken);
+
+            return new Response(stream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
+        }
+
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
 
     } catch (error: any) {

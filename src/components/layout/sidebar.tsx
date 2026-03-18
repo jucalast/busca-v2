@@ -1,17 +1,20 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
   Building2, Plus, LogOut, Trash2, MoreVertical, Search,
-  Settings, Folder, Star, Users, Hash, Sparkles
+  Settings, Folder, Star, Users, Hash, Sparkles, BookOpen
 } from 'lucide-react';
+import { Header } from './header';
 import ConfirmDialog from '@/features/shared/components/confirm-dialog';
 import { HotzoneMapButton } from './HotzoneMapButton';
 import UserAvatar from '@/components/ui/UserAvatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from 'next-auth/react';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 // --- SVGs Personalizados para Ícones Específicos da Marca ---
 const VercelIcon = () => (
@@ -54,6 +57,9 @@ interface SidebarLayoutProps {
   onLogout: () => void;
   children: React.ReactNode;
   rightSidebar?: React.ReactNode;
+  rightSidebarPersistent?: boolean;
+  defaultPinned?: boolean;
+  isDark?: boolean;
 }
 
 export default function SidebarLayout({
@@ -65,16 +71,23 @@ export default function SidebarLayout({
   onLogout,
   children,
   rightSidebar,
+  rightSidebarPersistent = false,
+  defaultPinned = false, // We want it closed by default per user request
+  isDark: isDarkProp,
 }: SidebarLayoutProps) {
+  const { isDark: isDarkContext } = useSidebar();
+  const isDark = isDarkProp ?? isDarkContext;
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isHovered, setIsHovered] = useState(false);
-  const [isPinned, setIsPinned] = useState(false);
+  const [isPinned, setIsPinned] = useState(defaultPinned);
   const isExpanded = isHovered || isPinned;
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const { user, nextSession } = useAuth();
   const { data: session } = useSession();
+  const pathname = usePathname();
+  const isActivePath = (path: string) => pathname === path;
 
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; businessId: string; businessName: string }>({ isOpen: false, businessId: '', businessName: '' });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -95,6 +108,18 @@ export default function SidebarLayout({
   }, [handleCommandMenu]);
 
   useEffect(() => {
+    // ─── Instant Cache Load ───
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem(`businesses_${userId}`);
+      if (cached) {
+        try {
+          setBusinesses(JSON.parse(cached));
+          setLoading(false); // We have cached data, don't show the initial pulse
+        } catch (e) {
+          console.error("Error parsing cached businesses", e);
+        }
+      }
+    }
     loadBusinesses();
   }, [userId]);
 
@@ -110,6 +135,10 @@ export default function SidebarLayout({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [openMenuId]);
+
+  useEffect(() => {
+    setIsPinned(defaultPinned);
+  }, [defaultPinned]);
 
   const loadBusinesses = async () => {
     setLoading(true);
@@ -128,7 +157,12 @@ export default function SidebarLayout({
       const data = await res.json();
 
       if (data.success) {
-        setBusinesses(data.businesses || []);
+        const newBusinesses = data.businesses || [];
+        setBusinesses(newBusinesses);
+        // ─── Persist to Cache ───
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`businesses_${userId}`, JSON.stringify(newBusinesses));
+        }
       } else {
         setError(data.error || 'Erro ao carregar negócios');
       }
@@ -163,18 +197,17 @@ export default function SidebarLayout({
   };
 
   return (
-    <div className="relative h-screen overflow-hidden">
-      <div className="flex h-screen w-full transition-all duration-300">
+    <div className="relative h-screen overflow-hidden flex flex-col">
+      <Header />
+      <div className="flex flex-1 w-full transition-all duration-300 overflow-hidden">
         {/* --- SIDEBAR --- */}
         <aside
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="flex flex-col relative z-20 transition-all duration-300 overflow-hidden"
+          className={`flex flex-col relative z-20 overflow-hidden transition-all duration-300 border-r ${isDark ? 'border-white/10 bg-[--color-bg]/90 backdrop-blur-3xl' : 'border-r-2 border-gray-300 bg-white'}`}
           style={{
-            width: isExpanded ? 320 : 57,
-            background: 'transparent',
-            backdropFilter: 'blur(30px)',
-            WebkitBackdropFilter: 'blur(30px)',
+            width: isExpanded ? 320 : 64,
+            transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
           {/* Brand Logo Replacement for Window Controls */}
@@ -185,98 +218,114 @@ export default function SidebarLayout({
                 alt="Logo"
                 width={32}
                 height={32}
-                className="grayscale"
-                style={{ filter: 'brightness(0)' }}
+                className={`grayscale transition-all duration-300 ${isDark ? 'opacity-90' : ''}`}
+                style={{ filter: isDark ? 'brightness(0) invert(1)' : 'brightness(0)' }}
               />
             </div>
           </div>
 
 
-          {/* New Business Button */}
-          {isExpanded && (
-            <div className="px-4 py-2" style={{ animation: 'fade-in 0.3s ease-out' }}>
-              <Link
-                href="/"
-                onClick={onCreateNew}
-                className="w-full h-9 flex items-center gap-2 bg-white/40 hover:bg-white/50 text-gray-800 rounded-xl px-3 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-all border border-white/40 group active:scale-95"
-              >
-                <Plus size={16} className="text-gray-600 group-hover:rotate-90 transition-transform" />
-                <span className="flex-1 text-left text-[13px]">Novo Negócio</span>
-                <span className="text-[10px] text-gray-400 font-mono bg-white/50 px-1.5 py-0.5 rounded border border-white/20">⌘N</span>
-              </Link>
-            </div>
-          )}
+          <div className="px-3 py-4 flex flex-col items-center">
+            <Link
+              href="/"
+              onClick={onCreateNew}
+              className={`flex items-center gap-2 rounded-xl font-bold shadow-sm transition-all border group active:scale-95 ${isDark ? 'bg-white/5 hover:bg-white/10 text-white border-white/10' : 'bg-white hover:bg-white text-gray-800 border-gray-200'} ${isExpanded ? 'w-full h-10 px-3' : 'w-10 h-10 justify-center'}`}
+              title="Novo Negócio"
+            >
+              <Plus size={18} className="text-violet-500 group-hover:rotate-90 transition-transform" />
+              {isExpanded && (
+                <>
+                  <span className="flex-1 text-left text-[13px] tracking-tight">Novo Negócio</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${isDark ? 'text-white/40 bg-white/5 border-white/10' : 'text-gray-400 bg-gray-50 border-gray-100'}`}>⌘N</span>
+                </>
+              )}
+            </Link>
+          </div>
 
           {/* Sidebar Content (Scrollable) */}
           <div className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-0.5 custom-scrollbar" style={{ scrollbarWidth: 'none' }}>
 
             {/* Smart Folders */}
-            {isExpanded && (
-              <div className="mt-2 flex flex-col gap-0.5">
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Smart Folders</div>
+            <div className={`mt-2 flex flex-col gap-1 ${isExpanded ? 'px-2' : 'items-center'}`}>
+              {isExpanded && <div className={`px-3 pb-1 text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-white/20' : 'text-gray-400'}`}>Smart Folders</div>}
 
-                <Link href="/dashboard" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/50 text-blue-600 font-bold shadow-sm border border-blue-500/10 cursor-pointer transition active:scale-[0.98]">
-                  <Star size={16} className="text-blue-500 fill-blue-500/10" />
-                  <span className="flex-1 text-[13px]">Paineis Hoje</span>
-                  <span className="text-[11px] font-bold">{businesses.length}</span>
-                </Link>
+              <Link href="/dashboard" className={`group relative flex items-center gap-2 rounded-lg transition-all active:scale-[0.98] ${isActivePath('/dashboard') ? (isDark ? 'bg-white/10 text-white shadow-none border border-white/10' : 'bg-white shadow-sm border border-gray-100 text-blue-600') : (isDark ? 'hover:bg-white/5 text-white/50' : 'hover:bg-gray-100/50 text-gray-500')} ${isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center'}`} title="Paineis Hoje">
+                {isActivePath('/dashboard') && <div className="absolute left-[-8px] w-1 h-4 bg-blue-500 rounded-r-full" />}
+                <Star size={18} className={isActivePath('/dashboard') ? 'fill-blue-500/10' : (isDark ? 'text-white/30 group-hover:text-white/50' : 'text-gray-400 group-hover:text-gray-600')} />
+                {isExpanded && <span className="flex-1 text-[13px] font-bold">Paineis Hoje</span>}
+                {isExpanded && <span className={`text-[11px] font-bold px-1.5 rounded-full ${isDark ? 'opacity-40 bg-white/10' : 'opacity-60 bg-gray-100'}`}>{businesses.length}</span>}
+              </Link>
 
-                <Link href="/insights" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer group transition active:scale-[0.98]">
-                  <div className="w-4 h-4 flex items-center justify-center bg-gradient-to-br from-pink-400 to-purple-400 rounded-sm text-white text-[10px]">
-                    <Sparkles size={10} />
-                  </div>
-                  <span className="flex-1 text-[13px] font-semibold">Insights</span>
-                </Link>
+              <Link href="/insights" className={`group relative flex items-center gap-2 rounded-lg transition-all active:scale-[0.98] ${isActivePath('/insights') ? (isDark ? 'bg-white/10 text-white border border-white/10' : 'bg-white shadow-sm border border-gray-100 text-purple-600') : (isDark ? 'hover:bg-white/5 text-white/50' : 'hover:bg-gray-100/50 text-gray-500')} ${isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center'}`} title="Insights">
+                {isActivePath('/insights') && <div className="absolute left-[-8px] w-1 h-4 bg-purple-500 rounded-r-full" />}
+                <div className={`w-4.5 h-4.5 flex items-center justify-center bg-gradient-to-br from-pink-400 to-purple-400 rounded-md text-white shadow-sm ring-1 ring-purple-200/50`}>
+                  <Sparkles size={12} />
+                </div>
+                {isExpanded && <span className="flex-1 text-[13px] font-bold">Insights</span>}
+              </Link>
 
-                <Link href="/contacts" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
-                  <Users size={16} className="text-gray-600" />
-                  <span className="flex-1 text-[13px] font-semibold">Contatos</span>
-                </Link>
-              </div>
-            )}
+              <Link href="/contacts" className={`group relative flex items-center gap-2 rounded-lg transition-all active:scale-[0.98] ${isActivePath('/contacts') ? (isDark ? 'bg-white/10 text-white border border-white/10' : 'bg-white shadow-sm border border-gray-100 text-gray-900') : (isDark ? 'hover:bg-white/5 text-white/50' : 'hover:bg-gray-100/50 text-gray-500')} ${isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center'}`} title="Contatos">
+                {isActivePath('/contacts') && <div className="absolute left-[-8px] w-1 h-4 bg-gray-900 rounded-r-full" />}
+                <Users size={18} className={isActivePath('/contacts') ? (isDark ? 'text-white' : 'text-gray-900') : (isDark ? 'text-white/30 group-hover:text-white/50' : 'text-gray-400 group-hover:text-gray-600')} />
+                {isExpanded && <span className="flex-1 text-[13px] font-bold">Contatos</span>}
+              </Link>
+            </div>
 
             {/* Business List */}
-            {isExpanded && (
-              <div className="mt-4 flex flex-col gap-0.5">
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Seus Negócios</div>
+            <div className={`mt-6 flex flex-col gap-1 ${isExpanded ? 'px-2' : 'items-center'}`}>
+              {isExpanded && <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">Seus Negócios</div>}
 
-                {loading ? (
-                  <div className="px-3 py-2 text-[11px] text-gray-400 animate-pulse">Carregando...</div>
-                ) : businesses.length === 0 ? (
-                  <div className="px-3 py-2 text-[11px] text-gray-400 italic">Nenhum negócio ainda.</div>
-                ) : (
-                  businesses.map((business: Business) => {
-                    const isActive = currentBusinessId === business.id;
-                    return (
-                      <div key={business.id} className="group relative">
+              {loading ? (
+                isExpanded && <div className="px-3 py-2 text-[11px] text-gray-400 animate-pulse">Carregando...</div>
+              ) : businesses.length === 0 ? (
+                isExpanded && <div className="px-3 py-2 text-[11px] text-gray-400 italic">Nenhum negócio ainda.</div>
+              ) : (
+                businesses.map((business: Business) => {
+                  const isActive = currentBusinessId === business.id;
+                  return (
+                    <div key={business.id} className="group relative">
                         <Link
                           href={`/analysis/${business.id}`}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-150 cursor-pointer"
-                          style={{
-                            backgroundColor: isActive ? 'rgba(0,0,0,0.8)' : 'transparent',
-                            color: isActive ? 'white' : 'inherit',
-                            boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.1)' : 'none',
-                          }}
+                          className={`flex items-center gap-2 rounded-xl transition-all duration-150 cursor-pointer relative ${
+                            isActive 
+                              ? (isDark ? 'bg-white text-zinc-950 shadow-xl shadow-white/5' : 'bg-gray-900 text-white shadow-lg shadow-gray-200') 
+                              : (isDark ? 'hover:bg-white/5 text-white/60' : 'hover:bg-gray-100/80 text-gray-500 hover:text-gray-900')
+                          } ${isExpanded ? 'px-3 py-2.5' : 'w-10 h-10 justify-center'}`}
                           onClick={() => onSelectBusiness(business.id)}
+                          title={business.name}
                         >
+                        {isActive && <div className={`absolute left-[-12px] w-1 h-5 rounded-r-full ${isDark ? 'bg-white' : 'bg-gray-900'}`} />}
+                        {isExpanded ? (
                           <div
-                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${isActive ? 'bg-white/20' : 'bg-black/5 text-gray-600'}`}
+                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                              isActive 
+                                ? (isDark ? 'bg-black/10 text-black' : 'bg-white/20 text-white') 
+                                : (isDark ? 'bg-white/10 text-white/60' : 'bg-gray-200 text-gray-600')
+                            }`}
                           >
                             {business.name.charAt(0).toUpperCase()}
                           </div>
-                          <span className={`flex-1 text-[13px] font-bold truncate ${isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-900 font-semibold'}`}>
-                            {business.name}
+                        ) : (
+                          <span className={`text-[15px] font-bold uppercase transition-transform group-hover:scale-110 ${
+                            isActive 
+                              ? (isDark ? 'text-zinc-950' : 'text-white') 
+                              : (isDark ? 'text-white/40' : 'text-gray-400')
+                          }`}>
+                            {business.name.charAt(0).toUpperCase()}
                           </span>
-                        </Link>
+                        )}
+                        {isExpanded && <span className="flex-1 text-[13px] font-bold truncate tracking-tight">{business.name}</span>}
+                      </Link>
 
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center z-30">
+                      {isExpanded && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center z-30 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               setOpenMenuId(openMenuId === business.id ? null : business.id);
                             }}
-                            className={`w-6 h-6 flex items-center justify-center rounded-lg transition-all ${isActive ? 'hover:bg-white/10 text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'} ${isActive || openMenuId === business.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                            className={`w-6 h-6 flex items-center justify-center rounded-lg transition-all ${isActive ? (isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-white/10 text-white') : (isDark ? 'hover:bg-white/10 text-white/40' : 'hover:bg-gray-200 text-gray-500')}`}
                           >
                             <MoreVertical size={14} />
                           </button>
@@ -284,7 +333,7 @@ export default function SidebarLayout({
                           {openMenuId === business.id && (
                             <div
                               ref={menuRef}
-                              className="absolute right-0 top-full mt-1 w-44 rounded-xl overflow-hidden z-[100] shadow-2xl border border-gray-100 bg-white p-1"
+                              className="absolute right-0 top-full mt-1 w-44 rounded-xl overflow-hidden z-[100] shadow-xl border border-gray-100 bg-white p-1"
                               onClick={e => e.stopPropagation()}
                             >
                               <button
@@ -302,88 +351,48 @@ export default function SidebarLayout({
                             </div>
                           )}
                         </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* Tech Stack Section */}
-            {isExpanded && (
-              <div className="mt-4 flex flex-col gap-0.5">
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-700/80">Tech Stack</div>
-
-                <Link href="https://vercel.com" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
-                  <div className="w-5 h-5 bg-black rounded flex items-center justify-center text-white shadow-sm ring-1 ring-white/10">
-                    <VercelIcon />
-                  </div>
-                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Vercel</span>
-                </Link>
-
-                <Link href="https://linear.app" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
-                  <div className="w-5 h-5 bg-white rounded border border-gray-100 flex items-center justify-center text-black shadow-sm">
-                    <LinearIcon />
-                  </div>
-                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Linear</span>
-                </Link>
-
-                <Link href="https://slack.com" target="_blank" className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/30 text-gray-700 cursor-pointer transition active:scale-[0.98]">
-                  <div className="w-5 h-5 bg-white rounded flex items-center justify-center text-[#ff4500] shadow-sm border border-gray-50">
-                    <Hash size={12} strokeWidth={3} />
-                  </div>
-                  <span className="flex-1 text-[13px] font-semibold text-gray-600">Slack</span>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar Footer Controls */}
-          <div className="px-2 pb-2">
-            <Link href="/profile" className="flex items-center justify-between px-1 py-2 cursor-pointer hover:bg-white/20 rounded-lg transition group">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <div className="flex-shrink-0">
-                  <UserAvatar isExpanded={isExpanded} />
-                </div>
-                {isExpanded && (
-                  <div className="flex flex-col min-w-0" style={{ animation: 'fade-in 0.3s ease-out' }}>
-                    <span className="text-[13px] font-bold text-gray-800 truncate leading-tight">
-                      {nextSession?.user?.name || user?.name || 'Consultor'}
-                    </span>
-                    <span className="text-[10px] text-gray-700 font-medium truncate">Mastermind AI</span>
-                  </div>
-                )}
-              </div>
-              {isExpanded && <Search size={14} className="text-gray-600 group-hover:text-gray-900 ml-2 flex-shrink-0" />}
-            </Link>
-          </div>
-
-          <div className={`flex items-center justify-between mt-0 border-t border-white/20 ${isExpanded ? 'p-4' : 'p-2'}`}>
-            <div className="flex items-center gap-3">
-              <Link
-                href="/settings"
-                className="p-1.5 rounded-lg hover:bg-white/40 text-gray-700 hover:text-gray-900 transition shadow-sm border border-transparent hover:border-white/20"
-              >
-                <Settings size={18} />
-              </Link>
-              <Link
-                href="/"
-                className="p-1.5 rounded-lg hover:bg-white/40 text-gray-700 hover:text-gray-900 transition shadow-sm border border-transparent hover:border-white/20"
-                onClick={onCreateNew}
-              >
-                <Plus size={18} />
-              </Link>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
 
-            <button
-              onClick={onLogout}
-              className={`flex items-center gap-2 h-9 rounded-xl hover:bg-red-50 text-red-500 transition-all font-bold text-[13px] ${isExpanded ? 'px-3' : 'px-2'}`}
-            >
-              <LogOut size={16} />
-              {isExpanded && <span>Sair</span>}
-            </button>
+            {/* Tech Stack Section */}
+            <div className={`mt-auto mb-4 flex flex-col gap-1 ${isExpanded ? 'px-2' : 'items-center'}`}>
+              {isExpanded && <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">Tech Stack</div>}
+
+              <Link href="https://vercel.com" target="_blank" className={`flex items-center gap-2 rounded-lg hover:bg-gray-50 text-violet-500 transition-all ${isExpanded ? 'px-3 py-1.5' : 'w-10 h-10 justify-center'}`} title="Vercel">
+                <div className="w-5 h-5 bg-black rounded flex items-center justify-center text-white shrink-0">
+                  <VercelIcon />
+                </div>
+                {isExpanded && <span className="flex-1 text-[13px] font-semibold">Vercel</span>}
+              </Link>
+
+              <Link href="https://linear.app" target="_blank" className={`flex items-center gap-2 rounded-lg hover:bg-gray-50 text-violet-500 transition-all ${isExpanded ? 'px-3 py-1.5' : 'w-10 h-10 justify-center'}`} title="Linear">
+                <div className="w-5 h-5 bg-white rounded border border-gray-100 flex items-center justify-center text-black shrink-0 shadow-sm">
+                  <LinearIcon />
+                </div>
+                {isExpanded && <span className="flex-1 text-[13px] font-semibold">Linear</span>}
+              </Link>
+            </div>
+          </div>
+
+          {/* Sidebar Footer - Simplified */}
+          <div className={`mt-auto py-6 flex items-center justify-center ${isExpanded ? 'px-4' : 'px-2'}`}>
+            <div className="flex items-center gap-2 text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] opacity-80">
+              <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+              {isExpanded ? 'Growth Platform v3.5.2' : 'V3.5'}
+            </div>
           </div>
         </aside>
+
+        {/* --- SECONDARY SIDEBAR (ROULETTE) --- */}
+        {rightSidebar && rightSidebarPersistent && (
+          <aside className="hidden md:block h-full flex-shrink-0 z-10 transition-all duration-300">
+            {rightSidebar}
+          </aside>
+        )}
 
         {/* Confirm Delete Dialog */}
         <ConfirmDialog
@@ -397,28 +406,27 @@ export default function SidebarLayout({
           isDangerous
         />
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Content */}
-          <main className="flex-1 overflow-hidden h-full pt-6">
-            {error && (
-              <div
-                className="m-6 p-4 rounded-lg text-sm"
-                style={{
-                  backgroundColor: 'var(--color-destructive-muted)',
-                  color: 'var(--color-destructive)',
-                  border: '1px solid rgba(239,68,68,0.15)',
-                }}
-              >
-                {error}
-              </div>
-            )}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-transparent relative z-10">
+            {/* Content */}
+            <main className="flex-1 overflow-hidden h-full">
+              {error && (
+                <div
+                  className="m-6 p-4 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-destructive-muted)',
+                    color: 'var(--color-destructive)',
+                    border: '1px solid rgba(239,68,68,0.15)',
+                  }}
+                >
+                  {error}
+                </div>
+              )}
             {children}
-          </main>
-        </div>
+            </main>
+          </div>
 
-        {/* Right Sidebar - Business Mind Map */}
-        {rightSidebar && (
+        {/* Overlay Right Sidebar (like Hotzone Map) */}
+        {rightSidebar && !rightSidebarPersistent && (
           <>
             {rightSidebarOpen && (
               <div

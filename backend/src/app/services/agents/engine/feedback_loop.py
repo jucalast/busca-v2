@@ -48,8 +48,8 @@ RETORNE APENAS JSON VÁLIDO:
 """
 
     try:
-        log_info(f"🔄 Executando Feedback Loop para {pillar_key}...")
-        result = call_llm(provider=model_provider, prompt=prompt, temperature=0.1, json_mode=True)
+        log_info(f" Executando Feedback Loop para {pillar_key}...")
+        result = call_llm("auto", prompt=prompt, temperature=0.2, json_mode=True)
         
         if not isinstance(result, dict):
             return {}

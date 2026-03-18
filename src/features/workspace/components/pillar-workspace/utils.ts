@@ -309,20 +309,20 @@ export async function openInGoogleForms(result: any, session: any, setLoadingDoc
 export function exportAsCSV(structuredData: any, filename?: string) {
     const abas = structuredData?.abas || [];
     if (abas.length === 0) return;
-    
+
     const lines: string[] = [];
-    
+
     for (const aba of abas) {
         if (abas.length > 1) {
             lines.push(`--- ${aba.nome || 'Dados'} ---`);
         }
-        
+
         // Header row
         const cols = aba.colunas || [];
         if (cols.length > 0) {
             lines.push(cols.map((c: string) => `"${String(c).replace(/"/g, '""')}"`).join(','));
         }
-        
+
         // Data rows
         const rows = aba.linhas || [];
         for (const row of rows) {
@@ -330,10 +330,10 @@ export function exportAsCSV(structuredData: any, filename?: string) {
                 lines.push(row.map((cell: any) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','));
             }
         }
-        
+
         lines.push(''); // blank line between sheets
     }
-    
+
     const csvContent = lines.join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -349,7 +349,7 @@ export function exportAsCSV(structuredData: any, filename?: string) {
  */
 export function exportFormAsText(structuredData: any): string {
     if (!structuredData?.secoes) return '';
-    
+
     const lines: string[] = [];
     lines.push(`# ${structuredData.titulo_formulario || 'Formulário'}`);
     lines.push('');
@@ -357,18 +357,18 @@ export function exportFormAsText(structuredData: any): string {
         lines.push(structuredData.descricao_intro);
         lines.push('');
     }
-    
+
     let qNum = 1;
     for (const secao of structuredData.secoes) {
         lines.push(`## ${secao.titulo}`);
         if (secao.descricao) lines.push(secao.descricao);
         lines.push('');
-        
+
         for (const pergunta of (secao.perguntas || [])) {
             const req = pergunta.obrigatoria ? ' *' : '';
             lines.push(`${qNum}. ${pergunta.texto}${req}`);
             lines.push(`   Tipo: ${pergunta.tipo}`);
-            
+
             if (pergunta.opcoes && pergunta.opcoes.length > 0) {
                 for (const opcao of pergunta.opcoes) {
                     lines.push(`   ( ) ${opcao}`);
@@ -382,11 +382,11 @@ export function exportFormAsText(structuredData: any): string {
             qNum++;
         }
     }
-    
+
     if (structuredData.mensagem_final) {
         lines.push('---');
         lines.push(structuredData.mensagem_final);
     }
-    
+
     return lines.join('\n');
 }

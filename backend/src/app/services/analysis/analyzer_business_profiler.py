@@ -150,7 +150,7 @@ NUNCA invente IDs como "credibilidade_e_confianca", "logistica_sob_encomenda", "
 SEMPRE use EXATAMENTE: publico_alvo, branding, identidade_visual, canais_venda, trafego_organico, trafego_pago, processo_vendas."""
 
     log_llm(f"Profiler: Chamando LLM para gerar perfil inicial. Tamanho dos dados: {len(json.dumps(onboarding_data))} chars.")
-    result = call_llm(provider=model_provider, prompt=prompt, temperature=0.2)
+    result = call_llm(model_provider, prompt=prompt, temperature=0.2, json_mode=True)
     log_debug("Profiler: Perfil inicial recebido do LLM.")
     return result
 

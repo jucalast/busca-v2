@@ -26,8 +26,8 @@ export default function RootLayout({
       <body
         className={`${poppins.className} ${poppins.variable} antialiased min-h-screen relative`}
       >
-        {/* Global Glass Background Layer */}
-        <div className="fixed inset-0 bg-white/60 backdrop-blur-[50px] z-0 pointer-events-none" />
+        {/* Global Background Layer - Subtle SaaS Off-white */}
+        <div className="fixed inset-0 z-0 pointer-events-none transition-colors duration-500" />
 
         <div className="relative z-10">
           <NextAuthProvider>

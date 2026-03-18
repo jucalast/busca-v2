@@ -18,54 +18,44 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # Updated hard limits for Free Tiers (March 2026)
 LIMITS = {
     "gemini": {
-        "daily_requests": 250,      # Gemini 2.5 Flash limit
-        "requests_per_minute": 10,  # Gemini 2.5 Flash limit
-        "tokens_per_minute": 250000 
-    },
-    "gemini-2.5-flash": {
-        "daily_requests": 250,
-        "requests_per_minute": 10,
-        "tokens_per_minute": 200000
-    },
-    "gemini-2.5-flash-lite": {
-        "daily_requests": 1000,
+        "daily_requests": 1500,      
         "requests_per_minute": 15,
-        "tokens_per_minute": 300000
+        "tokens_per_minute": 1000000 
     },
     "gemini-2.0-flash": {
-        "daily_requests": 200,
+        "daily_requests": 1000,
         "requests_per_minute": 15,
-        "tokens_per_minute": 150000
+        "tokens_per_minute": 1000000
     },
     "groq": {
-        "daily_requests": 1000,      
+        "daily_requests": 2000,      
         "requests_per_minute": 30,
-        "tokens_per_minute": 30000,   # Back to 30k (safer for free tier)
-        "daily_tokens": 500000        # 500k is a safer assumption than 2M
+        "tokens_per_minute": 100000,
+        "daily_tokens": 5000000
     },
     "openrouter": {
-        "daily_requests": 50,       # Free tier limit
+        "daily_requests": 500,
         "requests_per_minute": 20,
-        "tokens_per_minute": 100000,
-        "daily_tokens": 500000
+        "tokens_per_minute": 200000,
+        "daily_tokens": 1000000
     },
     "sambanova": {
-        "daily_requests": 25,       # SambaNova free is very restrictive
+        "daily_requests": 500,       
         "requests_per_minute": 10,
-        "tokens_per_minute": 250000,
-        "daily_tokens": 500000
-    },
-    "deepseek": {
-        "daily_requests": 500,      
-        "requests_per_minute": 60,
-        "tokens_per_minute": 100000,
+        "tokens_per_minute": 500000,
         "daily_tokens": 2000000
     },
+    "deepseek": {
+        "daily_requests": 1000,      
+        "requests_per_minute": 60,
+        "tokens_per_minute": 500000,
+        "daily_tokens": 5000000
+    },
     "cerebras": {
-        "daily_requests": 100,      
+        "daily_requests": 500,      
         "requests_per_minute": 20,
-        "tokens_per_minute": 100000,
-        "daily_tokens": 1000000     # Official 1M tokens/day limit
+        "tokens_per_minute": 250000,
+        "daily_tokens": 2000000 
     }
 }
 
@@ -167,23 +157,19 @@ class LLMUsageTracker:
 
     def track_request(self, provider: str, prompt: str, response_text: str = "", model: str = "", headers: Dict[str, str] = None, prompt_tokens: int = 0, completion_tokens: int = 0):
         """Records a request and estimates token usage, syncing with headers if provided."""
-        client = self._get_client()
-        if not client:
-            return
-
-        provider = provider.lower()
-        now = datetime.now()
-        day_key = f"llm_usage:daily:{now.strftime('%Y-%m-%d')}:{provider}"
-        min_key = f"llm_usage:minute:{now.strftime('%Y-%m-%H-%M')}:{provider}"
         
-        # 1. Token calculation logic
+        # 1. Token calculation logic (Must be done BEFORE checking client to return it)
         if prompt_tokens > 0 or completion_tokens > 0:
             total_tokens = prompt_tokens + completion_tokens
         else:
             # Fallback to estimate if not provided
-            tokens_in = len(prompt) // 4
-            tokens_out = len(response_text) // 4
+            tokens_in = len(prompt or "") // 4
+            tokens_out = len(response_text or "") // 4
             total_tokens = tokens_in + tokens_out
+
+        client = self._get_client()
+        if not client:
+            return total_tokens # Return estimate even if tracking to DB failed
 
         try:
             pipe = client.pipeline()

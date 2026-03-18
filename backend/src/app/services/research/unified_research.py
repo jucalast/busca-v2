@@ -10,10 +10,11 @@ import hashlib
 from typing import Dict, List, Any, Optional, Tuple, Callable
 from datetime import datetime, timedelta
 
-from app.services.common import log_cache, log_research
+from app.services.common import log_cache, log_research, log_error, log_debug
 
 from app.core.web_utils import search_duckduckgo, scrape_page
 from app.core import database as db
+import concurrent.futures
 
 
 class UnifiedResearchEngine:
@@ -31,6 +32,22 @@ class UnifiedResearchEngine:
             'last_search': 0,
             'min_interval': 1.0  # 1 segundo entre buscas
         }
+    
+    def _scrape_url(self, url: str, title: str, snippet: str, timeout: int = 5, max_chars: int = 4000) -> Optional[str]:
+        """Auxiliar para scrape de uma URL única com tratamento de erro."""
+        try:
+            from app.services.intelligence.intelligence_hub import intel_hub
+            content = intel_hub.extract_content(url, timeout=timeout, max_chars=max_chars)
+            if not content:
+                from app.core.web_utils import scrape_page
+                content = scrape_page(url, timeout=timeout)
+            
+            if content:
+                return f"Fonte: {title}\n{snippet}\n{content[:max_chars]}\n\n"
+        except Exception:
+            pass
+        return None
+
     
     def search_market(
         self,
@@ -70,14 +87,21 @@ class UnifiedResearchEngine:
             "research_type": "market"
         }
         
-        # Pesquisar cada categoria
-        for categoria in categorias:
-            category_result = self._search_category(
-                categoria, segmento, localizacao, region
-            )
-            if category_result:
-                results["categories"].append(category_result)
-                results["sources"].extend(category_result.get("sources", []))
+        # Pesquisar cada categoria em paralelo
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_cat = {
+                executor.submit(self._search_category, cat, segmento, localizacao, region): cat 
+                for cat in categorias
+            }
+            for future in concurrent.futures.as_completed(future_to_cat):
+                cat_name = future_to_cat[future]
+                try:
+                    category_result = future.result()
+                    if category_result:
+                        results["categories"].append(category_result)
+                        results["sources"].extend(category_result.get("sources", []))
+                except Exception as e:
+                    log_error(f"Erro pesquisa paralelo categoria {cat_name}: {e}")
         
         # Salvar cache
         self._set_cache(cache_key, "market", results)
@@ -322,50 +346,57 @@ class UnifiedResearchEngine:
             "research_type": "subtask"
         }
         
-        # Processar resultados
-        for i, result in enumerate(search_results or []):
-            url = result.get("href", "")
-            title = result.get("title", "")
-            snippet = result.get("body", "")
-            
-            research_data["results"].append({
-                "url": url,
-                "title": title,
-                "snippet": snippet
-            })
-            
-            research_data["sources"].append(url)
-            
-            # Extração de conteúdo via web_extractor (trafilatura) com fallback
-            if i < 3:
-                # Check cancellation BEFORE each scrape
-                if cancellation_check:
-                    cancellation_check()
-                    
-                try:
-                    from app.services.intelligence.intelligence_hub import intel_hub
-                    content = intel_hub.extract_content(url, timeout=5, max_chars=4000)
-                except Exception:
-                    content = scrape_page(url, timeout=5)
-                if content:
-                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:4000]}\n\n"
-                
-                # Check cancellation between scrapes
-                if cancellation_check:
-                    cancellation_check()
+        # ─────────────────────────────────────────────────────────────────
+        # PARALLEL EXECUTION: Scrapes + Intel Tools
+        # ─────────────────────────────────────────────────────────────────
+        scrape_indices = [i for i, _ in enumerate(search_results or []) if i < 3]
         
-        # ── ENRIQUECIMENTO INTEL para subtarefas (TODOS os pilares) ──
+        # Determine which intel tools to run
+        run_news = pillar_key in ("publico_alvo", "branding", "canais_venda", "processo_vendas", "trafego_organico", "trafego_pago")
+        run_trends = pillar_key in ("trafego_organico", "trafego_pago")
+        
         subtask_tools_used = []
-        try:
-            from app.services.intelligence.intelligence_hub import intel_hub
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # 1. Scrapes
+            scrape_futures = {}
+            for idx in scrape_indices:
+                res = search_results[idx]
+                f = executor.submit(self._scrape_url, res["href"], res["title"], res["body"])
+                scrape_futures[f] = idx
             
-            # Notícias contextuais da subtarefa — para todos os pilares com foco em dados
-            if pillar_key in ("publico_alvo", "branding", "canais_venda", "processo_vendas", "trafego_organico", "trafego_pago"):
+            # 2. Intel: News
+            news_future = None
+            if run_news:
+                from app.services.intelligence.intelligence_hub import intel_hub
+                print(f"  📰 [Intel] Parallel news: {task_title[:30]}...", file=sys.stderr)
+                news_future = executor.submit(intel_hub.news.search_sector_news, f"{segmento} {task_title[:30]}", "14d", 3)
+            
+            # 3. Intel: Trends
+            trends_future = None
+            if run_trends:
+                from app.services.intelligence.intelligence_hub import intel_hub
+                print(f"  🔥 [Intel] Parallel trends: {pillar_key}...", file=sys.stderr)
+                trends_future = executor.submit(intel_hub.trends.get_rising_queries, segmento, "BR")
+            
+            # Recoller resultados de scraping (na ordem original)
+            scraped_contents = [None] * len(scrape_indices)
+            for f in concurrent.futures.as_completed(scrape_futures):
+                if cancellation_check: cancellation_check() # Check cancellation as threads finish
+                idx = scrape_futures[f]
                 try:
-                    print(f"  📰 [Intel] Subtask news: {task_title[:30]}...", file=sys.stderr)
-                    news = intel_hub.news.search_sector_news(
-                        f"{segmento} {task_title[:30]}", period="14d", max_results=3
-                    )
+                    scraped_contents[scrape_indices.index(idx)] = f.result()
+                except Exception as e:
+                    print(f"  ⚠️ Parallel scrape failed (idx {idx}): {e}", file=sys.stderr)
+            
+            for content in scraped_contents:
+                if content:
+                    research_data["content"] += content
+            
+            # Recoller News
+            if news_future:
+                try:
+                    news = news_future.result()
                     if news.get("news"):
                         for n in news["news"][:2]:
                             research_data["content"] += f"\n[NOTÍCIA] {n['title']}\n"
@@ -376,11 +407,10 @@ class UnifiedResearchEngine:
                 except Exception as ne:
                     subtask_tools_used.append({"tool": "news_extractor", "status": "error", "detail": str(ne)[:80]})
             
-            # Rising queries para subtarefas de tráfego/SEO
-            if pillar_key in ("trafego_organico", "trafego_pago"):
+            # Recoller Trends
+            if trends_future:
                 try:
-                    print(f"  🔥 [Intel] Subtask rising queries: {pillar_key}...", file=sys.stderr)
-                    rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
+                    rising = trends_future.result()
                     if rising.get("rising_queries"):
                         queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:3]])
                         research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
@@ -388,9 +418,6 @@ class UnifiedResearchEngine:
                         subtask_tools_used.append({"tool": "trend_analyzer_rising", "status": "success", "detail": f"{len(rising['rising_queries'])} termos"})
                 except Exception as tre:
                     subtask_tools_used.append({"tool": "trend_analyzer_rising", "status": "error", "detail": str(tre)[:80]})
-            
-        except Exception as e:
-            print(f"  ⚠️ Subtask intel enrichment skipped: {e}", file=sys.stderr)
         
         research_data["intelligence_tools_used"] = subtask_tools_used
         
@@ -402,6 +429,20 @@ class UnifiedResearchEngine:
         
         print(f"  ✅ Subtask research completed: {len(research_data['results'])} sources", file=sys.stderr)
         return research_data
+
+    
+    def search_batch(self, queries: List[str], max_results: int = 3, region: str = "br-pt") -> List[Dict[str, Any]]:
+        """Executa múltiplas queries em paralelo e retorna resultados consolidados."""
+        all_results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries), 5)) as executor:
+            future_to_query = {executor.submit(search_duckduckgo, q, max_results, region): q for q in queries}
+            for future in concurrent.futures.as_completed(future_to_query):
+                try:
+                    res = future.result()
+                    if res: all_results.extend(res)
+                except Exception as e:
+                    log_error(f"Erro em search_batch para {future_to_query[future]}: {e}")
+        return all_results
     
     def search_discovery(
         self,
@@ -449,38 +490,35 @@ class UnifiedResearchEngine:
             "research_type": "discovery"
         }
         
-        # Executar múltiplas queries
-        for query in queries:
-            query_key = query.replace(" ", "_")[:20]
-            
-            search_results = search_duckduckgo(query, max_results=3, region='br-pt')
-            
-            if search_results:
-                discovery_data["found"] = True
-                
-                # Processar resultados
-                query_results = []
-                for result in search_results:
-                    url = result.get("href", "")
-                    title = result.get("title", "")
-                    snippet = result.get("body", "")
-                    
-                    query_results.append({
-                        "url": url,
-                        "title": title,
-                        "snippet": snippet
-                    })
-                    
-                    if url not in discovery_data["sources"]:
-                        discovery_data["sources"].append(url)
-                
-                discovery_data["results"][query_key] = query_results
-                
-                # Scraping do primeiro resultado
-                if query_results:
-                    content = scrape_page(query_results[0]["url"], timeout=4)
-                    if content:
-                        discovery_data["results"][query_key][0]["content"] = content[:2000]
+        # Executar múltiplas queries em paralelo
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_query = {
+                executor.submit(search_duckduckgo, q, 3, region='br-pt'): q 
+                for q in queries
+            }
+            for future in concurrent.futures.as_completed(future_to_query):
+                query = future_to_query[future]
+                query_key = query.replace(" ", "_")[:20]
+                try:
+                    search_results = future.result()
+                    if search_results:
+                        discovery_data["found"] = True
+                        query_results = []
+                        for result in search_results:
+                            url = result.get("href", "")
+                            title = result.get("title", "")
+                            snippet = result.get("body", "")
+                            query_results.append({"url": url, "title": title, "snippet": snippet})
+                            if url not in discovery_data["sources"]:
+                                discovery_data["sources"].append(url)
+                        
+                        discovery_data["results"][query_key] = query_results
+                        # Scraping do primeiro resultado (síncrono por query, mas queries paralelas)
+                        content = scrape_page(query_results[0]["url"], timeout=4)
+                        if content:
+                            discovery_data["results"][query_key][0]["content"] = content[:2000]
+                except Exception as e:
+                    log_error(f"Erro pesquisa paralelo discovery {query}: {e}")
         
         # Salvar cache
         self._set_cache(cache_key, "discovery", discovery_data)

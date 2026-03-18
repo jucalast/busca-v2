@@ -4,6 +4,7 @@ import React from 'react';
 import {
     Loader2, Play, ListTree, Wand2, RefreshCw, Square, Check, Edit3, Copy, X
 } from 'lucide-react';
+import { useSidebar } from '@/contexts/SidebarContext';
 import { PILLAR_META } from '../constants';
 import { AutoScrollContainer } from '@/features/shared/components/AutoScrollContainer';
 import { TaskItem } from '../types';
@@ -72,6 +73,7 @@ export function FocusedTaskView({
     showRateLimitWarning,
     handleCloseRateLimit,
 }: FocusedTaskViewProps) {
+    const { isDark } = useSidebar();
     const task = visibleTasks.find(t => `${selectedPillar}_${t.id}` === focusedTaskId);
     if (!task) return null;
 
@@ -111,13 +113,14 @@ export function FocusedTaskView({
                     </div>
 
                     <div
-                        className="absolute bottom-1 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col gap-0 backdrop-blur-3xl rounded-[28px] overflow-hidden z-[100] border-2 border-gray-300"
-                        style={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.94)',
-                        }}
+                        className={`absolute bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl flex flex-col gap-0 backdrop-blur-3xl rounded-[28px] overflow-hidden z-[100] border transition-colors duration-300 ${
+                            isDark ? 'bg-zinc-900/90 border-white/10 shadow-2xl' : 'bg-white/94 border-gray-300 shadow-xl'
+                        }`}
                     >
                         {/* Subtasks Execution Line Trace */}
-                        <div className="w-full bg-black/5 backdrop-blur-md px-4 py-1">
+                        <div className={`w-full px-4 py-1 transition-colors duration-300 ${
+                            isDark ? 'bg-white/5' : 'bg-black/5'
+                        }`}>
                             <TaskSubtasksDisplay
                                 key={`lines_${subtasksUpdateKey}`}
                                 task={task}
@@ -156,7 +159,7 @@ export function FocusedTaskView({
 
                                             <div className="flex items-center gap-3 text-[11px] font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
                                                 <span className="opacity-40">#{taskIndex + 1}</span>
-                                                <div className="w-1 h-1 rounded-full bg-black/10" />
+                                                <div className={`w-1 h-1 rounded-full ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
                                                 <span>{isAI ? 'Agente de IA' : 'Ação Operacional'}</span>
                                                 {task.prioridade && (
                                                     <>
@@ -188,15 +191,19 @@ export function FocusedTaskView({
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-between w-full pt-2 border-t border-black/5">
+                                    <div className={`flex items-center justify-between w-full pt-2 border-t transition-colors duration-300 ${
+                                        isDark ? 'border-white/5' : 'border-black/5'
+                                    }`}>
                                         <div className="flex items-center gap-3">
                                             {isAI && (
-                                                <div className="flex items-center gap-3 bg-black/5 px-3 py-1.5 rounded-xl border border-black/5">
+                                                <div className={`flex items-center gap-3 px-3 py-1.5 rounded-xl border transition-colors duration-300 ${
+                                                    isDark ? 'bg-white/5 border-white/5' : 'bg-black/5 border-black/5'
+                                                }`}>
                                                     <ModelBadge
                                                         model={taskDeliverables[tid]?.result_data?._actual_provider || taskDeliverables[tid]?.result_data?._actual_model || selectedTaskAiModel}
                                                         tokens={taskDeliverables[tid]?.result_data?._tokens}
                                                     />
-                                                    <div className="w-[1px] h-3 bg-black/10" />
+                                                    <div className={`w-[1px] h-3 ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
                                                     <LLMUsageIndicator provider={selectedTaskAiModel} />
                                                 </div>
                                             )}
@@ -223,7 +230,11 @@ export function FocusedTaskView({
                                                 <button
                                                     onClick={() => handleAITryUserTask(selectedPillar, task)}
                                                     disabled={!!autoExecuting || executingTask === tid}
-                                                    className="flex items-center gap-2 h-9 px-4 rounded-xl bg-black text-white text-[12px] font-bold shadow-lg shadow-black/20 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                                                    className={`flex items-center gap-2 h-9 px-4 rounded-xl text-[12px] font-bold transition-all disabled:opacity-50 ${
+                                                        isDark 
+                                                        ? 'bg-white text-black hover:bg-white/90 shadow-lg shadow-white/5' 
+                                                        : 'bg-black text-white hover:-translate-y-0.5 shadow-lg shadow-black/20'
+                                                    }`}
                                                 >
                                                     {executingTask === tid ? (
                                                         <Loader2 size={14} className="animate-spin" />

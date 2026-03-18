@@ -7,6 +7,7 @@ interface User {
   id: string;
   email: string;
   name?: string;
+  image?: string;
 }
 
 interface CustomSession {
@@ -91,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: data.session.user_id,
           email: data.session.email,
           name: data.session.name,
+          image: data.session.image,
         });
         setSession({
           token: data.session.token,
@@ -201,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     id: nextSessionData.user.email || 'default_google_user',
     email: nextSessionData.user.email || '',
     name: nextSessionData.user.name || undefined,
+    image: nextSessionData.user.image || undefined,
   } : null;
 
   const combinedUser = user || nextAuthUser;

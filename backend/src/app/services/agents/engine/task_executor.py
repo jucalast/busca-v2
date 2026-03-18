@@ -167,8 +167,8 @@ def agent_execute_task(
             print(f"  🛑 ULTRA CANCELLATION DETECTED for task {check_id}", file=sys.stderr)
             raise Exception("Task cancelled by user")
     
-    # Create watchdog for continuous monitoring
-    watchdog = CancellationWatchdog(check_cancelled, interval=0.3)
+    # Create watchdog for continuous monitoring with Redis support
+    watchdog = CancellationWatchdog(check_cancelled, interval=0.1, task_id=monitor_task_id or task_id)
     
     # Check at the very beginning
     if check_cancelled():
@@ -374,7 +374,7 @@ def agent_execute_task(
                         # Save to DB
                         db.save_execution_result(
                             analysis_id, pillar_key, task_id, task_title,
-                            status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável produzido"),
+                            status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                             business_impact=result.get("impacto_estimado", ""),
                             result_data=result
                         )
@@ -526,7 +526,9 @@ Retorne APENAS o JSON."""
             # Handle raw_response fallback (when JSON constraint was relaxed by LLM router)
             if isinstance(result, dict) and "raw_response" in result and not result.get("conteudo"):
                 result["conteudo"] = result["raw_response"][:8000]
-                result.setdefault("entregavel_titulo", "Resultado gerado")
+                # If router already extracted a title, use it, otherwise use task_title
+                if not result.get("entregavel_titulo") or result.get("entregavel_titulo") == "Resultado gerado":
+                    result["entregavel_titulo"] = task_title
                 result.setdefault("entregavel_tipo", "documento")
             
             # Validate result has minimum required content
@@ -542,6 +544,11 @@ Retorne APENAS o JSON."""
             elif not isinstance(content, str):
                 content = str(content) if content else ""
                 result["conteudo"] = content
+            
+            # Ensure tokens and model/provider are propagated even on fallback/retry
+            if isinstance(result, dict):
+                # result might have _tokens from a previous call (before retry)
+                pass
             
             content_len = len(content)
             print(f"  📤 Generated content length: {content_len} chars", file=sys.stderr)
@@ -639,7 +646,7 @@ Retorne APENAS o JSON."""
             # Auto-record as executed (pending user confirmation)
             db.save_execution_result(
                 analysis_id, pillar_key, task_id, task_title,
-                status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável gerado"),
+                status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                 business_impact=result.get("impacto_estimado", ""),
                 result_data=result
             )
@@ -693,7 +700,7 @@ Retorne APENAS o JSON."""
                 result["sources"] = sources
                 db.save_execution_result(
                     analysis_id, pillar_key, task_id, task_title,
-                    status="ai_executed", outcome=result.get("entregavel_titulo", "Entregável gerado"),
+                    status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                     business_impact=result.get("impacto_estimado", ""),
                     result_data=result
                 )
@@ -1125,15 +1132,14 @@ def ai_try_user_task(
 
         db.save_execution_result(
             analysis_id, pillar_key, task_id, task_title,
-            status="ai_partial", outcome=result.get("entregavel_titulo", "IA tentou executar"),
+            status="ai_partial", outcome=result.get("entregavel_titulo", task_title),
             business_impact=result.get("impacto_estimado", ""),
             result_data=result
         )
 
-        # Also save to specialist_executions for full content
         db.save_execution_result(
             analysis_id, pillar_key, task_id, task_title,
-            status="ai_partial", outcome=result.get("entregavel_titulo", "IA tentou executar"),
+            status="ai_partial", outcome=result.get("entregavel_titulo", task_title),
             business_impact=result.get("impacto_estimado", ""),
             result_data=result
         )

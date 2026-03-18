@@ -96,29 +96,79 @@ export function useLocalStoragePersistence({
     useEffect(() => {
         if (!analysisId) return;
 
-        try {
-            const saved = localStorage.getItem(`pillar_workspace_${analysisId}`);
-            if (saved) {
-                const data = JSON.parse(saved);
-                if (data.completedTasks) {
-                    const restored: Record<string, Set<string>> = {};
-                    for (const [k, v] of Object.entries(data.completedTasks)) {
-                        restored[k] = new Set(v as string[]);
+        const loadState = async () => {
+            try {
+                const saved = localStorage.getItem(`pillar_workspace_${analysisId}`);
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    
+                    // Check if there's an active execution in backend before restoring execution state
+                    let hasActiveExecution = false;
+                    if (data.autoExecuting || data.autoExecStatuses) {
+                        try {
+                            const response = await fetch('/api/growth', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'check-execution-status', analysisId })
+                            });
+                            const result = await response.json();
+                            hasActiveExecution = result.hasActiveExecution || false;
+                        } catch (e) {
+                            console.warn('Failed to check execution status:', e);
+                            hasActiveExecution = false;
+                        }
                     }
-                    setCompletedTasks(restored);
+                    
+                    if (data.completedTasks) {
+                        const restored: Record<string, Set<string>> = {};
+                        for (const [k, v] of Object.entries(data.completedTasks)) {
+                            restored[k] = new Set(v as string[]);
+                        }
+                        setCompletedTasks(restored);
+                    }
+                    if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
+                    if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
+                    
+                    // Only restore execution state if backend confirms it's active
+                    if (hasActiveExecution) {
+                        if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
+                        if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
+                        if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
+                        if (data.autoExecuting) setAutoExecuting(data.autoExecuting);
+                    } else {
+                        // Clear execution state if no active backend execution
+                        setAutoExecuting(null);
+                        setAutoExecStep(0);
+                        setAutoExecTotal(0);
+                        setAutoExecLog([]);
+                        setAutoExecSubtasks({});
+                        setAutoExecResults({});
+                        setAutoExecStatuses({});
+                        
+                        // Also clean localStorage to prevent phantom state
+                        const cleanedData = { ...data };
+                        delete cleanedData.autoExecuting;
+                        delete cleanedData.autoExecStep;
+                        delete cleanedData.autoExecTotal;
+                        delete cleanedData.autoExecLog;
+                        delete cleanedData.autoExecSubtasks;
+                        delete cleanedData.autoExecResults;
+                        delete cleanedData.autoExecStatuses;
+                        
+                        localStorage.setItem(`pillar_workspace_${analysisId}`, JSON.stringify(cleanedData));
+                        console.log('🧹 Cleared phantom execution state from localStorage');
+                    }
+                    
+                    if (data.pillarStates) setPillarStates(data.pillarStates);
+                    if (data.selectedTaskAiModel) setSelectedTaskAiModel(data.selectedTaskAiModel);
                 }
-                if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
-                if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
-                if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
-                if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
-                if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
-                if (data.pillarStates) setPillarStates(data.pillarStates);
-                if (data.selectedTaskAiModel) setSelectedTaskAiModel(data.selectedTaskAiModel);
+            } catch (e) {
+                console.warn('Failed to load persisted state:', e);
             }
-        } catch (e) {
-            console.warn('Failed to load persisted state:', e);
-        }
-        setIsStorageLoaded(true);
+            setIsStorageLoaded(true);
+        };
+
+        loadState();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analysisId]);
 

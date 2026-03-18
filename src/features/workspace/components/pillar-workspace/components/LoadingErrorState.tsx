@@ -4,6 +4,7 @@ import React from 'react';
 import {
     AlertCircle, Loader2, RotateCcw
 } from 'lucide-react';
+import { useSidebar } from '@/contexts/SidebarContext';
 import { PILLAR_META } from '../constants';
 import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 
@@ -22,6 +23,7 @@ export function LoadingErrorState({
     handleSelectPillar,
     onBack,
 }: LoadingErrorStateProps) {
+    const { isDark } = useSidebar();
     const meta = PILLAR_META[selectedPillar];
 
     return (
@@ -56,17 +58,16 @@ export function LoadingErrorState({
                             </button>
                             <button
                                 onClick={onBack}
-                                className="text-sm transition-colors duration-150"
-                                style={{ color: 'var(--color-text-muted)' }}
-                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                                className={`text-sm transition-colors duration-150 ${isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'}`}
                             >
                                 Voltar para o Hub
                             </button>
                         </div>
                     </>
                 ) : (
-                    <div className="absolute inset-0 bg-white/80 backdrop-blur-2xl rounded-3xl overflow-hidden">
+                    <div className={`absolute inset-0 backdrop-blur-2xl rounded-3xl overflow-hidden transition-colors duration-300 ${
+                        isDark ? 'bg-zinc-950/80' : 'bg-white/80'
+                    }`}>
                         <AnalysisExecutionLoader
                             subtasks={[]}
                             statuses={{}}

@@ -24,6 +24,7 @@ from app.services.common import (
     CommonConfig,    # Config
     get_timestamp, format_duration, safe_get, retry_with_delay  # Utils
 )
+from app.services.research import research_engine
 
 # Imports específicos do unified agent
 from typing import TypedDict, List, Dict, Any, Optional
@@ -432,23 +433,12 @@ class UnifiedPillarAgent:
         # Queries específicas do pilar
         queries = self._get_pillar_queries(pillar_key, profile)
         
-        results = []
+        # Pesquisa em lote paralela via Central Research Engine
+        search_results = research_engine.search_batch(queries, max_results=3, region='br-pt')
         
-        for query in queries:
-            try:
-                # Buscar com DuckDuckGo
-                search_results = search_duckduckgo(query, max_results=3, region='br-pt')
-                
-                if search_results:
-                    # Enhance com Jina Reader
-                    enhanced_results = enhance_research_with_jina(search_results)
-                    results.extend(enhanced_results)
-                
-                # Rate limit
-                time.sleep(CommonConfig.RATE_LIMIT_DELAY)
-                
-            except Exception as e:
-                log_warning(f"Erro pesquisa '{query}': {e}")
+        if search_results:
+            # Enhance com Jina Reader (ainda sequencial para cada resultado, mas buscas foram paralelas)
+            results = enhance_research_with_jina(search_results)
         
         return results
     
@@ -572,11 +562,8 @@ class UnifiedPillarAgent:
         
         state["research_queries"] = self._get_pillar_queries(state["pillar_key"], state["profile"])
         
-        # Executar pesquisa
-        results = []
-        for query in state["research_queries"]:
-            search_results = search_duckduckgo(query, max_results=3, region='br-pt')
-            results.extend(search_results or [])
+        # Executar pesquisa em paralelo
+        results = research_engine.search_batch(state["research_queries"], max_results=3, region='br-pt')
         
         state["research_results"] = results
         state["status"] = "research_completed"

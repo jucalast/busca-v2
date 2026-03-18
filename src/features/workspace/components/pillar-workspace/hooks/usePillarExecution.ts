@@ -101,7 +101,7 @@ export function usePillarExecution({
         }
     }, [analysisId, businessId, profile, apiCall]);
 
-    // ─── AI tries user task ───
+    // ─── AI tries user task with streaming ───
     const handleAITryUserTask = useCallback(async (pillarKey: string, task: TaskItem) => {
         const tid = `${pillarKey}_${task.id}`;
         setAutoExecuting(tid);
@@ -117,32 +117,117 @@ export function usePillarExecution({
         abortControllersRef.current[tid] = controller;
 
         try {
-            const execResult = await apiCall('ai-try-user-task', {
-                analysis_id: analysisId,
-                pillar_key: pillarKey,
-                task_id: task.id,
-                task_data: task,
-                profile: profile?.profile || profile,
-                business_id: businessId
-            }, { signal: controller.signal });
+            // Use streaming API for real-time updates
+            const response = await fetch('/api/growth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'ai-try-user-task-stream',
+                    analysis_id: analysisId,
+                    pillar_key: pillarKey,
+                    task_id: task.id,
+                    task_data: task,
+                    profile: profile?.profile || profile,
+                    business_id: businessId
+                }),
+                signal: controller.signal
+            });
 
-            if (execResult.success && execResult.execution) {
-                const executionData = { ...execResult.execution, id: execResult.execution.id || task.id };
-                if (!executionData.conteudo_completo && executionData.conteudo) {
-                    executionData.conteudo_completo = executionData.conteudo;
+            if (!response.ok || !response.body) {
+                throw new Error('Failed to start streaming');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() ?? '';
+
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith('data: ')) continue;
+                    
+                    try {
+                        const event = JSON.parse(line.slice(6));
+
+                        if (event.type === 'thought') {
+                            // Update streaming opinion for current subtask
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [tid]: {
+                                    ...prev?.[tid],
+                                    0: {
+                                        ...prev?.[tid]?.[0],
+                                        opiniao: event.text,
+                                        streaming: true
+                                    }
+                                }
+                            }));
+                        } else if (event.type === 'tool') {
+                            // Update intelligence tools being used
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [tid]: {
+                                    ...prev?.[tid],
+                                    0: {
+                                        ...prev?.[tid]?.[0],
+                                        intelligence_tools_used: [
+                                            ...(prev?.[tid]?.[0]?.intelligence_tools_used || []),
+                                            event
+                                        ]
+                                    }
+                                }
+                            }));
+                        } else if (event.type === 'source') {
+                            // Update sources being consulted
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [tid]: {
+                                    ...prev?.[tid],
+                                    0: {
+                                        ...prev?.[tid]?.[0],
+                                        sources: [
+                                            ...(prev?.[tid]?.[0]?.sources || []),
+                                            event.source
+                                        ]
+                                    }
+                                }
+                            }));
+                        } else if (event.type === 'result') {
+                            // Final result
+                            const execResult = event.data;
+                            if (execResult.success && execResult.execution) {
+                                const executionData = { ...execResult.execution, id: execResult.execution.id || task.id };
+                                if (!executionData.conteudo_completo && executionData.conteudo) {
+                                    executionData.conteudo_completo = executionData.conteudo;
+                                }
+                                
+                                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
+                                setAutoExecResults(prev => ({
+                                    ...prev,
+                                    [tid]: { ...prev?.[tid], 0: { ...executionData, streaming: false } }
+                                }));
+                                setAutoExecStatuses(prev => ({
+                                    ...prev,
+                                    [tid]: { ...prev?.[tid], 0: 'done' }
+                                }));
+                                setAutoExecStep(2);
+                            } else {
+                                throw new Error(execResult.error || 'Falha ao tentar executar a tarefa com IA');
+                            }
+                        } else if (event.type === 'error') {
+                            throw new Error(event.message || 'Erro na execução');
+                        }
+                    } catch (parseErr: any) {
+                        if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+                    }
                 }
-                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
-                setAutoExecResults(prev => ({
-                    ...prev,
-                    [tid]: { ...prev?.[tid], 0: execResult.execution },
-                }));
-                setAutoExecStatuses(prev => ({
-                    ...prev,
-                    [tid]: { ...prev?.[tid], 0: 'done' },
-                }));
-                setAutoExecStep(2);
-            } else {
-                throw new Error(execResult.error || 'Falha ao tentar executar a tarefa com IA');
             }
         } catch (err: any) {
             if (err.name === 'AbortError') {
@@ -157,7 +242,7 @@ export function usePillarExecution({
                 setAutoExecuting(null);
             }, 800);
         }
-    }, [analysisId, businessId, profile, apiCall]);
+    }, [analysisId, businessId, profile]);
 
     // ─── Generate Summary and Deliverable ───
     const handleGenerateSummary = useCallback(async (pillarKey: string, task: TaskItem, tid: string) => {

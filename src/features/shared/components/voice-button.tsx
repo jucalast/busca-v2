@@ -13,10 +13,13 @@ interface VoiceButtonProps {
 
 // Ripple ring shown while listening
 const ListeningRing: React.FC = () => (
-    <span className="absolute inset-0 rounded-lg pointer-events-none">
+    <span className="absolute inset-0 rounded-full pointer-events-none">
         <span
-            className="absolute inset-0 rounded-lg border border-red-400/50"
-            style={{ animation: 'voice-ripple 1.2s ease-out infinite' }}
+            className="absolute inset-[2px] rounded-full border-2 border-red-500/30"
+            style={{ animation: 'voice-ripple 1.5s ease-out infinite' }}
+        />
+        <span
+            className="absolute inset-0 rounded-full bg-red-500/10 animate-pulse"
         />
     </span>
 );
@@ -25,12 +28,12 @@ const ListeningRing: React.FC = () => (
 export const VoiceInterimBadge: React.FC<{ text: string }> = ({ text }) => {
     if (!text) return null;
     return (
-        <div className="flex items-center gap-2 px-1 mb-1" style={{ animation: 'fadeIn 0.15s ease' }}>
+        <div className="flex items-center gap-2 px-1 mb-1" style={{ animation: 'fadeIn 0.2s ease' }}>
             <span
-                className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0"
-                style={{ animation: 'dot-pulse 0.8s ease-in-out infinite' }}
+                className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0"
+                style={{ animation: 'dot-pulse 1s ease-in-out infinite' }}
             />
-            <span className="text-[12px] text-zinc-400 italic leading-snug truncate">{text}</span>
+            <span className="text-[13px] text-white/50 italic leading-snug truncate font-medium">{text}</span>
         </div>
     );
 };
@@ -44,10 +47,9 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
         return (
             <button
                 disabled
-                title="Reconhecimento de voz não suportado neste navegador"
-                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent opacity-30 cursor-not-allowed"
+                className="flex items-center justify-center w-11 h-11 rounded-full bg-transparent opacity-20 cursor-not-allowed"
             >
-                <MicOff className="w-3.5 h-3.5 text-zinc-500" />
+                <MicOff className="w-5 h-5 text-white" />
             </button>
         );
     }
@@ -56,10 +58,10 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
         return (
             <button
                 onClick={onToggle}
-                title="Erro ao acessar microfone — clique para tentar de novo"
-                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-red-500/10 transition-all duration-200 cursor-pointer"
+                className="flex items-center justify-center w-11 h-11 rounded-full bg-red-500/20 transition-all duration-200 cursor-pointer border border-red-500/20"
+                title="Erro ao acessar microfone"
             >
-                <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                <AlertCircle className="w-5 h-5 text-red-500" />
             </button>
         );
     }
@@ -68,10 +70,9 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
         return (
             <button
                 disabled
-                className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent opacity-60 cursor-default"
-                title="Processando áudio..."
+                className="flex items-center justify-center w-11 h-11 rounded-full bg-white/5 cursor-default"
             >
-                <Loader2 className="w-3.5 h-3.5 text-zinc-400 animate-spin" />
+                <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
             </button>
         );
     }
@@ -80,12 +81,11 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
         return (
             <button
                 onClick={onToggle}
+                className="relative flex items-center justify-center w-11 h-11 rounded-full bg-red-500/20 border border-red-500/30 transition-all duration-300 cursor-pointer shadow-[0_0_15px_rgba(239,68,68,0.2)]"
                 title="Parar gravação"
-                className="relative flex items-center gap-2 h-7 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-all duration-200 cursor-pointer"
             >
                 <ListeningRing />
-                <Mic className="w-3.5 h-3.5 text-red-400 relative z-10" />
-                <span className="text-[11px] font-medium text-red-400 relative z-10">Parar</span>
+                <Mic className="w-5 h-5 text-red-500 relative z-10 animate-pulse" />
             </button>
         );
     }
@@ -94,10 +94,10 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
     return (
         <button
             onClick={onToggle}
+            className="flex items-center justify-center w-11 h-11 rounded-full bg-white/5 hover:bg-white/10 transition-all duration-300 cursor-pointer border border-white/5 hover:border-white/10"
             title="Escrever por voz"
-            className="flex items-center gap-2 h-7 px-3 rounded-lg bg-transparent hover:bg-white/5 transition-all duration-200 cursor-pointer"
         >
-            <Mic className="w-3.5 h-3.5 text-zinc-400" />
+            <Mic className="w-5 h-5 text-white/60" />
         </button>
     );
 };

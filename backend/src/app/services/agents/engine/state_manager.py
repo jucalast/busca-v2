@@ -43,6 +43,7 @@ from app.services.agents.pillar_config import (
     _get_specialist_from_brief,
     SPECIALISTS,
 )
+from app.services.agents.engine.dependency_manager import check_pillar_dependencies
 
 
 # ═══════════════════════════════════════════════════════════════════

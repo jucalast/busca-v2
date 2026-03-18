@@ -8,6 +8,7 @@ import { MarkdownContent } from '@/features/shared/components/MarkdownContent';
 import { StreamingText } from '@/features/shared/components/StreamingText';
 import { cleanMarkdown, exportAsCSV, openInGoogleDocs, openInGoogleSheets, openInGoogleForms } from '@/features/workspace/components/pillar-workspace/utils';
 import { useSession } from 'next-auth/react';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
 
@@ -85,7 +86,7 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                             key={i}
                             className="relative overflow-hidden transition-colors rounded-lg flex items-center gap-3 px-3 w-full border border-transparent"
                             style={{
-                                backgroundColor: 'var(--color-surface-hover)',
+                                backgroundColor: 'transparent',
                             }}
                         >
                             {/* Shimmer sweep — only on the currently running subtask or if overall loading at this index */}
@@ -280,6 +281,7 @@ export default function TaskSubtasksDisplay({
     const isAutoExec = autoExecuting === tid;
     const deliverable = taskDeliverables?.[tid];
     const { data: session } = useSession();
+    const { isDark } = useSidebar();
     const [loadingDoc, setLoadingDoc] = React.useState<string | null>(null);
     const [expandedContent, setExpandedContent] = React.useState<Record<number, boolean>>({});
 
@@ -366,7 +368,7 @@ export default function TaskSubtasksDisplay({
             const result = taskExecResults[i];
             const isStreaming = isAutoExec && i === currentStep;
 
-            if (status === 'done' || isStreaming || result) {
+            if (status === 'done' || isStreaming || (result && (result.opiniao || result.conteudo || result.resumo))) {
                 items.push({ index: i, result, isStreaming });
             }
         }
@@ -396,7 +398,9 @@ export default function TaskSubtasksDisplay({
                         }}>
                             {/* 🔄 STRATEGIC FEEDBACK LOOP INSIGHTS */}
                             {result?.strategic_insights && (
-                                <div className="mb-4 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 backdrop-blur-sm">
+                                <div className={`mb-4 p-4 rounded-xl border backdrop-blur-sm ${
+                                    isDark ? 'border-blue-500/30 bg-blue-500/10' : 'border-blue-500/20 bg-blue-500/5'
+                                }`}>
                                     <div className="flex items-center gap-2 mb-2 text-blue-600">
                                         <Zap className="w-4 h-4 fill-current" />
                                         <span className="text-[10px] font-bold uppercase tracking-widest">Descoberta Estratégica Realimentada</span>
@@ -404,16 +408,22 @@ export default function TaskSubtasksDisplay({
                                     <div className="space-y-3">
                                         {result.strategic_insights.score_adjustment && (
                                             <div className="flex items-center gap-2">
-                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${result.strategic_insights.score_adjustment.delta > 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                                                    result.strategic_insights.score_adjustment.delta > 0 
+                                                        ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-500/10 text-emerald-600')
+                                                        : (isDark ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-500/10 text-rose-600')
+                                                }`}>
                                                     {result.strategic_insights.score_adjustment.delta > 0 ? '+' : ''}{result.strategic_insights.score_adjustment.delta} Score
                                                 </div>
-                                                <span className="text-[11px] text-slate-600 italic">"{result.strategic_insights.score_adjustment.motivo}"</span>
+                                                <span className={`text-[11px] italic ${isDark ? 'text-zinc-400' : 'text-slate-600'}`}>"{result.strategic_insights.score_adjustment.motivo}"</span>
                                             </div>
                                         )}
                                         {result.strategic_insights.profile_updates && Object.keys(result.strategic_insights.profile_updates).length > 0 && (
                                             <div className="flex flex-wrap gap-2">
                                                 {Object.entries(result.strategic_insights.profile_updates).map(([k, v]) => (
-                                                    <div key={k} className="text-[9px] bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700">
+                                                    <div key={k} className={`text-[9px] px-2 py-1 rounded border ${
+                                                        isDark ? 'bg-zinc-800 border-white/10 text-zinc-300' : 'bg-slate-100 border-slate-200 text-slate-700'
+                                                    }`}>
                                                         <span className="font-bold uppercase opacity-80 mr-1">{k}:</span> {String(v)}
                                                     </div>
                                                 ))}
@@ -445,10 +455,18 @@ export default function TaskSubtasksDisplay({
                                 <div className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
                                     {subtaskTitle}
                                 </div>
-                                {result?._tokens > 0 && (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200">
+                                {result !== undefined && (
+                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors duration-300 ${
+                                        isDark ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-200'
+                                    }`}>
+                                        <span className={`text-[10px] font-bold tabular-nums whitespace-nowrap ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
+                                            1 req
+                                        </span>
+                                        <span className={`${isDark ? 'text-white/10' : 'text-slate-300'} mx-0.5`}>•</span>
                                         {result._actual_provider && (
-                                            <div className="flex items-center gap-1.5 mr-1 border-r border-slate-200 pr-2">
+                                            <div className={`flex items-center gap-1.5 mr-1 border-r pr-2 ${
+                                                isDark ? 'border-white/10' : 'border-slate-200'
+                                            }`}>
                                                 <img
                                                     src={
                                                         result._actual_provider === 'gemini' ? '/gemini.png' :
@@ -456,17 +474,25 @@ export default function TaskSubtasksDisplay({
                                                                 result._actual_provider === 'sambanova' ? '/sambanova.png' :
                                                                     result._actual_provider === 'deepseek' ? '/deepseek.png' :
                                                                         result._actual_provider === 'cerebras' ? '/cerebras.png' :
-                                                                            '/openrouter.png'
+                                                                            result._actual_provider === 'openrouter' ? '/openrouter.png' :
+                                                                                '/groq llama.svg'
                                                     }
                                                     className="w-3.5 h-3.5 rounded-sm object-contain"
                                                     alt={result._actual_provider}
-                                                    style={{ filter: 'none' }}
+                                                    style={{ filter: result._actual_provider === 'groq' ? (isDark ? 'none' : 'invert(1)') : 'none' }}
                                                 />
-                                                <span className="text-[10px] font-bold text-slate-700 capitalize">{result._actual_provider}</span>
+                                                <span className={`text-[10px] font-bold capitalize ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
+                                                    {result._actual_model || (result._actual_provider === 'groq' ? 'Groq' :
+                                                        result._actual_provider === 'gemini' ? 'Gemini' :
+                                                            result._actual_provider === 'sambanova' ? 'SambaNova' :
+                                                                result._actual_provider === 'cerebras' ? 'Cerebras' :
+                                                                    result._actual_provider === 'deepseek' ? 'DeepSeek' :
+                                                                        result._actual_provider)}
+                                                </span>
                                             </div>
                                         )}
                                         <Zap className="w-3 h-3 text-amber-500" />
-                                        <span className="text-[10px] font-mono font-bold text-slate-500">{result._tokens} units</span>
+                                        <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{result._tokens || 0} tokens</span>
                                     </div>
                                 )}
                             </div>
@@ -543,12 +569,18 @@ export default function TaskSubtasksDisplay({
                     );
                 })}
                 {items.length > 1 && (
-                    <div className="flex justify-end pt-5 border-t border-slate-100 mt-8">
+                    <div className={`flex justify-end pt-5 border-t mt-8 transition-colors duration-300 ${
+                        isDark ? 'border-white/5' : 'border-slate-100'
+                    }`}>
                         <div className="flex items-center gap-2.5 group">
-                            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold group-hover:text-slate-500 transition-colors">Total Tokens do Processo</span>
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
+                            <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors ${
+                                isDark ? 'text-zinc-600 group-hover:text-zinc-500' : 'text-slate-400 group-hover:text-slate-500'
+                            }`}>Total Tokens do Processo</span>
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors duration-300 ${
+                                isDark ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-200'
+                            }`}>
                                 <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
-                                <span className="text-[13px] font-mono font-bold text-slate-800">
+                                <span className={`text-[13px] font-mono font-bold ${isDark ? 'text-zinc-300' : 'text-slate-800'}`}>
                                     {items.reduce((sum, item) => sum + (item.result?._tokens || 0), 0)}
                                 </span>
                             </div>
@@ -611,8 +643,12 @@ export default function TaskSubtasksDisplay({
                                     const renderSubtaskOpinion = () => {
                                         if (!resultForSubtask || !subtaskOpinionText) return null;
                                         return (
-                                            <div className="px-3 pb-3 pt-2 border-t border-slate-200/40">
-                                                <div className="text-[9px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-1">Opinião da IA</div>
+                                            <div className={`px-3 pb-3 pt-2 border-t transition-colors duration-300 ${
+                                                isDark ? 'border-white/5' : 'border-slate-200/40'
+                                            }`}>
+                                                <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${
+                                                    isDark ? 'text-zinc-600' : 'text-slate-400'
+                                                }`}>Opinião da IA</div>
                                                 <div className="space-y-1.5">
                                                     {renderOpinionParagraphs(subtaskOpinionText, 'compact')}
                                                 </div>
@@ -666,7 +702,9 @@ export default function TaskSubtasksDisplay({
                                                 )}
 
                                                 {status === 'done' && resultForSubtask?._tokens > 0 && (
-                                                    <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 ml-auto">
+                                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ml-auto transition-colors duration-300 ${
+                                                        isDark ? 'text-zinc-500 bg-white/5 border-white/10' : 'text-slate-500 bg-slate-100 border-slate-200'
+                                                    }`}>
                                                         {resultForSubtask._tokens} unit
                                                     </span>
                                                 )}
@@ -709,9 +747,54 @@ export default function TaskSubtasksDisplay({
                                                             ? '🏭 Produzindo artefato...'
                                                             : 'Pesquisando fontes...'
                                                     )}
-                                                    <div className="px-3 pb-2">
-                                                        <IntelligenceToolsBadges isRunning={true} />
-                                                    </div>
+                                                    
+                                                    {/* Show streaming opinion/tools/sources during execution */}
+                                                    {resultForSubtask && (
+                                                        <div className="px-3 pb-2">
+                                                            {/* Intelligence tools being used */}
+                                                            {resultForSubtask.intelligence_tools_used && (
+                                                                <IntelligenceToolsBadges 
+                                                                    tools={resultForSubtask.intelligence_tools_used} 
+                                                                    isRunning={true}
+                                                                />
+                                                            )}
+                                                            
+                                                            {/* Sources being consulted */}
+                                                            {resultForSubtask.sources && resultForSubtask.sources.length > 0 && (
+                                                                <div className="mt-2">
+                                                                    <SourceBadgeList
+                                                                        sources={resultForSubtask.sources}
+                                                                        maxVisible={4}
+                                                                        animated={true}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                            
+                                                            {/* Streaming opinion/thought */}
+                                                            {resultForSubtask.opiniao && (
+                                                                <div className={`mt-2 px-2 py-1 rounded border transition-colors duration-300 ${
+                                                                    isDark ? 'border-white/10 bg-white/5' : 'border-slate-200/40 bg-slate-50/50'
+                                                                }`}>
+                                                                    <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${
+                                                                        isDark ? 'text-zinc-600' : 'text-slate-400'
+                                                                    }`}>Pensamento da IA</div>
+                                                                    <div className="text-[11px] leading-relaxed">
+                                                                        <StreamingText 
+                                                                            text={resultForSubtask.opiniao} 
+                                                                            speed={8} 
+                                                                            style={{ color: 'var(--color-text-secondary)' }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {!resultForSubtask && (
+                                                        <div className="px-3 pb-2">
+                                                            <IntelligenceToolsBadges isRunning={true} />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 

@@ -22,7 +22,8 @@ export const useTaskHandlers = (
     setSubtasksUpdateKey: React.Dispatch<React.SetStateAction<number>>,
     setError: React.Dispatch<React.SetStateAction<string>>,
     setExpandingTask: React.Dispatch<React.SetStateAction<string | null>>,
-    abortControllersRef: React.RefObject<Record<string, AbortController>>
+    abortControllersRef: React.RefObject<Record<string, AbortController>>,
+    pollingIntervalsRef: React.RefObject<Record<string, NodeJS.Timeout>>
 ) => {
 
     // ─── Expand Subtasks Handler ───
@@ -59,8 +60,16 @@ export const useTaskHandlers = (
     }, [analysisId, profile, apiCall, setTaskSubtasks, setSubtasksUpdateKey, setExpandingTask, setError, abortControllersRef]);
 
     // ─── Auto Execute Handler ───
-    const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
+    const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem, skipTrigger = false) => {
         const tid = `${pillarKey}_${task.id}`;
+        
+        console.log(`🤖 handleAutoExecute: ${tid} (skipTrigger: ${skipTrigger})`);
+
+        // If already polling for this task, don't start a second loop
+        if (pollingIntervalsRef.current?.[tid]) {
+            console.log(`⏳ Already polling for ${tid}, ignoring repeat call.`);
+            return;
+        }
 
         // Cancel previous if any
         if (abortControllersRef.current[tid]) {
@@ -97,17 +106,21 @@ export const useTaskHandlers = (
                 setAutoExecTotal(subtasks.length + 1);
             }
 
-            // Step 2: Trigger server-side background execution
-            const startResult = await apiCall('execute-all-subtasks', {
-                analysis_id: analysisId,
-                pillar_key: pillarKey,
-                task_id: task.id,
-                task_data: task,
-                profile: profile?.profile || profile,
-            }, { skipCache: true });
+            // Step 2: Trigger server-side background execution (unless skipTrigger is true)
+            if (!skipTrigger) {
+                const startResult = await apiCall('execute-all-subtasks', {
+                    analysis_id: analysisId,
+                    pillar_key: pillarKey,
+                    task_id: task.id,
+                    task_data: task,
+                    profile: profile?.profile || profile,
+                }, { skipCache: true });
 
-            if (!startResult.success) {
-                throw new Error(startResult.error || 'Falha ao iniciar execução');
+                if (!startResult.success) {
+                    throw new Error(startResult.error || 'Falha ao iniciar execução');
+                }
+            } else {
+                console.log(`🔄 Resuming polling only for ${tid} (skipping trigger)`);
             }
 
             // Step 3: Polling Loop
@@ -205,6 +218,13 @@ export const useTaskHandlers = (
                         } else if (status === 'error' || status === 'cancelled') {
                             console.log('❌ Error/cancelled status:', { status, error_message, taskId: task.id });
                             if (status === 'error') setError(error_message || 'Erro na execução');
+                            
+                            // Cleanup interval
+                            if (pollingIntervalsRef.current?.[tid]) {
+                                clearInterval(pollingIntervalsRef.current[tid]);
+                                delete pollingIntervalsRef.current[tid];
+                            }
+                            
                             setAutoExecuting(null);
                             return true; // Stop polling
                         }
@@ -240,9 +260,14 @@ export const useTaskHandlers = (
                     const done = await poll();
                     if (done) {
                         console.log('✅ Polling interval cleared');
+                        if (pollingIntervalsRef.current?.[tid]) delete pollingIntervalsRef.current[tid];
                         clearInterval(interval);
                     }
                 }, 3000);
+                
+                if (pollingIntervalsRef.current) {
+                    pollingIntervalsRef.current[tid] = interval;
+                }
             } else {
                 console.log('✅ Polling finished after first check');
             }
@@ -388,6 +413,13 @@ export const useTaskHandlers = (
         if (abortControllersRef.current[tid]) {
             abortControllersRef.current[tid].abort();
             delete abortControllersRef.current[tid];
+        }
+
+        // Clear local interval if exists
+        if (pollingIntervalsRef.current?.[tid]) {
+            console.log(`🛑 Stopping polling interval for ${tid}`);
+            clearInterval(pollingIntervalsRef.current[tid]);
+            delete pollingIntervalsRef.current[tid];
         }
 
         // Notify backend to cancel the task loop

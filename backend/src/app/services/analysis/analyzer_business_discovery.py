@@ -383,9 +383,10 @@ O QUE O USUÁRIO JÁ CONFIRMOU (Prioridade Absoluta):
 
 REGRAS CRÍTICAS:
 1. SOBERANIA DO USUÁRIO: Se o usuário disse que tem Instagram/Site, considere "encontrado: true" mesmo que o link na busca esteja quebrado ou seja de um homônimo.
-2. FILTRO DE RUÍDO: Ignore resultados de imobiliárias (Imovelweb, etc), classificados ou currículos, a menos que o negócio SEJA desse ramo.
-3. CITAÇÃO: Apenas dados REAIS. Se não achar algo novo na web, use o que o usuário forneceu para preencher o JSON.
-4. NÃO DIGA "DADOS LIMITADOS": Se você tem o contexto do usuário, você tem dados suficientes para uma opinião estratégica.
+2. FILTRO DE LOCALIZAÇÃO (GEOFENCING): O negócio localiza-se em "{loc}". Ignore resultados que claramente pertencem a outras cidades ou estados (mesmo que o nome coincida), a menos que o negócio seja uma franquia nacional ou e-commerce global.
+3. FILTRO DE RUÍDO: Ignore resultados de imobiliárias (Imovelweb, etc), classificados ou currículos, a menos que o negócio SEJA desse ramo.
+4. CITAÇÃO: Apenas dados REAIS. Se não achar algo novo na web, use o que o usuário forneceu para preencher o JSON.
+5. NÃO DIGA "DADOS LIMITADOS": Se você tem o contexto do usuário, você tem dados suficientes para uma opinião estratégica.
 
 JSON:
 {{
@@ -408,7 +409,7 @@ JSON:
     # Use the central balancer with requested priority (OpenRouter, SambaNova, Cerebras first)
     try:
         log_llm(f"Discovery Synthesis: Chamando LLM para extrair insights. Tamanho dos dados brutos: {len(raw_block)} chars.")
-        result = call_llm(provider=None, prompt=prompt, temperature=0.2, json_mode=True)
+        result = call_llm("auto", prompt=prompt, temperature=0.2, json_mode=True)
         
         # Validate result structure
         if not isinstance(result, dict):
@@ -468,7 +469,7 @@ Opinião:"""
             
             try:
                 log_llm("Discovery Synthesis: Chamando LLM para gerar resumo executivo.")
-                ai_summary = call_llm(provider="auto", prompt=ai_prompt, temperature=0.7, json_mode=False)
+                ai_summary = call_llm("auto", prompt=ai_prompt, temperature=0.7, json_mode=False)
                 result["resumo_executivo"] = str(ai_summary).strip() if ai_summary else "Análise baseada nos dados encontrados"
             except:
                 result["resumo_executivo"] = "Análise baseada nos dados encontrados"
@@ -543,17 +544,27 @@ def discover_business(profile: dict, region: str = "br-pt", model_provider: str 
     queries = _build_discovery_queries(hints)
     log_info(f"{len(queries)} buscas de discovery planejadas")
     
-    # Step 3: Execute searches (sequential to avoid rate limits)
+    # Step 3: Execute searches in parallel (Phase 2 optimization)
     raw_results = []
-    for i, q in enumerate(queries):
-        result = _run_discovery_search(q, region)
-        raw_results.append(result)
-        
-        log_debug(f"Busca discovery [{i+1}/{len(queries)}] {q['id']}: {'OK' if result.get('found') else 'FALHA'}")
-        
-        # Small delay between searches
-        if i < len(queries) - 1:
-            time.sleep(0.5)
+    print(f"🚀 Discovery: Executando {len(queries)} buscas em paralelo...", file=sys.stderr)
+    
+    import concurrent.futures
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_q = {executor.submit(_run_discovery_search, q, region): q for q in queries}
+            for future in concurrent.futures.as_completed(future_to_q):
+                q = future_to_q[future]
+                try:
+                    result = future.result()
+                    raw_results.append(result)
+                    log_debug(f"Busca discovery {q['id']}: {'OK' if result.get('found') else 'FALHA'}")
+                except Exception as exc:
+                    log_error(f"Erro na busca discovery {q['id']}: {exc}")
+    except Exception as e:
+        log_error(f"Erro no ThreadPoolExecutor (discovery): {e}")
+        # Fallback to sequential
+        for q in queries:
+            raw_results.append(_run_discovery_search(q, region))
     
     found_total = sum(1 for r in raw_results if r.get("found"))
     log_info(f"Discovery concluído: {found_total}/{len(queries)} buscas com sucesso")
@@ -814,7 +825,7 @@ NÃO seja genérico — cada ponto deve ser diretamente aplicável a ESTE negóc
 
     try:
         log_llm(f"Sales Brief: Chamando LLM para gerar brief. Discovery: {len(discovery_summary)} chars, Market: {len(market_highlights)} chars.")
-        result = call_llm(provider=model_provider, prompt=prompt, temperature=0.25, json_mode=False)
+        result = call_llm(model_provider, prompt=prompt, temperature=0.25, json_mode=False)
         if isinstance(result, dict):
             # LLM returned JSON despite json_mode=False — extract text content
             brief_text = result.get("brief", result.get("texto", result.get("raw_response", "")))

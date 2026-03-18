@@ -36,6 +36,36 @@ import unicodedata
 from dotenv import load_dotenv
 
 
+# Constant for empty/missing values used in various checks
+PLACEHOLDER_VALUES = ("null", "none", "n/a", "na", "", "unknown", "vazio", "?", "não informado", "nao informado")
+
+
+def _is_field_filled(value):
+    """Check if a field value is conceptually 'filled'."""
+    if value is None:
+        return False
+        
+    val_str = str(value).strip()
+    val_lower = val_str.lower()
+    
+    # Placeholders that mean "missing and needs to be asked"
+    if val_lower in PLACEHOLDER_VALUES:
+        return False
+        
+    # Too short to be meaningful (unless it's a specific numeric/code field)
+    if len(val_str) < 2:
+        return False
+        
+    # VALID ANSWERS that mark the field as "processed" or "filled":
+    # 1. "Não possui" / "Não tem" (Confirmed negative - we stop asking)
+    # 2. "Desconhecido" (Confirmed unknown - we stop asking, analysis will discover)
+    # 3. Any actual data string
+    if any(term in val_lower for term in ["nao possui", "não possui", "nao tem", "não tem", "desconhecido"]):
+        return True
+        
+    return len(val_str) >= 2
+
+
 def _normalize(text: str) -> str:
     """Strip accents and lowercase for comparison. 'loja física' -> 'loja fisica'"""
     nfkd = unicodedata.normalize('NFKD', text.lower())
@@ -80,7 +110,6 @@ def _similar(s1: str, s2: str, threshold: float = 0.8) -> bool:
 def _perform_web_research(company_name: str, current_profile: dict, yield_callback=None) -> dict:
     """Research the company online to find REAL data (site, model, social, etc.)"""
     from app.core.web_utils import search_duckduckgo, scrape_page
-    from app.core.llm_router import call_llm
     
     if not company_name or len(company_name) < 3:
         return {}
@@ -150,7 +179,7 @@ def _perform_web_research(company_name: str, current_profile: dict, yield_callba
     }}"""
 
     try:
-        extraction = call_llm(provider="groq", prompt=prompt, json_mode=True, prefer_small=True)
+        extraction = call_llm("groq", prompt=prompt, temperature=0.2, json_mode=True, prefer_small=True)
         if isinstance(extraction, dict):
             # Clean nulls
             real_data = {k: v for k, v in extraction.items() if v and str(v).lower() not in ("null", "none", "")}
@@ -239,7 +268,9 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
     # ── Search for CNPJ ──
     cnpj_match = re.search(r'\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}', message)
     cnpj_data = {}
+    found_via_cnpj = False
     if cnpj_match and not current_profile.get("cnpj"):
+        found_via_cnpj = True
         cnpj_val = cnpj_match.group(0)
         
         if yield_callback:
@@ -264,11 +295,18 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
             if research_data:
                 cnpj_data.update(research_data)
         
-        # INJEÇÃO CRÍTICA: Mesclar dados do CNPJ no perfil atual antes da extração via LLM
-        # Isso ajuda o LLM a entender o contexto e não pedir dados que já temos.
-        current_profile.update(cnpj_data)
+        # We'll merge cnpj_data later into the copy to avoid side effects
     
-    # Schema JSON para forçar estrutura correta (30 campos — inclui todos que o pipeline consome)
+    # Create a fresh copy to work with
+    updated_profile = current_profile.copy()
+    if cnpj_data:
+        # Initial merge for prompt context
+        updated_profile.update(cnpj_data)
+    
+    # Define msg_lower early to avoid scope issues
+    msg_lower = message.lower()
+    
+    # Schema JSON oficial com todos os 34 campos do DNA Estratégico
     json_schema = {
         "type": "object",
         "properties": {
@@ -280,7 +318,7 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
             "faturamento": {"type": "string"},
             "equipe": {"type": "string"},
             "ticket_medio": {"type": "string"},
-            "problemas": {"type": "string"},
+            "dificuldades": {"type": "string"},
             "objetivos": {"type": "string"},
             "investimento": {"type": "string"},
             "canais": {"type": "string"},
@@ -296,12 +334,16 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
             "site": {"type": "string"},
             "instagram": {"type": "string"},
             "whatsapp": {"type": "string"},
+            "linkedin": {"type": "string"},
+            "google_maps": {"type": "string"},
+            "email_contato": {"type": "string"},
             "tempo_operacao": {"type": "string"},
             "modelo_operacional": {"type": "string"},
             "capital_disponivel": {"type": "string"},
             "tempo_entrega": {"type": "string"},
             "origem_clientes": {"type": "string"},
-            "maior_objecao": {"type": "string"}
+            "maior_objecao": {"type": "string"},
+            "cnpj": {"type": "string"}
         },
         "required": []
     }
@@ -326,20 +368,26 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
     prompt = template.format(
         recent_context=recent_context,
         message=message,
-        current_profile=safe_json_dumps(current_profile, ensure_ascii=False)
+        current_profile=safe_json_dumps(updated_profile, ensure_ascii=False)
     )
     
     # ── LLM Extraction ──
     try:
-        # Usar JSON mode nativo + modelo pequeno para extração
-        from app.core.llm_router import call_llm
+        # Determine if we should use a larger model for massive messages
+        # If the user pasted a long text (like the business summary), a small model might struggle with 30 fields
+        use_small = True
+        if len(message) > 1000 or len(messages or []) > 10:
+            use_small = False
+            log_info("🚀 Usando modelo maior para extração devido ao tamanho do contexto/mensagem")
+
+        from app.core.llm_router import call_llm as router_llm
         
-        result = call_llm(
-            provider="auto",
+        result = router_llm(
+            "auto",
             prompt=prompt,
             temperature=0.1,  # Baixa temperatura para extração
             json_mode=True,   # JSON mode nativo!
-            prefer_small=True  # Usar modelo menor e mais rápido
+            prefer_small=use_small
         )
         
         if isinstance(result, dict) and "error" in result:
@@ -352,46 +400,35 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         
         log_debug(f"Raw extraction: {extracted}")
         
-        # Merge with current profile (only update non-null values)
-        updated_profile = current_profile.copy()
+        # Merge with current profile
+        # Since we already updated updated_profile with cnpj_data at line 286 (context),
+        # we focus now on syncing what the LLM found.
         
-        # Priority 1: CNPJ Data
-        found_via_cnpj = False
-        if cnpj_data:
-            found_via_cnpj = True
-            for key, value in cnpj_data.items():
-                if value: # Accept even if already exists if it's from CNPJ
-                    updated_profile[key] = value
+        # Priority 1: Keep what we found via CNPJ/Discovery if LLM didn't find something better
+        # (This is already in updated_profile)
         
         # Priority 2: LLM Extracted Data
         new_fields = 0
-        
-        # Define common "empty" or "placeholder" strings that LLMs often return
-        PLACEHOLDER_VALUES = (
-            "null", "none", "n/a", "na", "", "unknown", "desconhecido", 
-            "não informado", "nao informado", "não fornecido", "nao fornecido",
-            "não consta", "nao consta", "não mencionado", "nao mencionado"
-        )
         
         for key, value in extracted.items():
             # Only allow keys that are in the official schema
             if key in json_schema["properties"] and value is not None:
                 val_str = str(value).lower().strip().rstrip('.,;!')
-                if val_str not in PLACEHOLDER_VALUES and val_str != "":
-                    # Only update if we have a real value
+                # Update if it's a real value OR a terminal placeholder (Desconhecido/Não possui)
+                if (val_str not in PLACEHOLDER_VALUES and val_str != ""):
                     updated_profile[key] = value
                     new_fields += 1
         
         # ── Email Safety Net ──
-        if not updated_profile.get('email_contato'):
+        if not _is_field_filled(updated_profile.get('email_contato')):
             email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', message)
             if email_match:
                 updated_profile['email_contato'] = email_match.group(0)
                 new_fields += 1
                 log_info(f"🔧 Safety net: detected email_contato = '{updated_profile['email_contato']}'")
-
+ 
         # ── WhatsApp / Phone Safety Net ──
-        if not updated_profile.get('whatsapp'):
+        if not _is_field_filled(updated_profile.get('whatsapp')):
             # Look for phone-like patterns if the context mentions phone or attendance
             if any(kw in message.lower() for kw in ['telefone', 'contato', 'whats', 'celular', 'atendimento']):
                 phone_match = re.search(r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}', message)
@@ -402,8 +439,7 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
 
         # ── Post-extraction safety net ──
         # If nome_negocio is still empty, check for explicit name-giving patterns
-        if not updated_profile.get('nome_negocio'):
-            msg_lower = message.lower().strip()
+        if not _is_field_filled(updated_profile.get('nome_negocio')):
             # Pattern 1: explicit "o nome é X", "a empresa é X", "chama X"
             name_patterns = [
                 r'(?:nome|empresa|negócio|negocio)\s+(?:é|e|se chama|chama)\s+(.+)',
@@ -443,48 +479,116 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
                         log_info(f"🔧 Safety net: detected nome_negocio = '{candidate}'")
         
         # If objetivos is still empty but message mentions growth/increase targets
-        if not updated_profile.get('objetivos'):
-            msg_lower = message.lower()
-            if any(kw in msg_lower for kw in ['% a mais', 'aumentar', 'crescer', 'crescimento', 'dobrar', 'triplicar', 'meta']):
+        if not _is_field_filled(updated_profile.get('objetivos')):
+            # If it's a short relevant phrase or contains typical keywords, but NOT the massive summary
+            if any(kw in msg_lower for kw in ['% a mais', 'aumentar', 'crescer', 'crescimento', 'dobrar', 'triplicar', 'meta']) and len(message) < 500:
                 updated_profile['objetivos'] = message.strip()
                 new_fields += 1
                 log_info(f"🔧 Safety net: detected objetivos from message")
         
-        # If problemas/dificuldades is still empty but message mentions common challenges
-        if not updated_profile.get('problemas') and not updated_profile.get('dificuldades'):
-            msg_lower = message.lower()
-            # CRITICAL FILTER: Don't put "I don't have X" into problems
+        # If dificuldades is still empty but message mentions common challenges
+        if not _is_field_filled(updated_profile.get('dificuldades')):
+            # CRITICAL FILTER: Don't put "I don't have X" into difficulties, and avoid massive summaries
             is_negative_confirmation = any(kw in msg_lower for kw in ['não tenho', 'não possuo', 'não tem', 'nao tenho', 'nao tem', 'não uso'])
-            if any(kw in msg_lower for kw in ['conseguir mais', 'dificuldade', 'problema', 'desafio', 'falta de', 'preciso de mais']) and not is_negative_confirmation:
-                updated_profile['problemas'] = message.strip()
+            if any(kw in msg_lower for kw in ['conseguir mais', 'dificuldade', 'problema', 'desafio', 'falta de', 'preciso de mais']) and not is_negative_confirmation and len(message) < 500:
+                updated_profile['dificuldades'] = message.strip()
                 new_fields += 1
-                log_info(f"🔧 Safety net: detected problemas from message")
+                log_info(f"🔧 Safety net: detected dificuldades from message")
         
-        # ── LinkedIn Safety Net ──
-        if not updated_profile.get('linkedin'):
-            msg_lower = message.lower()
-            if 'linkedin' in msg_lower and any(kw in msg_lower for kw in ['não tem', 'nao tem', 'não possui', 'não possuo', 'não uso']):
-                updated_profile['linkedin'] = "Não possui"
-                new_fields += 1
-                log_info(f"🔧 Safety net: detected NO LinkedIn")
+        # ── LinkedIn Safety Net (DISABLED) ──
+        # Disabled to avoid automatic inference - system should ask explicitly
+        # if not updated_profile.get('linkedin') or str(updated_profile.get('linkedin')).lower() in PLACEHOLDER_VALUES:
+        #     if any(var in msg_lower for var in ['linkedin', 'linkedn', 'linkdin', 'linkedin']) and \
+        #        any(neg in msg_lower for neg in ['não tem', 'nao tem', 'não possui', 'nao possui', 'não possuo', 'não uso', 'não temos', 'nao temos']):
+        #         updated_profile['linkedin'] = "Não possui"
+        #         new_fields += 1
+        #         log_info(f"🔧 Safety net: detected NO LinkedIn (resilient to typos)")
         
-        # If modelo is still empty but message mentions selling to companies/consumers
-        if not updated_profile.get('modelo'):
-            msg_lower = message.lower()
-            if any(kw in msg_lower for kw in ['pra empresa', 'para empresa', 'p/ empresa', 'vendo para empresa',
-                                               'vendemos para empresa', 'b2b', 'business to business',
-                                               'atendo empresa', 'clientes são empresa']):
-                updated_profile['modelo'] = 'B2B'
-                new_fields += 1
-                log_info(f"🔧 Safety net: detected modelo = B2B")
-            elif any(kw in msg_lower for kw in ['consumidor final', 'pessoa física', 'pessoa fisica',
-                                                 'varejo', 'b2c', 'business to consumer', 'pra pessoa']):
-                updated_profile['modelo'] = 'B2C'
-                new_fields += 1
-                log_info(f"🔧 Safety net: detected modelo = B2C")
+        # ── Last Question Safety Net (DISABLED) ──
+        # Disabled to avoid automatic inference - system should ask explicitly
+        # if messages:
+        #     last_assistant_msg = ""
+        #     for m in reversed(messages):
+        #         if m.get("role") == "assistant":
+        #             last_assistant_msg = m.get("content", "").lower()
+        #             break
+        #     
+        #     negative_signals = ['não', 'nao', 'não tenho', 'nao tenho', 'não possui', 'nao possui', 'não uso', 'não temos', 'nao temos', 'não tem', 'nao tem']
+        #     is_negative = msg_lower.strip() in negative_signals or \
+        #                  (len(msg_lower.split()) <= 3 and any(neg in msg_lower for neg in negative_signals))
+        #     
+        #     if is_negative:
+        #         for field, label in _FIELD_LABELS_PT.items():
+        #             current_val = str(updated_profile.get(field) or "").lower()
+        #             if not updated_profile.get(field) or current_val in PLACEHOLDER_VALUES:
+        #                 label_norm = _normalize(label)
+        #                 field_norm = _normalize(field)
+        #                 if label_norm in last_assistant_msg or field_norm in last_assistant_msg:
+        #                     updated_profile[field] = "Não possui"
+        #                     new_fields += 1
+        #                     log_info(f"🔧 Context safety net: detected NO {field} based on last question")
+
+        # ── General "Não Possui" Safety Net (DISABLED) ──
+        # Disabled to avoid automatic inference - system should ask explicitly
+        # for field, label in _FIELD_LABELS_PT.items():
+        #     current_val = str(updated_profile.get(field) or "").lower()
+        #     if not updated_profile.get(field) or current_val in PLACEHOLDER_VALUES:
+        #         label_norm = _normalize(label)
+        #         field_norm = _normalize(field)
+        #         if (label_norm in msg_lower or field_norm in msg_lower) and \
+        #            any(neg in msg_lower for neg in ['não tem', 'nao tem', 'não possui', 'nao possui', 'não possuo', 'não uso', 'não forneço', 'não informo']):
+        #             updated_profile[field] = "Não possui"
+        #             new_fields += 1
+        #             log_info(f"🔧 Literal safety net: detected NO {field} (label match)")
+        
+        # ── Grouping & Reference Safety Net (DISABLED) ──
+        # Disabled to avoid automatic inference - system should ask explicitly
+        # if any(ref in msg_lower for ref in ['o mesmo', 'a mesma', 'é o mesmo', 'mesmo que', 'mesmo do', 'mesmo da']):
+        #     # If we have a previous assistant question, identify what field we were asking about
+        #     last_field = None
+        #     if messages:
+        #         last_assistant_msg = ""
+        #         for m in reversed(messages):
+        #             if m.get("role") == "assistant":
+        #                 last_assistant_msg = m.get("content", "").lower()
+        #                 break
+        #         for field, label in _FIELD_LABELS_PT.items():
+        #             if _normalize(label) in _normalize(last_assistant_msg):
+        #                 last_field = field
+        #                 break
+        #     
+        #     if last_field:
+        #         # What is the reference?
+        #         if any(w in msg_lower for w in ['whatsapp', 'whats', 'celular', 'telefone']):
+        #             ref_val = updated_profile.get('whatsapp')
+        #             if ref_val:
+        #                 updated_profile[last_field] = ref_val
+        #                 new_fields += 1
+        #                 log_info(f"🔧 Reference safety net: {last_field} = same as whatsapp")
+        #         elif any(e in msg_lower for e in ['email', 'e-mail', 'contato']):
+        #             ref_val = updated_profile.get('email_contato')
+        #             if ref_val:
+        #                 updated_profile[last_field] = ref_val
+        #                 new_fields += 1
+        #                 log_info(f"🔧 Reference safety net: {last_field} = same as email")
+
+        # ── Modelo Detection Safety Net (DISABLED) ──
+        # Disabled to avoid automatic inference - system should ask explicitly
+        # if not updated_profile.get('modelo'):
+        #     if any(kw in msg_lower for kw in ['pra empresa', 'para empresa', 'p/ empresa', 'vendo para empresa',
+        #                                        'vendemos para empresa', 'b2b', 'business to business',
+        #                                        'atendo empresa', 'clientes são empresa']):
+        #         updated_profile['modelo'] = 'B2B'
+        #         new_fields += 1
+        #         log_info(f"🔧 Safety net: detected modelo = B2B")
+        #     elif any(kw in msg_lower for kw in ['consumidor final', 'pessoa física', 'pessoa fisica',
+        #                                          'varejo', 'b2c', 'business to consumer', 'pra pessoa']):
+        #         updated_profile['modelo'] = 'B2C'
+        #         new_fields += 1
+        #         log_info(f"🔧 Safety net: detected modelo = B2C")
         
         # Normalize: create aliases so downstream consumers find fields by their expected names
-        for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
+        for src, dst in [('dificuldades', 'problemas'), ('gargalos', 'principal_gargalo'),
                          ('equipe', 'num_funcionarios'), ('faturamento', 'faturamento_mensal'),
                          ('modelo_operacional', 'operacao'),
                          ('canais', 'canais_venda'), ('clientes', 'cliente_ideal')]:
@@ -505,98 +609,6 @@ def _extract_business_info(message: str, current_profile: dict, messages: list =
         
     except Exception as e:
         log_error(f"❌ JSON mode failed: {str(e)[:100]}...")
-        
-        # Fallback: tentar extração manual de campos básicos
-        fallback_fields = {}
-        message_lower = message.lower()
-        
-        # Generic fallback patterns (remove hardcoded J.Ferres data)
-        if "b2b" in message_lower:
-            fallback_fields["modelo"] = "B2B"
-        if "b2c" in message_lower:
-            fallback_fields["modelo"] = "B2C"
-        if "serviço" in message_lower or "servico" in message_lower:
-            fallback_fields["tipo_oferta"] = "serviço"
-        if "produto" in message_lower:
-            fallback_fields["tipo_oferta"] = "produto"
-        
-        # Extract numbers with context (generic)
-        
-        # Faturamento - look for monetary values
-        faturamento_match = re.search(r'R\$\s*([\d.,]+)', message)
-        if faturamento_match:
-            value = faturamento_match.group(1)
-            if "mil" in message_lower or "k" in message_lower:
-                fallback_fields["faturamento"] = f"R$ {value}/mês"
-        
-        # Equipe - look for people count
-        equipe_match = re.search(r'(\d+)\s*(?:pessoas|funcionários|funcionarios|equipe)', message_lower)
-        if equipe_match:
-            fallback_fields["equipe"] = f"{equipe_match.group(1)} pessoas"
-        
-        # Ticket médio - look for monetary values with ticket context
-        ticket_match = re.search(r'(?:ticket|média|media)\s*R?\$\s*([\d.,]+)', message_lower)
-        if ticket_match:
-            value = ticket_match.group(1)
-            fallback_fields["ticket_medio"] = f"R$ {value}"
-        
-        # Generic competitor extraction
-        if "concorrente" in message_lower or "concorrência" in message_lower or "concorrencia" in message_lower:
-            # Try to extract competitor names from context
-            words = message_lower.split()
-            potential_competitors = []
-            for i, word in enumerate(words):
-                if word in ["concorrente", "concorrente:", "concorrentes", "concorrência", "concorrencia"]:
-                    # Look for capitalized words after competitor keywords
-                    for j in range(i+1, min(i+4, len(words))):
-                        candidate = words[j].strip('.,;:')
-                        if candidate and candidate[0].isupper() and len(candidate) > 2:
-                            potential_competitors.append(candidate)
-            
-            if potential_competitors:
-                fallback_fields["concorrentes"] = ", ".join(potential_competitors[:3])  # Max 3 competitors
-        
-        # Website extraction - look for URLs
-        url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', message_lower)
-        if url_match:
-            fallback_fields["site"] = url_match.group(1)
-        
-        # Location extraction - look for city/state patterns
-        location_match = re.search(r'([A-Z][a-z]+(?:-[A-Z][a-z]+)?)\s*-\s*([A-Z]{2})', message)
-        if location_match:
-            city, state = location_match.groups()
-            fallback_fields["localizacao"] = f"{city}-{state}"
-            
-        # Email extraction
-        email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', message)
-        if email_match:
-            fallback_fields["email_contato"] = email_match.group(0)
-            
-        # LinkedIn extraction
-        if "linkedin" in message_lower:
-            linkedin_url = re.search(r'(https?://(?:www\.)?linkedin\.com/[^\s]+)', message)
-            if linkedin_url:
-                fallback_fields["linkedin"] = linkedin_url.group(1)
-            else:
-                fallback_fields["linkedin"] = "Referenciado na conversa"
-                
-        # Google Maps / Address Extraction (e.g "Av. Eng. Fábio Roberto Barnabé, 2156")
-        if any(kw in message_lower for kw in ['rua', 'av.', 'avenida', 'praça', 'rodovia']) or re.search(r'\d{5}-\d{3}', message):
-            fallback_fields["google_maps"] = message.strip()
-            
-        if fallback_fields:
-            log_success(f"Fallback extracted {len(fallback_fields)} fields")
-            updated_profile = current_profile.copy()
-            for key, value in fallback_fields.items():
-                updated_profile[key] = value
-            # Same normalization as LLM path
-            for src, dst in [('problemas', 'dificuldades'), ('gargalos', 'principal_gargalo'),
-                             ('equipe', 'num_funcionarios'), ('faturamento', 'faturamento_mensal'),
-                             ('modelo_operacional', 'operacao')]:
-                if updated_profile.get(src):
-                    updated_profile[dst] = updated_profile[src]
-            return updated_profile
-        
         return current_profile
 
 
@@ -645,84 +657,67 @@ def _detect_discovery_gaps(message: str, current_profile: dict) -> list:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# CAMPOS OBRIGATÓRIOS PARA ANÁLISE — "Lista de Compras" do Chat
+# DNA ESTRATÉGICO — Definição dos campos e grupos
 # ═══════════════════════════════════════════════════════════════════
-# Sem TODOS estes, a análise fica comprometida (persona errada, queries genéricas)
-CRITICAL_FIELDS = ['nome_negocio', 'segmento', 'modelo', 'localizacao', 'dificuldades', 'objetivos', 'faturamento', 'canais', 'site']
 
-# O consultor DEVE perguntar TODOS estes campos antes de liberar a análise
-# Grupos de campos para coleta organizada
+# Campos Críticos: Sem estes a análise NÃO PODE iniciar (mínimo viável)
+CRITICAL_FIELDS = [
+    'nome_negocio', 'segmento', 'modelo', 'localizacao', 
+    'dificuldades', 'objetivos', 'site'
+]
+
+# Grupos de campos para coleta organizada e conversacional
 FIELD_GROUPS = {
-    "Identidade Digital": ['site', 'instagram', 'whatsapp', 'linkedin', 'google_maps', 'email_contato', 'canais'],
-    "Saúde Financeira": ['faturamento', 'ticket_medio', 'margem', 'capital_disponivel', 'investimento'],
-    "Estrutura e Operação": ['equipe', 'tipo_produto', 'tempo_operacao', 'modelo_operacional', 'capacidade_produtiva', 'tempo_entrega', 'fornecedores'],
-    "Inteligência de Mercado": ['concorrentes', 'diferencial', 'tipo_cliente', 'regiao_atendimento', 'origem_clientes', 'maior_objecao', 'gargalos']
+    "Identidade e Presença": ['site', 'instagram', 'whatsapp', 'linkedin', 'google_maps', 'email_contato', 'canais'],
+    "Métricas e Finanças": ['faturamento', 'ticket_medio', 'margem', 'capital_disponivel', 'investimento'],
+    "Operação e Oferta": ['equipe', 'tipo_produto', 'tempo_operacao', 'modelo_operacional', 'capacidade_produtiva', 'tempo_entrega', 'fornecedores'],
+    "Mercado e Estratégia": ['concorrentes', 'diferencial', 'tipo_cliente', 'regiao_atendimento', 'origem_clientes', 'maior_objecao', 'gargalos', 'clientes']
 }
 
-# Lista achatada para compatibilidade
+# Lista achatada para conveniência
 BONUS_FIELDS = [f for fields in FIELD_GROUPS.values() for f in fields]
-BONUS_MINIMUM = len(BONUS_FIELDS)  # TODOS são obrigatórios
+BONUS_MINIMUM = len(BONUS_FIELDS) 
 
-# Labels em português para injeção natural no prompt
 _FIELD_LABELS_PT = {
-    # Críticos
-    'nome_negocio': 'nome do negócio',
-    'segmento': 'segmento/área de atuação',
-    'modelo': 'modelo de negócio (B2B ou B2C)',
-    'localizacao': 'localização (cidade/estado)',
-    'dificuldades': 'principais dificuldades/desafios',
-    'objetivos': 'objetivos de crescimento',
-    # Bônus (todos obrigatórios)
-    'faturamento': 'faturamento mensal',
-    'ticket_medio': 'ticket médio por venda',
-    'tipo_produto': 'tipo de oferta (produto, serviço ou ambos)',
-    'equipe': 'tamanho da equipe',
-    'diferencial': 'diferencial competitivo',
-    'concorrentes': 'concorrentes diretos',
-    'canais': 'canais de venda/comunicação atuais',
-    'investimento': 'investimento atual em marketing',
-    'margem': 'margem de lucro',
-    'tempo_operacao': 'há quanto tempo o negócio opera',
-    'modelo_operacional': 'modelo operacional (estoque, sob encomenda, etc)',
-    'capital_disponivel': 'capital disponível para investir',
-    'gargalos': 'gargalos operacionais',
-    'tipo_cliente': 'tipos de clientes/indústrias atendidas',
-    'capacidade_produtiva': 'capacidade produtiva / volume',
-    'regiao_atendimento': 'região geográfica de atendimento',
-    'fornecedores': 'fornecedores principais',
-    'origem_clientes': 'de onde vêm os clientes hoje',
-    'maior_objecao': 'maior objeção dos clientes ao comprar',
-    'site': 'site/website',
-    'instagram': 'perfil do Instagram',
-    'whatsapp': 'WhatsApp comercial',
+    'nome_negocio': 'Nome da empresa',
+    'segmento': 'Área de atuação (segmento)',
+    'modelo': 'Modelo (B2B ou B2C)',
+    'localizacao': 'Cidade/Estado principal',
+    'dificuldades': 'Maiores desafios atuais',
+    'objetivos': 'Metas de crescimento',
+    'faturamento': 'Faturamento mensal estimado',
+    'ticket_medio': 'Ticket médio',
+    'tipo_produto': 'Oferta principal (produtos ou serviços)',
+    'equipe': 'Número de colaboradores',
+    'diferencial': 'Diferencial competitivo',
+    'concorrentes': 'Principais concorrentes',
+    'canais': 'Onde vende hoje (físico, site, redes)',
+    'investimento': 'Investimento mensal em marketing',
+    'margem': 'Margem de lucro média',
+    'tempo_operacao': 'Há quanto tempo existe',
+    'modelo_operacional': 'Como opera (estoque, encomenda, etc)',
+    'capital_disponivel': 'Capital para novos investimentos',
+    'gargalos': 'Gargalos na operação',
+    'tipo_cliente': 'Perfil do público/indústrias',
+    'clientes': 'Descrição do cliente ideal',
+    'capacidade_produtiva': 'Capacidade de escala/volume',
+    'regiao_atendimento': 'Abrangência geográfica',
+    'fornecedores': 'Fornecedores principais',
+    'origem_clientes': 'Como os clientes chegam',
+    'maior_objecao': 'Por que os clientes deixam de comprar',
+    'site': 'Site oficial/URL',
+    'instagram': 'Instagram',
+    'whatsapp': 'WhatsApp/Contato principal',
     'linkedin': 'LinkedIn da empresa',
-    'google_maps': 'Google Maps / Google Meu Negócio',
-    'email_contato': 'e-mail de contato comercial',
-    'tempo_entrega': 'prazo médio de entrega',
-    'cnpj': 'CNPJ da empresa',
+    'google_maps': 'Endereço completo (Google Maps)',
+    'email_contato': 'E-mail comercial',
+    'tempo_entrega': 'Prazo de entrega',
+    'cnpj': 'CNPJ',
 }
 
 
 def _compute_missing_fields(profile: dict) -> tuple:
     """Compute which critical and bonus fields are still missing, organized by groups."""
-    def _is_field_filled(value):
-        if not value or str(value).lower() in ("null", "none", "", "desconhecido"):
-            return False
-        # Generic logic: any meaningful data counts as filled
-        val_str = str(value).strip()
-        
-        # Empty or meaningless responses
-        if len(val_str) < 2:
-            return False
-            
-        # "Não informado" still counts as missing because it's a placeholder for unknown
-        if val_str.lower() in ["não informado", "nao informado"]:
-            return False
-            
-        # "Não possui", "Não tem", etc. are VALID ANSWERS (confirmed negatives)
-        # They count as filled because we now know the state of that field.
-        return True
-    
     filled = {k for k, v in profile.items() if _is_field_filled(v)}
     
     # Debug: Log which fields are considered filled
@@ -802,43 +797,43 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     
     gaps_text = f"\nO USUÁRIO NÃO SABE: {', '.join(discovery_gaps)}.\n" if discovery_gaps else ""
     
-    # Logic for ready_now: STRICT 100% COMPLETION REQUIRED
-    # User requested all data without exception before analysis
+    # Logic for ready_now: 100% of defined fields must be filled (data or confirmed unknown/none)
     has_critical = len(missing_critical) == 0
     has_all_bonus = len(missing_bonus) == 0
+    ready_now = has_critical and has_all_bonus
     
-    # Check if we have enough "real" data (not just empty/null values)
-    def _is_valid_data(value):
-        if not value or str(value).lower() in ("null", "none", "", "desconhecido"):
-            return False
-        val_str = str(value).strip()
-        if len(val_str) < 2: return False
-        
-        # "Não informado" is a placeholder for missing data
-        if val_str.lower() in ["não informado", "nao informado"]: 
-            return False
+    # Optional: ensure we have at least SOME real data (not just everything 'unknown')
+    actual_data_count = len([k for k, v in updated_profile.items() if _is_field_filled(v) and k in _FIELD_LABELS_PT and "desconhecido" not in str(v).lower()])
+    
+    # Final logic for ready_now
+    ready_now = ready_now and (actual_data_count >= 5) # Require at least 5 real business facts
+    
+    # Logic for status_instruction: Conversational Grouping
+    # 1. Identify which group we are currently focusing on
+    target_group_name = None
+    group_info = None
+    for name, stats in group_status.items():
+        if not stats["is_complete"]:
+            target_group_name = name
+            group_info = stats
+            break
             
-        # "Não possui", "Não tem", etc. are VALID diagnostic data points
-        # (They indicate a gap that the strategy will address)
-        return True
-    
-    total_required = len(set(CRITICAL_FIELDS + BONUS_FIELDS))
-    actual_filled = len([k for k, v in updated_profile.items() if _is_valid_data(v) and k in _FIELD_LABELS_PT])
-    
-    # ready_now is true ONLY if 100% of defined fields are filled with valid data
-    ready_now = has_critical and has_all_bonus and (actual_filled >= total_required)
-    
-    # Logic for status_instruction: STRICT FOCUS ON MAPPED GAPS
     if ready_now:
-        status_instruction = "ESTADO: ✅ DNA 100% MAPEADO. Resuma brevemente a prontidão e convide o usuário a clicar no botão 'Iniciar Análise Estratégica' para gerar o plano completo."
+        status_instruction = "ESTADO: ✅ DNA 100% MAPEADO. O DNA estratégico está completo. Agradeça calorosamente pela riqueza de detalhes fornecida. Resuma brevemente a prontidão e convide o usuário a clicar no botão 'Iniciar Análise Estratégica' para gerar o plano de ação detalhado."
+    elif len(all_missing) < 3:
+        status_instruction = f"ESTADO: ✅ DNA QUASE PRONTO. Faltam apenas detalhes mínimos ({', '.join([_FIELD_LABELS_PT.get(f,f) for f in all_missing])}). Se o usuário já enviou dados em massa recentemente, apenas confirme se ele quer adicionar mais algo ou se podemos prosseguir."
     elif missing_critical:
-        campo_label = _FIELD_LABELS_PT.get(missing_critical[0], missing_critical[0])
-        status_instruction = f"ESTADO: ⚠️ Bloqueado. Falta campo CRÍTICO: {campo_label}. Peça imediatamente. NÃO peça nada fora desta lista: {', '.join([_FIELD_LABELS_PT.get(c, c) for c in missing_critical[:2]])}."
+        # Priority on critical fields, but ask them conversationaly
+        campos_faltantes = [_FIELD_LABELS_PT.get(c, c) for c in missing_critical[:3]]
+        status_instruction = f"ESTADO: ⚠️ Bloqueio Crítico. Faltam dados essenciais: {', '.join(campos_faltantes)}. Peça-os integrando à conversa como um estrategista. NÃO aceite respostas genéricas para estes campos."
+    elif target_group_name:
+        # Ask for missing fields in the current group together
+        missing_in_group = group_info["missing"]
+        labels_in_group = [_FIELD_LABELS_PT.get(f, f) for f in missing_in_group[:3]]
+        
+        status_instruction = f"ESTADO: 🔍 Explorando {target_group_name}. Faltam: {', '.join(labels_in_group)}. Peça esses dados de forma agrupada e estratégica. Explique brevemente POR QUE esses dados são importantes para a estratégia de crescimento."
     else:
-        # Get the first missing field from any group
-        first_missing = all_missing[0] if all_missing else "dados extras"
-        campo_label = _FIELD_LABELS_PT.get(first_missing, first_missing)
-        status_instruction = f"ESTADO: ⚠️ Coletando indicadores. Próximo alvo: {campo_label}. Peça apenas UM dado por vez da lista de campos faltantes. PROIBIDO perguntar sobre gestão interna, RH ou rotinas que não estejam nos 30 campos oficiais."
+         status_instruction = "ESTADO: ✅ DNA Quase pronto. Verifique se há algum detalhe final e encerre a coleta."
 
     from app.core.prompt_loader import load_prompt_file
     prompt_config = load_prompt_file("chat_consultant.yaml")
@@ -857,9 +852,9 @@ def chat_consultant(messages: list, user_message: str, extracted_profile: dict, 
     yield {"type": "thought", "text": "Processando sua resposta..."}
     
     result = call_llm(
-        provider="auto",
+        "auto",
         prompt=prompt,
-        temperature=0.7,
+        temperature=0.25,
         json_mode=False
     )
     

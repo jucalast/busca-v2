@@ -9,14 +9,14 @@ export function MarkdownContent({ content, className = '' }: { content: string; 
         <div className={`markdown-content ${className} select-text text-left`}>
             <ReactMarkdown
                 components={{
-                    h1: ({ children }) => <h1 className="text-[17px] font-bold mt-6 mb-3 tracking-tight" style={{ color: 'var(--color-text-primary)' }}>{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-[15px] font-bold mt-5 mb-2.5 tracking-tight" style={{ color: 'var(--color-text-secondary)' }}>{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-[13px] font-bold mt-4 mb-2 tracking-tight" style={{ color: 'var(--color-text-muted)' }}>{children}</h3>,
-                    h4: ({ children }) => <h4 className="text-[12px] font-semibold mt-3 mb-1.5" style={{ color: 'var(--color-text-muted)' }}>{children}</h4>,
-                    p: ({ children }) => <p className="text-[15px] leading-[1.6] mb-4 font-normal" style={{ color: 'var(--color-text-secondary)' }}>{children}</p>,
+                    h1: ({ children }) => <h1 className="text-[24px] font-bold mt-6 mb-3 tracking-tight" style={{ color: 'var(--color-text-primary)' }}>{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-[22px] font-bold mt-5 mb-2.5 tracking-tight" style={{ color: 'var(--color-text-secondary)' }}>{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-[20px] font-bold mt-4 mb-2 tracking-tight" style={{ color: 'var(--color-text-muted)' }}>{children}</h3>,
+                    h4: ({ children }) => <h4 className="text-[18px] font-semibold mt-3 mb-1.5" style={{ color: 'var(--color-text-muted)' }}>{children}</h4>,
+                    p: ({ children }) => <p className="text-[19px] leading-[1.6] mb-4 font-normal" style={{ color: 'var(--color-text-secondary)' }}>{children}</p>,
                     ul: ({ children }) => <ul className="list-disc list-outside pl-5 mb-4 space-y-2">{children}</ul>,
                     ol: ({ children }) => <ol className="list-decimal list-outside pl-5 mb-4 space-y-2">{children}</ol>,
-                    li: ({ children }) => <li className="text-[15px] leading-[1.6]" style={{ color: 'var(--color-text-secondary)' }}>{children}</li>,
+                    li: ({ children }) => <li className="text-[19px] leading-[1.6]" style={{ color: 'var(--color-text-secondary)' }}>{children}</li>,
                     strong: ({ children }) => <strong className="font-bold" style={{ color: 'var(--color-text-primary)' }}>{children}</strong>,
                     em: ({ children }) => <em className="italic opacity-80" style={{ color: 'var(--color-text-muted)' }}>{children}</em>,
                     a: ({ href, children }) => (
@@ -28,24 +28,24 @@ export function MarkdownContent({ content, className = '' }: { content: string; 
                         </a>
                     ),
                     blockquote: ({ children }) => (
-                        <blockquote className="border-l-4 pl-4 my-6 italic rounded-r-md bg-black/5 py-1" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>{children}</blockquote>
+                        <blockquote className="border-l-4 pl-4 my-6 italic rounded-r-md py-1" style={{ backgroundColor: 'var(--color-surface-1)', borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>{children}</blockquote>
                     ),
                     code: ({ children, className: codeClass }) => {
                         const isInline = !codeClass;
                         return isInline
-                            ? <code className="px-1.5 py-0.5 rounded-md text-[12px] font-mono bg-black/5" style={{ color: 'var(--color-text-primary)' }}>{children}</code>
-                            : <code className="block p-4 rounded-xl text-[12px] font-mono my-4 overflow-x-auto bg-black/5" style={{ color: 'var(--color-text-primary)' }}>{children}</code>;
+                            ? <code className="px-1.5 py-0.5 rounded-md text-[12px] font-mono" style={{ backgroundColor: 'var(--color-surface-1)', color: 'var(--color-text-primary)' }}>{children}</code>
+                            : <code className="block p-4 rounded-xl text-[12px] font-mono my-4 overflow-x-auto" style={{ backgroundColor: 'var(--color-surface-1)', color: 'var(--color-text-primary)' }}>{children}</code>;
                     },
-                    pre: ({ children }) => <pre className="rounded-xl my-4 overflow-x-auto bg-black/5 border border-black/5">{children}</pre>,
-                    hr: () => <hr className="my-6 border-black/10" />,
+                    pre: ({ children }) => <pre className="rounded-xl my-4 overflow-x-auto border" style={{ backgroundColor: 'var(--color-surface-1)', borderColor: 'var(--color-border)' }}>{children}</pre>,
+                    hr: () => <hr className="my-6" style={{ borderColor: 'var(--color-border)' }} />,
                     table: ({ children }) => (
-                        <div className="overflow-x-auto my-6 rounded-xl border border-black/5">
+                        <div className="overflow-x-auto my-6 rounded-xl border" style={{ borderColor: 'var(--color-border)' }}>
                             <table className="min-w-full text-[12px] border-collapse">{children}</table>
                         </div>
                     ),
-                    thead: ({ children }) => <thead className="bg-black/5">{children}</thead>,
-                    th: ({ children }) => <th className="text-left font-bold px-4 py-3 border-b border-black/5" style={{ color: 'var(--color-text-primary)' }}>{children}</th>,
-                    td: ({ children }) => <td className="px-4 py-3 border-b border-black/5 font-normal" style={{ color: 'var(--color-text-secondary)' }}>{children}</td>,
+                    thead: ({ children }) => <thead style={{ backgroundColor: 'var(--color-surface-1)' }}>{children}</thead>,
+                    th: ({ children }) => <th className="text-left font-bold px-4 py-3 border-b" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}>{children}</th>,
+                    td: ({ children }) => <td className="px-4 py-3 border-b font-normal" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}>{children}</td>,
                 }}
             >
                 {text}

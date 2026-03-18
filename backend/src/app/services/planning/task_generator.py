@@ -153,7 +153,7 @@ ESTRUTURA DO JSON:
 
 GERE ENTRE 4 E 6 TAREFAS — preferir menos tarefas de alta qualidade do que muitas genéricas."""
 
-    return call_llm(provider=None, prompt=prompt, temperature=0.3)
+    return call_llm("auto", prompt=prompt, temperature=0.4)
 
 
 def deduplicate_tasks(tasks: list) -> list:

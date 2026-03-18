@@ -62,7 +62,7 @@ export default function UserAvatar({ isExpanded = true }: { isExpanded?: boolean
     );
   }
 
-  const photoUrl = nextSession?.user?.image;
+  const photoUrl = user?.image;
   const displayName = user?.name || nextSession?.user?.name || '';
   const initials = displayName
     ? displayName.split(' ').filter(Boolean).slice(0, 2).map((n: string) => n[0].toUpperCase()).join('')

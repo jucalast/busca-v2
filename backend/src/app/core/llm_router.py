@@ -39,18 +39,19 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..'
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,
-# so when 2.0-flash is exhausted we can still use 1.5-flash, etc.
+# so when 2.0-flash is exhausted we can still use 2.5-flash, etc.
 GEMINI_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite-preview-02-05", # More precise ID
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    "models/gemini-2.0-flash",
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash-lite",
+    "models/gemini-2.5-flash-lite",
+    "models/gemini-flash-latest"
 ]
 
 # Elite Providers Support (Free/Fast/Powerful)
-SAMBANOVA_MODELS = ["Meta-Llama-3.3-70B-Instruct", "Llama-4-Maverick-17B-128E-Instruct", "Qwen3-32B"]
+SAMBANOVA_MODELS = ["Meta-Llama-3.3-70B-Instruct", "Meta-Llama-3.1-70B-Instruct"]
 DEEPSEEK_MODELS = ["deepseek-chat", "deepseek-reasoner"]
-CEREBRAS_MODELS = ["llama3.1-8b", "qwen-3-235b-a22b-instruct-2507", "gpt-oss-120b"]
+CEREBRAS_MODELS = ["llama3.1-8b", "llama3.1-70b"]
 
 def _parse_retry_wait(error_msg: str) -> int:
     import re
@@ -95,10 +96,10 @@ def _is_clean_text(text: str, min_printable: float = 0.85) -> bool:
     return (printable / len(sample)) >= min_printable
 
 
-def _try_without_json_constraint(client, msg_payload, model, temperature) -> str | None:
+def _try_without_json_constraint(client, msg_payload, model, temperature, provider, fallback_title="Resultado gerado") -> tuple[str | None, int]:
     """
     Try a model WITHOUT response_format constraint, then extract JSON from the text.
-    Returns the extracted JSON string, or a wrapped-text JSON, or None if output is garbage.
+    Returns (extracted_json_string, tokens), or (None, 0) if output is garbage.
     """
     import re as _re
     try:
@@ -110,10 +111,19 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
         )
         raw = _strip_thinking_tags(completion.choices[0].message.content or "")
 
+        # Track tokens even if it's not JSON
+        prompt_tokens = getattr(completion.usage, 'prompt_tokens', 0)
+        completion_tokens = getattr(completion.usage, 'completion_tokens', 0)
+        tokens = usage_tracker.track_request(
+            provider, "", raw, model, 
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens
+        )
+
         # Reject garbage output early
         if not _is_clean_text(raw):
             print(f"  ⚠️ {model} sem constraint gerou conteúdo ilegível. Pulando.", file=sys.stderr)
-            return None
+            return None, tokens
 
         # Try to extract valid JSON from the response
         # Method 1: Find a JSON object
@@ -123,7 +133,7 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
                 candidate = json_match.group(0)
                 json.loads(candidate)
                 print(f"  ✅ JSON extraído de {model} sem constraint", file=sys.stderr)
-                return candidate
+                return candidate, tokens
             except json.JSONDecodeError:
                 pass
 
@@ -139,7 +149,7 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
         try:
             json.loads(cleaned)
             print(f"  ✅ JSON extraído de {model} após limpar fences", file=sys.stderr)
-            return cleaned
+            return cleaned, tokens
         except json.JSONDecodeError:
             pass
 
@@ -147,11 +157,13 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
         if len(raw.strip()) > 100:
             print(f"  ⚠️ JSON extraction falhou em {model}, envolvendo texto como conteúdo ({len(raw)} chars)", file=sys.stderr)
             # Extract first meaningful paragraphs as opiniao
+            lines = [l.strip() for l in raw.strip().split('\n') if l.strip()]
+            _first_line = lines[0].strip('#').strip() if lines else ""
+            _titulo = _first_line[:120] if len(_first_line) > 10 else fallback_title
+            
             _paragraphs = [p.strip() for p in raw.strip().split('\n') if p.strip() and len(p.strip()) > 30]
             _opiniao = ' '.join(_paragraphs[:3])[:500] if _paragraphs else ""
-            # Try to extract a title from the first line
-            _first_line = raw.strip().split('\n')[0].strip().strip('#').strip()
-            _titulo = _first_line[:120] if len(_first_line) > 10 else "Resultado gerado"
+            
             return json.dumps({
                 "entregavel_titulo": _titulo,
                 "entregavel_tipo": "documento",
@@ -161,12 +173,12 @@ def _try_without_json_constraint(client, msg_payload, model, temperature) -> str
                 "proximos_passos": "",
                 "fontes_consultadas": [],
                 "impacto_estimado": ""
-            }, ensure_ascii=False)
+            }, ensure_ascii=False), tokens
 
-        return None
+        return None, tokens
     except Exception as e:
         print(f"  ⚠️ {model} sem constraint falhou: {str(e)[:80]}", file=sys.stderr)
-        return None
+        return None, 0
 
 
 _GROQ_BROKEN_MODELS: set = set()
@@ -279,11 +291,11 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                 # JSON generation failure → try SAME model without constraint, then next
                 if is_json_fail:
                     print(f"  ⚠️ Modelo {model} falhou ao gerar JSON. Tentando sem constraint...", file=sys.stderr)
-                    extracted = _try_without_json_constraint(
-                        client, msg_payload, model, temperature
+                    extracted, f_tokens = _try_without_json_constraint(
+                        client, msg_payload, model, temperature, "groq"
                     )
                     if extracted is not None:
-                        return extracted, 0, model 
+                        return extracted, f_tokens, model 
                     
                     # Don't mark as broken permanently, just skip for this specific call chain if needed
                     if mi < len(models) - 1:
@@ -387,75 +399,95 @@ def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: 
     raise Exception("Todos os modelos Gemini esgotaram a cota ou estão indisponíveis.")
 
 
-def _call_gemini_once(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, model_name: str = "gemini-2.0-flash"):
-    """Single Gemini API call (no retries)."""
-    if not HAS_NEW_GENAI:
-        raise RuntimeError("A biblioteca google-genai não está instalada corretamente.")
+def _call_gemini_once(api_key: str, prompt: str, temperature: float, json_mode: bool, messages: list, model_name: str, cancellation_check: Callable[[], None] = None):
+    """Single Gemini call with cancellation support."""
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
     
-    client = genai.Client(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+    
+    # Build prompt
+    if messages:
+        # Convert messages to Gemini format
+        gemini_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                gemini_messages.append({"text": f"System: {msg.get('content')}"})
+            else:
+                gemini_messages.append({"text": msg.get("content")})
+        prompt_text = "\n".join([m["text"] for m in gemini_messages])
+    else:
+        prompt_text = prompt
     
     # Configure generation
-    config = {
-        "temperature": temperature,
-    }
+    generation_config = genai.types.GenerationConfig(
+        temperature=temperature,
+        max_output_tokens=12000,
+    )
     
     if json_mode:
-        config["response_mime_type"] = "application/json"
+        generation_config.response_mime_type = "application/json"
     
-    if messages:
-        # Chat mode
-        contents = []
-        for m in messages:
-            role = "user" if m["role"] == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+    # Start generation with cancellation check
+    try:
+        # Check cancellation before starting
+        if cancellation_check:
+            cancellation_check()
         
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=config
-        )
-        raw = response.text
-        
-        # Extract headers from Gemini (if available in new SDK)
-        headers = {}
-        try:
-            # Metadata usually contains headers in many SDK versions
-            if hasattr(response, 'headers'):
-                headers = dict(response.headers)
-        except Exception:
-            pass
+        # For long prompts, add aggressive cancellation during generation
+        if len(prompt_text) > 10000 and cancellation_check:
+            # Use streaming for large prompts to allow cancellation
+            response = model.generate_content(
+                prompt_text,
+                generation_config=generation_config,
+                stream=True
+            )
             
-        # Track usage with real token counts from Gemini
-        prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
-        completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
-        
-        tokens = usage_tracker.track_request(
-            "gemini", prompt, raw, model_name, headers=headers,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens
-        )
-        
-        return raw, tokens, model_name
-    else:
-        # Single prompt mode
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=config
-        )
-        raw = response.text
-        
-        # Sync with Gemini using real token counts
-        prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
-        completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
-        
-        tokens = usage_tracker.track_request(
-            "gemini", prompt, raw, model_name,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens
-        )
-        
-        return raw, tokens, model_name
+            result_text = ""
+            for chunk in response:
+                # Check cancellation between chunks
+                if cancellation_check:
+                    cancellation_check()
+                result_text += chunk.text
+            
+            # Parse final result
+            if json_mode:
+                try:
+                    import json
+                    return json.loads(result_text), estimate_tokens(result_text), model_name
+                except json.JSONDecodeError:
+                    return {"raw_response": result_text}, estimate_tokens(result_text), model_name
+            else:
+                return result_text, estimate_tokens(result_text), model_name
+        else:
+            # Standard call for smaller prompts
+            response = model.generate_content(
+                prompt_text,
+                generation_config=generation_config
+            )
+            
+            result_text = response.text
+            if json_mode:
+                try:
+                    import json
+                    return json.loads(result_text), estimate_tokens(result_text), model_name
+                except json.JSONDecodeError:
+                    return {"raw_response": result_text}, estimate_tokens(result_text), model_name
+            else:
+                return result_text, estimate_tokens(result_text), model_name
+                
+    except Exception as e:
+        error_msg = str(e)
+        if "quota" in error_msg.lower() or "rate limit" in error_msg.lower() or "429" in error_msg:
+            raise Exception(f"Rate limit: {error_msg}")
+        elif "cancelled" in error_msg.lower() or cancellation_check:
+            # Check if this was a cancellation
+            if cancellation_check:
+                try:
+                    cancellation_check()
+                except:
+                    raise Exception("Task cancelled by user")
+        raise Exception(f"Gemini API error: {error_msg}")
 
 
 def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3, json_mode: bool = True, messages: List = None, model: str = None, cancellation_check: Callable[[], None] = None):
@@ -489,9 +521,9 @@ def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, 
             
             if is_json_fail:
                 print(f"  ⚠️ SambaNova {target_model} falhou ao gerar JSON. Tentando sem constraint...", file=sys.stderr)
-                extracted = _try_without_json_constraint(client, msg_payload, target_model, temperature)
+                extracted, f_tokens = _try_without_json_constraint(client, msg_payload, target_model, temperature, "sambanova")
                 if extracted is not None:
-                    return extracted, 0, target_model
+                    return extracted, f_tokens, target_model
             
             if "insufficient balance" in err_str or "unpaid" in err_str or "402" in err_str:
                 print(f"  ⚠️ SambaNova saldo insuficiente. Pulando...", file=sys.stderr)
@@ -571,9 +603,9 @@ def _call_cerebras_engine(api_key: str, prompt: str, temperature: float = 0.3, m
             
             if is_json_fail:
                 print(f"  ⚠️ Cerebras {target_model} falhou ao gerar JSON. Tentando sem constraint...", file=sys.stderr)
-                extracted = _try_without_json_constraint(client, msg_payload, target_model, temperature)
+                extracted, f_tokens = _try_without_json_constraint(client, msg_payload, target_model, temperature, "cerebras")
                 if extracted is not None:
-                    return extracted, 0, target_model
+                    return extracted, f_tokens, target_model
 
             if "Task cancelled" in str(e): raise
             if attempt == max_retries - 1: raise
@@ -770,18 +802,13 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
         actual_provider = "sambanova"
         
     if actual_provider != "auto":
-        # If a specific provider was requested, try it first
-        if actual_provider in chain:
-            chain.remove(actual_provider)
-            chain.insert(0, actual_provider)
-        elif actual_provider:
-            # If we reach here, it's a short prompt but actual_provider (ex: custom) isn't in chain
-            chain.insert(0, actual_provider)
-            
-    # Guarantee Groq is the absolute final fallback if it's in the chain
-    if "groq" in chain and chain[-1] != "groq":
-        chain.remove("groq")
-        chain.append("groq")
+        # If a specific provider was requested, use ONLY it (no fallbacks)
+        chain = [actual_provider]
+    else:
+        # For auto mode, ensure Groq is the absolute final fallback
+        if "groq" in chain and chain[-1] != "groq":
+            chain.remove("groq")
+            chain.append("groq")
     
     errors = []
     now = time.time()
@@ -812,48 +839,58 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
             
             if provider == "sambanova":
                 api_key = os.environ.get("SAMBANOVA_API_KEY")
-                if not api_key: 
+                if not api_key or api_key.lower() == "none": 
                     errors.append("SambaNova: Chave ausente")
                     continue
-                can_call, _ = usage_tracker.can_make_request("sambanova", estimated_tokens=len(cache_prompt)//4)
-                if not can_call and len(keys_found) > 1: continue # Only skip if we have other options
+                can_call, reason = usage_tracker.can_make_request("sambanova", estimated_tokens=len(cache_prompt)//4)
+                if not can_call and len(keys_found) > 1:
+                    print(f"  ⏭️ SambaNova pulado: {reason}", file=sys.stderr)
+                    continue 
                 res, tokens, used_model = _call_sambanova_engine(api_key, prompt, temperature, max_retries, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "cerebras":
                 api_key = os.environ.get("CEREBRAS_API_KEY")
-                if not api_key:
+                if not api_key or api_key.lower() == "none":
                     errors.append("Cerebras: Chave ausente")
                     continue
-                can_call, _ = usage_tracker.can_make_request("cerebras", estimated_tokens=len(cache_prompt)//4)
-                if not can_call and len(keys_found) > 1: continue
+                can_call, reason = usage_tracker.can_make_request("cerebras", estimated_tokens=len(cache_prompt)//4)
+                if not can_call and len(keys_found) > 1:
+                    print(f"  ⏭️ Cerebras pulado: {reason}", file=sys.stderr)
+                    continue
                 res, tokens, used_model = _call_cerebras_engine(api_key, prompt, temperature, max_retries, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "gemini":
                 api_key = os.environ.get("GOOGLE_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-                if not api_key:
+                if not api_key or api_key.lower() == "none":
                     errors.append("Gemini: Chave ausente")
                     continue
-                can_call, _ = usage_tracker.can_make_request("gemini", estimated_tokens=len(cache_prompt)//4)
-                if not can_call and len(keys_found) > 1: continue
+                can_call, reason = usage_tracker.can_make_request("gemini", estimated_tokens=len(cache_prompt)//4)
+                if not can_call and len(keys_found) > 1:
+                    print(f"  ⏭️ Gemini pulado: {reason}", file=sys.stderr)
+                    continue
                 res, tokens, used_model = call_gemini(api_key, prompt, temperature, json_mode, messages, cancellation_check=cancellation_check)
 
             elif provider == "groq":
                 api_key = os.environ.get("GROQ_API_KEY")
-                if not api_key:
+                if not api_key or api_key.lower() == "none":
                     errors.append("Groq: Chave ausente")
                     continue
-                can_call, _ = usage_tracker.can_make_request("groq", estimated_tokens=len(cache_prompt)//4)
-                if not can_call and len(keys_found) > 1: continue
+                can_call, reason = usage_tracker.can_make_request("groq", estimated_tokens=len(cache_prompt)//4)
+                if not can_call and len(keys_found) > 1:
+                    print(f"  ⏭️ Groq pulado: {reason}", file=sys.stderr)
+                    continue
                 eff_prefer_small = prefer_small if tier != 2 else False
                 res, tokens, used_model = _call_groq_engine(api_key, prompt, temperature, max_retries, json_mode, messages, eff_prefer_small, cancellation_check=cancellation_check)
 
             elif provider == "openrouter":
                 api_key = os.environ.get("OPENROUTER_API_KEY")
-                if not api_key:
+                if not api_key or api_key.lower() == "none":
                     errors.append("OpenRouter: Chave ausente")
                     continue
-                can_call, _ = usage_tracker.can_make_request("openrouter", estimated_tokens=len(cache_prompt)//4)
-                if not can_call and len(keys_found) > 1: continue
+                can_call, reason = usage_tracker.can_make_request("openrouter", estimated_tokens=len(cache_prompt)//4)
+                if not can_call and len(keys_found) > 1:
+                    print(f"  ⏭️ OpenRouter pulado: {reason}", file=sys.stderr)
+                    continue
                 res, tokens, used_model = call_openrouter(api_key, prompt, temperature, json_mode, messages, cancellation_check=cancellation_check)
 
             # SUCCESS: Clear cooldown if it was set

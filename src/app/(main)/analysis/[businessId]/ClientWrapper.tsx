@@ -3,7 +3,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import PillarWorkspace from '@/features/workspace/components/pillar-workspace';
 import BusinessMindMap from '@/features/analysis/components/business-mind-map';
-import SidebarLayout from '@/components/layout/sidebar';
 import ParticleLoader from '@/features/shared/components/particle-loader';
 import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 import { useAuth } from '@/contexts/AuthContext';

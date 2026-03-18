@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { ChevronRight, Check, Circle, Loader2, Zap } from 'lucide-react';
+import { ChevronRight, Check, Circle, Loader2, Zap, Square } from 'lucide-react';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 interface TaskCardProps {
   task: TaskItem;
@@ -21,6 +22,7 @@ interface TaskCardProps {
     status: 'waiting' | 'running' | 'done' | 'error';
   };
   isSubtaskLoading?: boolean;
+  onStopExecution?: () => void;
 }
 
 const getTaskIcon = (task: TaskItem, isDone: boolean, aiModel?: string) => {
@@ -87,8 +89,9 @@ const getTaskIcon = (task: TaskItem, isDone: boolean, aiModel?: string) => {
 export default function TaskCard({
   task, index, isDone, isExpanded, isFocused, isAI, onClick,
   aiModel, children, shouldHide = false, disabled = false,
-  currentSubtask, isSubtaskLoading = false
+  currentSubtask, isSubtaskLoading = false, onStopExecution
 }: TaskCardProps) {
+  const { isDark } = useSidebar();
   const taskIcon = getTaskIcon(task, isDone, aiModel);
 
   return (
@@ -164,11 +167,9 @@ export default function TaskCard({
       {currentSubtask && (
         <div className="mt-2 pl-11">
           <div
-            className="relative overflow-hidden transition-colors rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.4)',
-              border: '1px solid rgba(0, 0, 0, 0.05)',
-            }}
+            className={`relative overflow-hidden transition-colors rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card border ${
+              isDark ? 'bg-white/5 border-white/5' : 'bg-white/40 border-black/5'
+            }`}
           >
             <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative z-10">
               {currentSubtask.status === 'waiting' && <Circle size={12} style={{ color: 'var(--color-text-muted)' }} />}
@@ -188,7 +189,18 @@ export default function TaskCard({
             </span>
 
             {currentSubtask.status === 'running' && (
-              <span className="text-[9px] font-semibold tracking-wider uppercase opacity-40 px-2 relative z-10" style={{ color: 'var(--color-accent)' }}>Processando</span>
+              <div className="flex items-center gap-2 relative z-10">
+                <span className="text-[9px] font-semibold tracking-wider uppercase opacity-40 px-2" style={{ color: 'var(--color-accent)' }}>Processando</span>
+                {onStopExecution && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onStopExecution(); }}
+                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+                    title="Parar execução"
+                  >
+                    <Square size={10} className="fill-current" />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -46,7 +46,6 @@ export default function ModelBadge({ model, tokens }: ModelBadgeProps) {
     return (
         <div
             className="flex items-center gap-2 h-7 px-3 rounded-lg transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-border)' }}
         >
             <div className="flex items-center gap-1.5 border-r border-white/5 pr-2.5">
                 <Image
@@ -65,7 +64,7 @@ export default function ModelBadge({ model, tokens }: ModelBadgeProps) {
             {tokens !== undefined && tokens > 0 && (
                 <div className="flex items-center gap-1.5 pl-0.5" title="Consumo desta tarefa">
                     <span className="text-[10px] font-medium text-white/50 tabular-nums">
-                        {fmt(tokens)} <span className="text-[9px] opacity-40 uppercase tracking-tighter">tk</span>
+                        {fmt(tokens)} <span className="text-[9px] opacity-40 uppercase tracking-tighter">tokens</span>
                     </span>
                 </div>
             )}

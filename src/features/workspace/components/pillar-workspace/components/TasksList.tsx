@@ -21,6 +21,7 @@ interface TasksListProps {
     autoExecTotal: number;
     setFocusedTaskId: (id: string | null) => void;
     setExpandedTaskIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+    handleStopExecution?: (tid: string) => void;
 }
 
 export function TasksList({
@@ -40,6 +41,7 @@ export function TasksList({
     autoExecTotal,
     setFocusedTaskId,
     setExpandedTaskIds,
+    handleStopExecution,
 }: TasksListProps) {
     return (
         <div className="rounded-xl overflow-visible p-1.5 h-full flex flex-col">
@@ -123,6 +125,7 @@ export function TasksList({
                                     : undefined
                             }
                             isSubtaskLoading={autoExecuting === tid || executingTask === tid || expandingTask === tid}
+                            onStopExecution={handleStopExecution ? () => handleStopExecution(tid) : undefined}
                         >
                             {/* Removido o TaskSubtasksDisplay duplicado para mostrar só o cardzinho simples */}
                         </TaskCard>

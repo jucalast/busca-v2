@@ -188,7 +188,7 @@ def generate_assist(task: dict, profile: dict, assist_type: str, api_key: str) -
         dados_suporte=dados_suporte,
     )
 
-    return call_llm(provider=None, prompt=prompt, temperature=0.4)
+    return call_llm("auto", prompt=prompt, temperature=0.4)
 
 
 def run_assistant(task: dict, profile: dict) -> dict:

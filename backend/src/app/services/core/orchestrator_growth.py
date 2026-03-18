@@ -127,6 +127,13 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
         if any("instagram" in str(c).lower() for c in canais):
             restriction_instructions += "\n- O negócio JÁ usa Instagram. Não sugira 'criar presença'. Sugira OTIMIZAÇÃO."
 
+    # [NEW] Include Discovery Insight (Ground Truth)
+    discovery_context = ""
+    discovery_data = cat.get("_discovery_data")
+    if discovery_data and discovery_data.get("found"):
+        from app.services.analysis.analyzer_business_discovery import format_discovery_for_scorer
+        discovery_context = f"\nDADOS REAIS DESCOBERTOS SOBRE O NEGÓCIO:\n{format_discovery_for_scorer(discovery_data, cat_id)}"
+
     try:
         try:
             from app.core.llm_router import call_llm
@@ -134,6 +141,7 @@ def process_category(cat, queries, perfil_data, description, restricoes, region,
             from .llm_router import call_llm
 
         prompt = f"""Você é um consultor sênior de negócios. Analise dados reais da internet e gere um relatório ÚTIL e VIÁVEL.
+{discovery_context}
 
 O CLIENTE: {description}
 RESTRIÇÕES E CONTEXTO: {restricoes}
@@ -176,7 +184,7 @@ DADOS DA INTERNET:
             from .llm_router import call_llm
         except ImportError:
             from app.core.llm_router import call_llm
-        resumo = call_llm(provider=model_provider, prompt=prompt, temperature=0.3)
+        resumo = call_llm(model_provider, prompt=prompt, temperature=0.3)
     except Exception as e:
         print(f"  ❌ Erro ao resumir {cat.get('nome', '')}: {e}", file=sys.stderr)
         resumo = {"erro": f"Não foi possível gerar resumo: {str(e)[:200]}"}
@@ -296,12 +304,12 @@ PERGUNTA DO USUARIO: {user_message}
 Responda de forma direta e util:"""
 
     try:
-        reply = call_llm(provider=model_provider, prompt=prompt, temperature=0.4, json_mode=False)
+        reply = call_llm(model_provider, prompt=prompt, temperature=0.4, json_mode=False)
     except Exception as e:
         print(f"  Erro no LLM: {e}", file=sys.stderr)
         # Fallback to smaller model
         try:
-            reply = call_llm(provider=model_provider, prompt=prompt, temperature=0.4, json_mode=False, prefer_small=True)
+            reply = call_llm(model_provider, prompt=prompt, temperature=0.4, json_mode=False, prefer_small=True)
         except Exception as e2:
             reply = f"Desculpe, nao consegui gerar uma resposta. Erro: {str(e2)[:200]}"
 
@@ -334,86 +342,20 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
         if not api_key:
             return {"categories": [], "allSources": [], "error": "Groq API key not configured"}
 
-    # Use queries and categories from LLM-generated profile — no hardcoded fallback
-    queries = profile.get("queries_sugeridas", profile.get("queries", {}))
-    categories = profile.get("categorias_relevantes", profile.get("categories", []))
-    
-    # Generate automatic queries if none provided
-    if not queries and categories:
-        segmento = profile.get("perfil", {}).get("segmento", "")
-        localizacao = profile.get("perfil", {}).get("localizacao", "")
-        nome = profile.get("perfil", {}).get("nome_negocio", "")
-        queries = {}
-        for cat in categories:
-            cat_id = cat.get("id", "")
-            cat_name = cat.get("nome", "")
-            foco = cat.get("foco", "")
-            
-            # Build better, more specific queries
-            query_parts = []
-            
-            # Always include segmento for context
-            if segmento:
-                query_parts.append(segmento)
-            
-            # Add specific terms based on category
-            if cat_id == "processo_vendas":
-                query_parts.extend(["funil de vendas", "processo comercial B2B"])
-            elif cat_id == "canais_venda":
-                query_parts.extend(["canais distribuição", "estratégias venda B2B"])
-            elif cat_id == "publico_alvo":
-                query_parts.extend(["cliente ideal", "persona B2B", "público alvo"])
-            elif cat_id == "branding":
-                query_parts.extend(["branding estratégia", "posicionamento marca"])
-            elif cat_id == "identidade_visual":
-                query_parts.extend(["identidade visual", "design profissional"])
-            elif cat_id == "trafego_organico":
-                query_parts.extend(["marketing digital", "SEO", "tráfego orgânico"])
-            elif cat_id == "trafego_pago":
-                query_parts.extend(["anúncios", "tráfego pago", "Google Ads"])
-            
-            # Add location if B2B
-            if localizacao and "B2B" in str(profile.get("perfil", {}).get("modelo", "")):
-                query_parts.append(localizacao.split("-")[0].strip())  # Just city
-            
-            # Limit to 4 most relevant terms
-            query = " ".join(query_parts[:4])
-            queries[cat_id] = query.strip()
-        
-        print(f"  🔧 Geradas {len(queries)} queries automáticas melhoradas", file=sys.stderr)
-        for cat_id, query in queries.items():
-            print(f"    📝 {cat_id}: {query}", file=sys.stderr)
-
-    # Limit categories to reduce LLM calls and rate limits
-    if len(categories) > 7:
-        print(f"  ⚠️ Limitando para 7 categorias principais para evitar rate limits", file=sys.stderr)
-        categories = categories[:7]
-
-    if not categories:
-        from app.services.analysis.analyzer_business_profiler import _VALID_PILLAR_IDS
-        _DEFAULT_META = {
-            "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6", "foco": "quem compra, segmentos, comportamento"},
-            "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6", "foco": "posicionamento, diferencial, proposta de valor"},
-            "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899", "foco": "presença visual, design, credibilidade"},
-            "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981", "foco": "canais de venda, distribuição, prospecção"},
-            "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B", "foco": "SEO, conteúdo, redes sociais"},
-            "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444", "foco": "anúncios, Google Ads, Meta Ads"},
-            "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1", "foco": "funil, conversão, precificação"},
-        }
-        categories = [{"id": pid, **meta, "prioridade": 5, "justificativa": "Pilar padrão", "nao_falar": ""} for pid, meta in _DEFAULT_META.items()]
-        profile["categorias_relevantes"] = categories
-
+    # Prepare comprehensive context once
     perfil_data = profile.get("perfil", profile.get("profile", {}).get("perfil", {}))
-    description = f"{perfil_data.get('nome', '')} - {perfil_data.get('segmento', '')} - {perfil_data.get('modelo_negocio', '')} - {perfil_data.get('localizacao', '')}"
+    segmento = perfil_data.get('segmento', '')
+    nome = perfil_data.get('nome_negocio', perfil_data.get('nome', ''))
+    localizacao = perfil_data.get('localizacao', '')
+    modelo = perfil_data.get('modelo', perfil_data.get('modelo_negocio', ''))
     
-    # Extract comprehensive restrictions
+    description = f"{nome} - {segmento} - {modelo} - {localizacao}"
+    
+    # Extract comprehensive restrictions once
     restricoes_criticas = profile.get("restricoes_criticas", {})
     capital = restricoes_criticas.get("capital_disponivel", perfil_data.get('investimento_marketing', 'não informado'))
-    equipe = restricoes_criticas.get("equipe_solo", False)
-    if equipe:
-        equipe_str = "solo"
-    else:
-        equipe_str = perfil_data.get('num_funcionarios', 'não informado')
+    equipe_solo = restricoes_criticas.get("equipe_solo", False)
+    equipe_str = "solo" if equipe_solo else perfil_data.get('num_funcionarios', 'não informado')
     
     dificuldades = perfil_data.get('dificuldades', '')
     modelo_op = restricoes_criticas.get("modelo_operacional", "")
@@ -428,19 +370,80 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
         "texto": f"Capital: {capital}. Equipe: {equipe_str}. Dificuldades: {dificuldades}. Modelo: {modelo_op}."
     }
 
+    # Extract categories and queries from profile
+    categories = profile.get("categorias_relevantes", profile.get("categories", []))
+    queries = profile.get("queries_sugeridas", profile.get("queries", {}))
+
+    # Generate automatic queries if none provided
+    if not queries and categories:
+        queries = {}
+        for cat in categories:
+            cat_id = cat.get("id", "")
+            cat_name = cat.get("nome", "")
+            
+            # Build better, more specific queries
+            query_parts = []
+            if segmento: query_parts.append(segmento)
+            
+            if cat_id == "processo_vendas": query_parts.extend(["funil de vendas", "processo comercial B2B"])
+            elif cat_id == "canais_venda": query_parts.extend(["canais distribuição", "estratégias venda B2B"])
+            elif cat_id == "publico_alvo": query_parts.extend(["cliente ideal", "persona B2B", "público alvo"])
+            elif cat_id == "branding": query_parts.extend(["branding estratégia", "posicionamento marca"])
+            elif cat_id == "identidade_visual": query_parts.extend(["identidade visual", "design profissional"])
+            elif cat_id == "trafego_organico": query_parts.extend(["marketing digital", "SEO", "tráfego orgânico"])
+            elif cat_id == "trafego_pago": query_parts.extend(["anúncios", "tráfego pago", "Google Ads"])
+            
+            if localizacao and (modelo and "B2B" in str(modelo)):
+                query_parts.append(localizacao.split("-")[0].strip())
+            
+            queries[cat_id] = " ".join(query_parts[:4]).strip()
+        
+        print(f"  🔧 Geradas {len(queries)} queries automáticas melhoradas", file=sys.stderr)
+
+    # Limit categories for safety
+    if len(categories) > 7:
+        categories = categories[:7]
+
+    if not categories:
+        from app.services.analysis.analyzer_business_profiler import _VALID_PILLAR_IDS
+        _DEFAULT_META = {
+            "publico_alvo": {"nome": "Público-Alvo e Personas", "icone": "👥", "cor": "#3B82F6", "foco": "quem compra, segmentos, comportamento"},
+            "branding": {"nome": "Branding e Posicionamento", "icone": "🎯", "cor": "#8B5CF6", "foco": "posicionamento, diferencial, proposta de valor"},
+            "identidade_visual": {"nome": "Identidade Visual", "icone": "🎨", "cor": "#EC4899", "foco": "presença visual, design, credibilidade"},
+            "canais_venda": {"nome": "Canais de Venda", "icone": "🛒", "cor": "#10B981", "foco": "canais de venda, distribuição, prospecção"},
+            "trafego_organico": {"nome": "Tráfego Orgânico", "icone": "📈", "cor": "#F59E0B", "foco": "SEO, conteúdo, redes sociais"},
+            "trafego_pago": {"nome": "Tráfego Pago", "icone": "💰", "cor": "#EF4444", "foco": "anúncios, Google Ads, Meta Ads"},
+            "processo_vendas": {"nome": "Processo de Vendas", "icone": "🤝", "cor": "#6366F1", "foco": "funil, conversão, precificação"},
+        }
+        categories = [{"id": pid, **meta, "prioridade": 5, "justificativa": "Pilar padrão", "nao_falar": ""} for pid, meta in _DEFAULT_META.items()]
+
     categories_result = []
     all_sources = []
 
-    # Sequential execution to respect rate limits and allow more pillars
-    for cat in categories:
-        try:
-            result = process_category(cat, queries, perfil_data, description, restricoes, region, api_key, model_provider)
-            categories_result.append(result)
-            all_sources.extend(result.get("fontes", []))
-            # Small delay between pillars to further stabilize rate limits
-            time.sleep(0.5)
-        except Exception as exc:
-            print(f"  ❌ Error processing category '{cat.get('id')}': {exc}", file=sys.stderr)
+    # FAZ PARTE DA FASE 2: Paralelização Assíncrona (Async categorization)
+    # Using ThreadPoolExecutor with max_workers=3 to stay within rate limits 
+    # but speed up significantly (3x faster than sequential).
+    print(f"🚀 Iniciando processamento paralelo ({len(categories)} categorias)...", file=sys.stderr)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_cat = {
+                executor.submit(
+                    process_category, {**cat, "_discovery_data": profile.get("_discovery_data")}, 
+                    queries, perfil_data, description, 
+                    restricoes, region, api_key, model_provider
+                ): cat for cat in categories
+            }
+            for future in concurrent.futures.as_completed(future_to_cat):
+                cat = future_to_cat[future]
+                try:
+                    result = future.result()
+                    categories_result.append(result)
+                    all_sources.extend(result.get("fontes", []))
+                except Exception as exc:
+                    print(f"  ❌ Categoria '{cat.get('id')}' gerou exceção: {exc}", file=sys.stderr)
+    except Exception as e:
+        print(f"  ❌ Erro no ThreadPoolExecutor: {e}", file=sys.stderr)
+        raise e
 
     unique_sources = list(dict.fromkeys(all_sources))
 
@@ -448,7 +451,7 @@ def run_market_search(profile: dict, region: str = 'br-pt', model_provider: str 
         "businessMode": True,
         "categories": categories_result,
         "allSources": unique_sources,
-        "restricoes_aplicadas": restricoes  # Include for downstream components
+        "restricoes_aplicadas": restricoes
     }
 
 
@@ -602,6 +605,7 @@ def main():
         queries_for_search = profile.get("queries_sugeridas", profile.get("queries", {}))
         print(f"  📋 Categorias p/ busca: {[c.get('id','?') if isinstance(c,dict) else c for c in (cats_for_search or [])[:8]]}", file=sys.stderr)
         print(f"  🔍 Queries p/ busca: {list(queries_for_search.keys()) if isinstance(queries_for_search, dict) else 'N/A'}", file=sys.stderr)
+        profile["_discovery_data"] = discovery_data # Pass to market search
         market_data = run_market_search(profile, region, model_provider)
         mkt_cats = market_data.get('categories', [])
         print(f"THOUGHT: Pesquisa de mercado concluída no ramo do negócio.")

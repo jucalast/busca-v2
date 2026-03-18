@@ -3,7 +3,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Send, Loader2, Check, X, Globe, Search,
-    ChevronDown, ChevronUp, User as UserIcon, Play, Zap, ArrowLeft
+    ChevronDown, ChevronUp, User as UserIcon, Play, Zap, ArrowLeft,
+    Building2, Target, Landmark, Users, Sparkles, ArrowUp
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import ModelSelector from '@/features/shared/components/model-selector';
@@ -15,6 +16,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { StreamingText } from './StreamingText';
 import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
 import { AutoScrollContainer } from './AutoScrollContainer';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 interface SearchSource {
     title: string;
@@ -45,28 +47,56 @@ interface ExtractedProfile {
 interface GrowthChatProps {
     onProfileReady: (profile: ExtractedProfile) => void;
     onProfileUpdate?: (profile: ExtractedProfile) => void;
+    onReadyStateChange?: (ready: boolean) => void;
     loading?: boolean;
 }
 
-const ShimmerRow: React.FC<{ label?: string }> = ({ label }) => (
+const ShimmerRow: React.FC<{ label?: string; isDark?: boolean }> = ({ label, isDark }) => (
     <div className="flex gap-3 animate-pulse opacity-60">
-        <div className="w-7 h-7 rounded-full bg-slate-100 flex-shrink-0" />
+        <div className={`w-7 h-7 rounded-full flex-shrink-0 ${isDark ? 'bg-white/10' : 'bg-slate-100'}`} />
         <div className="flex-1 space-y-2 py-1">
-            <div className="h-3 w-40 bg-slate-100 rounded" />
-            <div className="h-2 w-full bg-slate-50 rounded" />
+            <div className={`h-3 w-40 rounded ${isDark ? 'bg-white/10' : 'bg-slate-100'}`} />
+            <div className={`h-2 w-full rounded ${isDark ? 'bg-white/5' : 'bg-slate-50'}`} />
         </div>
     </div>
 );
 
-const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate, loading = false }) => {
+const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate, onReadyStateChange, loading = false }) => {
     const { aiModel, setAiModel } = useAuth();
+    const { isDark } = useSidebar();
+    const [hasInteracted, setHasInteracted] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [streamingIdx, setStreamingIdx] = useState<number | null>(null);
+
+    // Initialize AI greeting with streaming
+    useEffect(() => {
+        if (hasInteracted && messages.length === 0) {
+            const greeting = 'Olá! Sou seu estrategista de negócios. Para começarmos sua análise de forma automática, **poderia me informar o CNPJ da sua empresa?** (Se não tiver, não tem problema, podemos ir conversando!)';
+            setMessages([
+                {
+                    role: 'assistant',
+                    content: '',
+                    streamTarget: greeting
+                }
+            ]);
+            setStreamingIdx(0);
+        }
+    }, [hasInteracted, messages.length]);
+
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
     const [extractedProfile, setExtractedProfile] = useState<ExtractedProfile>({});
     const [readyForAnalysis, setReadyForAnalysis] = useState(false);
     const [hasPendingResearch, setHasPendingResearch] = useState(false);
-    const [streamingIdx, setStreamingIdx] = useState<number | null>(null);
+
+    // Sync state with parent
+    useEffect(() => {
+        onReadyStateChange?.(readyForAnalysis);
+    }, [readyForAnalysis, onReadyStateChange]);
+
+    useEffect(() => {
+        onProfileUpdate?.(extractedProfile);
+    }, [extractedProfile, onProfileUpdate]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -78,15 +108,19 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
         }
     }, [extractedProfile, onProfileUpdate]);
 
-    // Initial message
+    // Notify parent of readiness
     useEffect(() => {
-        if (messages.length === 0) {
-            setMessages([{
-                role: 'assistant',
-                content: 'Olá! Sou seu estrategista de negócios. Para começarmos sua análise de forma automática, **poderia me informar o CNPJ da sua empresa?** (Se não tiver, não tem problema, podemos ir conversando!)'
-            }]);
+        if (onReadyStateChange) {
+            onReadyStateChange(readyForAnalysis);
         }
-    }, [messages.length]);
+    }, [readyForAnalysis, onReadyStateChange]);
+
+    // Focus input only when actually chatting
+    useEffect(() => {
+        if (hasInteracted && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [hasInteracted]);
 
     const finalizeStreaming = useCallback((idx: number) => {
         setMessages(prev => {
@@ -107,18 +141,16 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
         if (!text || sending) return;
 
         if (!overrideContent) setInput('');
+        if (!hasInteracted) setHasInteracted(true);
         setSending(true);
 
         const newUserMsg: Message = { role: 'user', content: text };
-        setMessages(prev => [...prev, newUserMsg]);
+        const initialAiMsg: Message = { role: 'assistant', content: '', intelligence_tools_used: [] };
+        const aiMsgIdx = messages.length + 1;
+        setMessages(prev => [...prev, newUserMsg, initialAiMsg]);
 
         try {
             abortControllerRef.current = new AbortController();
-
-            // Initial AI message placeholder
-            const initialAiMsg: Message = { role: 'assistant', content: '', intelligence_tools_used: [] };
-            setMessages(prev => [...prev, initialAiMsg]);
-            const aiMsgIdx = messages.length + 1;
 
             const res = await fetch('/api/growth', {
                 method: 'POST',
@@ -178,16 +210,15 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
                                 setExtractedProfile(prev => ({ ...prev, [event.field]: event.value }));
                             }
                             else if (event.type === 'content') {
-                                accumulatedContent = event.text;
+                                accumulatedContent += event.text; // Accumulate content
                                 setMessages(prev => {
                                     const next = [...prev];
-                                    const lastIdx = next.length - 1;
-                                    const lastMsg = next[lastIdx];
+                                    const lastMsg = next[aiMsgIdx];
                                     if (!lastMsg || lastMsg.role !== 'assistant') return prev;
-                                    next[lastIdx] = { ...lastMsg, streamTarget: accumulatedContent };
+                                    next[aiMsgIdx] = { ...lastMsg, streamTarget: accumulatedContent };
                                     return next;
                                 });
-                                setStreamingIdx(prev => prev === null ? (messages.length + 1) : prev);
+                                setStreamingIdx(aiMsgIdx);
                             }
                             else if (event.type === 'result') {
                                 const data = event.data;
@@ -253,6 +284,15 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
         toggle: toggleVoice
     } = useVoiceInput({ onTranscript: onVoiceSuccess });
 
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom when messages change
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, [messages, sending]);
+
     // Real progress calculation based on extracted fields
     const profileFields = Object.keys(extractedProfile).filter(k => !k.startsWith('_')).length;
     const progressValue = readyForAnalysis
@@ -260,207 +300,265 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
         : Math.min(10 + (profileFields * 2.5), 90);
     const currentBusinessName = extractedProfile.nome_negocio || 'Seu Negócio';
 
+
     return (
-        <div className="w-full h-full flex flex-col pt-0 relative z-10 overflow-hidden bg-transparent">
+        <div className={`w-full max-w-4xl flex-1 h-full flex flex-col relative pt-0 transition-all duration-1000 ease-in-out ${!hasInteracted ? 'justify-center pt-24' : 'justify-start'}`}>
+
+            {!hasInteracted && (
+                <div className="text-center max-w-4xl mb-16 animate-in fade-in slide-in-from-bottom-12 duration-1000 mx-auto px-4 relative">
+                    <h1 className={`text-6xl md:text-[5.5rem] font-black tracking-tighter italic leading-[0.85] uppercase py-2 transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        VAMOS ENTENDER <br />
+                        <span className="text-[#8b5cf6] pr-10">
+                            O SEU NEGÓCIO
+                        </span>
+                    </h1>
+                    <p className={`mt-8 text-xl md:text-2xl font-medium max-w-2xl mx-auto leading-relaxed opacity-90 tracking-tight transition-colors duration-300 ${isDark ? 'text-zinc-400' : 'text-gray-400'}`}>
+                        Mapeamos o DNA da sua empresa para gerar o seu <span className={`font-bold ${isDark ? 'text-zinc-200' : 'text-gray-900'}`}>diagnóstico completo</span> em segundos.
+                    </p>
+                </div>
+            )}
             {/* Standard Header - Matches Task Chat */}
 
-            {/* Progress bar */}
-            <div className="w-full h-[1px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
-                <div
-                    className="h-full transition-all duration-700 ease-out"
-                    style={{ width: `${Math.min(progressValue, 100)}%`, backgroundColor: 'var(--color-accent)' }}
-                />
-            </div>
 
 
 
-            {/* Content Area - Using AutoScrollContainer */}
-            <div className="flex-1 relative overflow-hidden w-full">
-                <AutoScrollContainer>
-                    <div className="w-full space-y-8 px-6 pt-8 pb-48 max-w-3xl mx-auto text-start">
-                        {messages.map((msg, i) => {
-                            const isThinking = msg.content === '...' && !msg.streamTarget;
-                            const isStreaming = streamingIdx === i && !!msg.streamTarget;
+            {/* Content Area - Scrollable message list */}
+            {hasInteracted && (
+                <div className="flex-1 w-full overflow-y-auto scrollbar-hide space-y-8 px-6 pt-12 pb-10 max-w-3xl mx-auto text-start">
+                    {messages.map((msg, i) => {
+                        const isThinking = msg.content === '...' && !msg.streamTarget;
+                        const isStreaming = streamingIdx === i && !!msg.streamTarget;
 
-                            if (isThinking) {
-                                return <ShimmerRow key={i} label="Analisando contexto..." />;
-                            }
+                        if (isThinking) {
+                            return <ShimmerRow key={i} label="Analisando contexto..." isDark={isDark} />;
+                        }
 
-                            if (msg.role === 'user') {
-                                return (
-                                    <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
-                                        <div className="flex-1 text-right">
-                                            <div
-                                                className="inline-block text-left rounded-xl rounded-tr-sm px-4 py-2 shadow-sm border border-gray-100"
-                                                style={{
-                                                    backgroundColor: '#ffffff',
-                                                }}
-                                            >
-                                                <p className="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-gray-700">{msg.content}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            }
-
-                            const hasSources = (msg.searchSources?.length ?? 0) > 0;
-                            const contentToRender = isStreaming ? (msg.streamTarget || '') : (msg.content || msg.streamTarget || '');
-
+                        if (msg.role === 'user') {
                             return (
-                                <div key={i} className="w-full space-y-4 pt-4 first:pt-0" style={{ animation: 'fade-in-up 0.5s ease-out forwards' }}>
-                                    {hasSources && (
-                                        <div className="mb-2">
-                                            <SourceBadgeList
-                                                sources={msg.searchSources || []}
-                                                maxVisible={4}
-                                                animated={isStreaming}
-                                            />
+                                <div key={i} className="flex gap-3 flex-row-reverse" style={{ animation: 'fade-in-up 0.15s ease-out' }}>
+                                    <div className="flex-1 text-right">
+                                        <div
+                                            className="inline-block text-left rounded-2xl px-6 py-4 shadow-sm backdrop-blur-md bg-white/5 border-0"
+                                        >
+                                            <p className="text-[18px] font-medium leading-relaxed whitespace-pre-wrap text-zinc-100">{msg.content}</p>
                                         </div>
-                                    )}
-
-                                    <div className="flex items-center justify-between gap-2">
-                                        {((msg.tokens ?? 0) > 0 || msg.actual_provider) && (
-                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-gray-100 bg-white font-sans shadow-sm">
-                                                {msg.actual_provider && (
-                                                    <div className="flex items-center gap-1.5 mr-1 border-r border-gray-100 pr-2">
-                                                        <img
-                                                            src={
-                                                                msg.actual_provider === 'gemini' ? '/gemini.png' :
-                                                                    msg.actual_provider === 'groq' ? '/groq llama.svg' :
-                                                                        msg.actual_provider === 'sambanova' ? '/sambanova.png' :
-                                                                            msg.actual_provider === 'deepseek' ? '/deepseek.png' :
-                                                                                msg.actual_provider === 'cerebras' ? '/cerebras.png' :
-                                                                                    '/openrouter.png'
-                                                            }
-                                                            className="w-3.5 h-3.5 rounded-sm object-contain"
-                                                            alt={msg.actual_provider}
-                                                            style={{ filter: 'none' }}
-                                                        />
-                                                        <span className="text-[9px] font-bold text-gray-600 capitalize tracking-tight">{msg.actual_provider}</span>
-                                                    </div>
-                                                )}
-                                                <Zap className="w-3 h-3 text-amber-500" />
-                                                <span className="text-[9px] font-mono font-bold text-gray-400">{msg.tokens || 0}</span>
-                                            </div>
-                                        )}
                                     </div>
-
-                                    <IntelligenceToolsBadges
-                                        tools={msg.intelligence_tools_used}
-                                        isRunning={isStreaming}
-                                    />
-
-                                    <div className="space-y-3">
-                                        {isStreaming ? (
-                                            <StreamingText
-                                                text={contentToRender}
-                                                speed={6}
-                                                className="text-[13px] leading-relaxed text-gray-800"
-                                                onDone={() => finalizeStreaming(i)}
-                                            />
-                                        ) : (
-                                            <div className="text-[13px] leading-relaxed text-gray-800 font-medium">
-                                                <MarkdownContent content={msg.content} />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
-                                        <div className="flex flex-wrap items-center gap-2 mt-4">
-                                            <button
-                                                onClick={handleConfirmResearch}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-150 active:scale-95 shadow-sm bg-blue-600 text-white hover:bg-blue-700"
-                                            >
-                                                <Check className="w-3.5 h-3.5" />Concordo, pesquisar
-                                            </button>
-                                            <button
-                                                onClick={handleRejectResearch}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-150 active:scale-95 border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                                            >
-                                                <X className="w-3.5 h-3.5" />Definir eu mesmo
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {i < messages.length - 1 && (
-                                        <div className="h-px w-full bg-gray-100 mt-8" />
-                                    )}
                                 </div>
                             );
-                        })}
-                    </div>
-                </AutoScrollContainer>
-            </div>
+                        }
 
-            {/* Sticky Input Area - SaaS minimal */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#fdfdfd] via-[#fdfdfd] to-transparent pt-12">
-                <div className="max-w-3xl mx-auto flex flex-col gap-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-3">
-                    <div className="flex items-center justify-between gap-3 px-1 mb-1">
+                        const hasSources = (msg.searchSources?.length ?? 0) > 0;
+                        const contentToRender = isStreaming ? (msg.streamTarget || '') : (msg.content || msg.streamTarget || '');
+
+                        return (
+                            <div key={i} className="w-full space-y-5 pt-8 first:pt-0" style={{ animation: 'fade-in-up 0.5s ease-out forwards' }}>
+                                {hasSources && (
+                                    <div className="mb-3">
+                                        <SourceBadgeList
+                                            sources={msg.searchSources || []}
+                                            maxVisible={4}
+                                            animated={isStreaming}
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-between gap-2">
+                                    {((msg.tokens ?? 0) > 0 || msg.actual_provider) && (
+                                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded font-sans shadow-sm border transition-colors duration-300 ${isDark ? 'bg-white/5 border-white/10' : 'border-gray-100 bg-white'
+                                            }`}>
+                                            {msg.actual_provider && (
+                                                <div className={`flex items-center gap-1.5 mr-1 pr-2 border-r transition-colors duration-300 ${isDark ? 'border-white/10' : 'border-gray-100'}`}>
+                                                    <img
+                                                        src={
+                                                            msg.actual_provider === 'gemini' ? '/gemini.png' :
+                                                                msg.actual_provider === 'groq' ? '/groq llama.svg' :
+                                                                    msg.actual_provider === 'sambanova' ? '/sambanova.png' :
+                                                                        msg.actual_provider === 'deepseek' ? '/deepseek.png' :
+                                                                            msg.actual_provider === 'cerebras' ? '/cerebras.png' :
+                                                                                '/openrouter.png'
+                                                        }
+                                                        className="w-3.5 h-3.5 rounded-sm object-contain"
+                                                        alt={msg.actual_provider}
+                                                        style={{ filter: 'none' }}
+                                                    />
+                                                    <span className={`text-[9px] font-bold capitalize tracking-tight ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{msg.actual_provider}</span>
+                                                </div>
+                                            )}
+                                            <Zap className="w-3 h-3 text-amber-500" />
+                                            <span className={`text-[9px] font-mono font-bold ${isDark ? 'text-white/40' : 'text-gray-400'}`}>{msg.tokens || 0}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <IntelligenceToolsBadges
+                                    tools={msg.intelligence_tools_used}
+                                    isRunning={isStreaming || (sending && i === messages.length - 1)}
+                                />
+
+                                <div className="space-y-4">
+                                    {isStreaming ? (
+                                        <StreamingText
+                                            text={contentToRender}
+                                            speed={6}
+                                            className={`text-[18px] md:text-[20px] leading-relaxed transition-colors duration-300 ${isDark ? 'text-zinc-200' : 'text-gray-800'}`}
+                                            onDone={() => finalizeStreaming(i)}
+                                        />
+                                    ) : (
+                                        <div className={`text-[18px] md:text-[20px] leading-relaxed font-medium transition-colors duration-300 ${isDark ? 'text-zinc-200' : 'text-gray-800'}`}>
+                                            <MarkdownContent content={msg.content} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
+                                    <div className="flex flex-wrap items-center gap-3 mt-6">
+                                        <button
+                                            onClick={handleConfirmResearch}
+                                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 shadow-sm bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+                                        >
+                                            <Check className="w-4 h-4" />Concordo, pesquisar
+                                        </button>
+                                        <button
+                                            onClick={handleRejectResearch}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 border ${isDark
+                                                ? 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
+                                                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <X className="w-4 h-4" />Definir eu mesmo
+                                        </button>
+                                    </div>
+                                )}
+
+                                 {/* Removed divider for cleaner look */}
+                            </div>
+                        );
+                    })}
+                    <div ref={messagesEndRef} className="h-4" />
+                </div>
+            )}
+
+            {/* Bottom Floating Input Area - Fixed at bottom */}
+            <div className={`${hasInteracted ? 'pb-6 pt-2 bg-transparent' : 'relative'} w-full max-w-3xl mx-auto z-[100] px-4 transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1)`}>
+                <div
+                    className={`flex flex-col gap-0 backdrop-blur-3xl rounded-[28px] overflow-hidden border transition-all duration-300 focus-within:border-white/20 ${isDark ? 'border-zinc-800/80 bg-black/20' : 'bg-white/90 border-gray-300 focus-within:border-gray-400'
+                        }`}
+                >
+                    {/* Input Header Section (Matches FocusedTaskView sub header style) */}
+                    <div className={`w-full backdrop-blur-md px-5 py-2 flex items-center justify-between relative border-b ${isDark ? 'bg-white/5 border-white/5' : 'bg-gray-50/50 border-gray-100'
+                        }`}>
+                        {/* Integrated Progress Bar at the very top of the bar */}
+                        <div className={`absolute top-0 left-0 right-0 h-[2px] overflow-hidden ${isDark ? 'bg-white/5' : 'bg-black/5'
+                            }`}>
+                            <div
+                                className="h-full bg-[#8b5cf6] transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(139,92,246,0.5)]"
+                                style={{ width: `${Math.min(progressValue, 100)}%` }}
+                            />
+                        </div>
+
                         <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <h1 className="text-[12px] font-bold text-gray-700 tracking-tight leading-none">
+                            <div className={`w-2 h-2 rounded-full ${sending ? (isDark ? 'bg-white' : 'bg-zinc-900') : (isDark ? 'bg-white/10' : 'bg-black/10')} ${sending ? 'animate-pulse' : ''}`} />
+                            <h1 className={`text-[11px] font-bold uppercase tracking-[0.15em] leading-none ${isDark ? 'text-white/60' : 'text-gray-500'
+                                }`}>
                                 {sending ? 'Processando resposta...' : currentBusinessName}
                             </h1>
                         </div>
-                        {readyForAnalysis && <div className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">Pronto</div>}
-                    </div>
-
-                    {readyForAnalysis ? (
-                        <div className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl p-2 border border-gray-100">
-                            <p className="text-[11px] text-gray-500 font-medium px-2">DNA mapeado. Inicie a análise estratégica profunda.</p>
-                            <button
-                                onClick={startAnalysis}
-                                className="flex items-center justify-center gap-1.5 h-8 px-4 rounded-lg bg-gray-900 text-white text-[11px] font-bold shadow-sm hover:bg-black transition-all active:scale-95"
-                            >
-                                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Iniciar</span>
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="relative group">
-                            <textarea
-                                ref={inputRef}
-                                value={input}
-                                onChange={e => setInput(e.target.value)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        sendMessage();
-                                    }
-                                }}
-                                placeholder="Descreva seu negócio ou responda à pergunta..."
-                                className="w-full bg-transparent border-0 ring-0 focus:ring-0 focus:ring-transparent focus:ring-offset-0 outline-none focus:outline-none text-[13px] font-medium placeholder:text-gray-400 text-gray-800 min-h-[40px] max-h-32 py-2 resize-none transition-all pr-20 shadow-none border-transparent focus:border-transparent appearance-none"
-                                style={{ outline: 'none !important', boxShadow: 'none !important' } as any}
-                                rows={1}
-                            />
-                            <div className="absolute right-0 bottom-0 top-0 flex items-center gap-1 p-1">
-                                <VoiceButton
-                                    state={voiceState}
-                                    interimText={interimText}
-                                    isSupported={voiceSupported}
-                                    onToggle={toggleVoice}
-                                />
-                                <button
-                                    onClick={() => sendMessage()}
-                                    disabled={!input.trim() || sending}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 disabled:opacity-40"
-                                    style={{
-                                        backgroundColor: input.trim() ? '#2563eb' : '#f1f5f9',
-                                        color: input.trim() ? 'white' : '#94a3b8',
-                                    }}
-                                >
-                                    {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                                </button>
+                        <div className="flex items-center gap-3">
+                            {readyForAnalysis && (
+                                <div className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 uppercase tracking-tighter">
+                                    DNA Pronto
+                                </div>
+                            )}
+                            <div className="flex items-center gap-1.5 opacity-80">
+                                <span className={`text-[10px] font-bold uppercase tracking-[0.1em] leading-none ${isDark ? 'text-white/50' : 'text-gray-400'
+                                    }`}>DNA Progress</span>
+                                <span className="text-[10px] font-bold text-[#8b5cf6]">{Math.round(progressValue)}%</span>
                             </div>
                         </div>
-                    )}
+                    </div>
 
-                    <div className="flex items-center justify-between px-1 mt-1">
-                        <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded border border-gray-100 scale-[0.85] origin-left">
-                            <ModelSelector value={aiModel} onChange={setAiModel} />
-                            <div className="w-px h-3 bg-gray-300" />
-                            <LLMUsageIndicator provider={aiModel} />
-                        </div>
+                    <div className="flex flex-col p-5 pb-4 gap-5">
+                        {readyForAnalysis ? (
+                            <div className={`flex items-center justify-between gap-3 rounded-2xl p-2 border transition-colors duration-300 ${isDark ? 'bg-purple-500/10 border-purple-500/20' : 'bg-purple-50/50 border-purple-100/50'
+                                }`}>
+                                <p className={`text-[12px] font-medium px-2 ${isDark ? 'text-purple-300/70' : 'text-purple-800/70'}`}>Perfil estratégico completo. Pronto para iniciar análise profunda?</p>
+                                <button
+                                    onClick={startAnalysis}
+                                    className={`flex items-center justify-center gap-1.5 h-9 px-5 rounded-xl text-[12px] font-bold shadow-sm transition-all active:scale-95 ${isDark ? 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed]' : 'bg-white text-black hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <Zap className={`w-4 h-4 ${isDark ? 'text-amber-400 fill-amber-400' : 'text-amber-300 fill-amber-300'}`} />
+                                    <span className="uppercase tracking-tight">Iniciar Agora</span>
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="relative group">
+                                <textarea
+                                    ref={inputRef}
+                                    value={input}
+                                    onFocus={() => {
+                                        if (!hasInteracted) setHasInteracted(true);
+                                    }}
+                                    onChange={e => setInput(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            sendMessage();
+                                        }
+                                    }}
+                                    placeholder="Descreva seu negócio ou responda à pergunta..."
+                                    className={`w-full bg-transparent border-0 ring-0 focus:ring-0 focus:ring-transparent focus:ring-offset-0 outline-none focus:outline-none text-[16px] font-medium min-h-[48px] max-h-32 py-3 resize-none transition-all pr-24 shadow-none border-transparent focus:border-transparent appearance-none ${isDark ? 'placeholder:text-white/40 text-slate-100' : 'placeholder:text-gray-400 text-gray-900'
+                                        }`}
+                                    style={{ outline: 'none !important', boxShadow: 'none !important' } as any}
+                                    rows={1}
+                                />
+                                <div className="absolute right-0 bottom-0 top-0 flex items-center gap-2.5 p-2">
+                                    <VoiceButton
+                                        state={voiceState}
+                                        interimText={interimText}
+                                        isSupported={voiceSupported}
+                                        onToggle={toggleVoice}
+                                    />
+                                    <button
+                                        onClick={() => sendMessage()}
+                                        disabled={!input.trim() || sending}
+                                        className="w-11 h-11 flex items-center justify-center rounded-full transition-all duration-300 shadow-xl group/send"
+                                        style={{
+                                            backgroundColor: input.trim() ? '#8b5cf6' : (isDark ? '#27272a' : '#f4f4f5'),
+                                            color: input.trim() ? '#ffffff' : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'),
+                                            border: 'none',
+                                        }}
+                                    >
+                                        {sending ? (
+                                            <div className="flex items-center gap-1">
+                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce" />
+                                            </div>
+                                        ) : (
+                                            <ArrowUp size={22} strokeWidth={3} className="transition-transform" />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {!readyForAnalysis && (
+                            <div className={`flex items-center justify-between pt-3 border-t ${isDark ? 'border-white/5' : 'border-gray-100'
+                                }`}>
+                                <div className={`flex items-center gap-2.5 px-2.5 py-1 rounded-xl border scale-[0.9] origin-left backdrop-blur-md ${isDark ? 'bg-white/5 border-white/5' : 'bg-gray-100/50 border-gray-100'
+                                    }`}>
+                                    <ModelSelector value={aiModel} onChange={setAiModel} darkMode={isDark} />
+                                    <div className={`w-px h-3 ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
+                                    <LLMUsageIndicator provider={aiModel} />
+                                </div>
+                                <div className="flex items-center gap-2 pr-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                                    <span className={`text-[10px] font-black uppercase tracking-[0.15em] ${isDark ? 'text-white/50' : 'text-gray-400'
+                                        }`}>Growth Engine Active</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

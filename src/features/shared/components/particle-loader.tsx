@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 interface ParticleLoaderProps {
   progress?: string;
   thoughts?: string[];
+  isDark?: boolean;
 }
 
 interface Particle {
@@ -20,7 +21,7 @@ interface Particle {
   vy: number;
 }
 
-export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoaderProps) {
+export default function ParticleLoader({ progress, thoughts = [], isDark = false }: ParticleLoaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
@@ -226,7 +227,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
 
       ctx.shadowBlur = 0;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillStyle = isDark ? 'rgba(9, 9, 11, 0.4)' : 'rgba(255, 255, 255, 0.4)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.globalCompositeOperation = 'source-over';
@@ -327,7 +328,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
   }, []);
 
   return (
-    <div className="relative w-full h-screen min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden cursor-crosshair">
+    <div className={`relative w-full h-screen min-h-screen flex flex-col items-center justify-center overflow-hidden cursor-crosshair transition-colors duration-1000 bg-transparent`}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
@@ -346,7 +347,7 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
             className="flex items-center gap-2 mb-3"
           >
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 animate-pulse" />
-            <span className="text-slate-900 text-sm font-mono tracking-wide">
+            <span className={`text-sm font-mono tracking-wide transition-colors duration-300 ${isDark ? 'text-zinc-200' : 'text-slate-900'}`}>
               {thoughts[0]}
             </span>
           </div>
@@ -369,13 +370,13 @@ export default function ParticleLoader({ progress, thoughts = [] }: ParticleLoad
         </div>
 
         {/* Divider + status */}
-        <div className="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between">
+        <div className={`mt-4 border-t pt-3 flex items-center justify-between transition-colors duration-300 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
           {progress ? (
-            <p className="text-slate-500 text-xs tracking-wider">{progress}</p>
+            <p className={`text-xs tracking-wider transition-colors duration-300 ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{progress}</p>
           ) : (
-            <p className="text-slate-400 text-xs tracking-wider">Analisando seu negócio...</p>
+            <p className={`text-xs tracking-wider transition-colors duration-300 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>Analisando seu negócio...</p>
           )}
-          <p className="text-slate-300 text-xs tracking-wider">1–3 min</p>
+          <p className={`text-xs tracking-wider transition-colors duration-300 ${isDark ? 'text-zinc-700' : 'text-slate-300'}`}>1–3 min</p>
         </div>
       </div>
     </div>

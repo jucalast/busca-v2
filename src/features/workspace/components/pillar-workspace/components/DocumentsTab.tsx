@@ -31,6 +31,7 @@ interface DocumentsTabProps {
     session: any;
     loadingDoc: string | null;
     setLoadingDoc: (id: string | null) => void;
+    isDark: boolean;
 }
 
 // ── SVG folder icons ──────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ function fmtColor(fmt: string) {
 // ── Shared folder SVG illustration ───────────────────────────────────────────
 // Clean papers (no PDF badge), tool logos from group docs instead of Drive/Notion.
 let _folderSvgCounter = 0;
-function FolderSVG({ width = 260, height = 215, toolIcons }: { width?: number; height?: number; toolIcons?: string[] }) {
+function FolderSVG({ width = 260, height = 215, toolIcons, isDark }: { width?: number; height?: number; toolIcons?: string[]; isDark?: boolean }) {
     const uid = React.useRef(`fs${++_folderSvgCounter}`).current;
     const fg = `${uid}-fg`;
     const ps = `${uid}-ps`;
@@ -100,8 +101,8 @@ function FolderSVG({ width = 260, height = 215, toolIcons }: { width?: number; h
         >
             <defs>
                 <linearGradient id={fg} x1="0" y1="-75" x2="0" y2="95" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#4a4a4d" />
-                    <stop offset="100%" stopColor="#3a3a3c" />
+                    <stop offset="0%" stopColor={isDark ? "#2a2a2d" : "#4a4a4d"} />
+                    <stop offset="100%" stopColor={isDark ? "#1a1a1c" : "#3a3a3c"} />
                 </linearGradient>
                 <filter id={ps} x="-30%" y="-20%" width="160%" height="160%">
                     <feDropShadow dx="0" dy="4" stdDeviation="5" floodColor="black" floodOpacity="0.3" />
@@ -116,7 +117,7 @@ function FolderSVG({ width = 260, height = 215, toolIcons }: { width?: number; h
             {/* Traseira da pasta */}
             <path
                 d="M-120,60 L-120,-100 Q-120,-115 -105,-115 L-40,-115 Q-30,-115 -20,-100 L-15,-95 Q-5,-85 10,-85 L105,-85 Q120,-85 120,-70 L120,60 Z"
-                fill="#38383a"
+                fill={isDark ? "#232325" : "#38383a"}
             />
 
             {/* Papel esquerdo */}
@@ -167,10 +168,10 @@ function FolderSVG({ width = 260, height = 215, toolIcons }: { width?: number; h
 }
 
 // ── Empty state ──────────────────────────────────────────────────────────────
-function EmptyState() {
+function EmptyState({ isDark }: { isDark: boolean }) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, flex: 1 }}>
-            <FolderSVG width={220} height={180} />
+            <FolderSVG width={220} height={180} isDark={isDark} />
             <div style={{ textAlign: 'center' }}>
                 <p className="text-sm font-medium" style={{ marginBottom: 4, color: 'var(--color-text-muted)' }}>
                     Nenhuma pasta selecionada
@@ -187,9 +188,11 @@ function EmptyState() {
 function TaskFolderCard({
     group,
     onClick,
+    isDark,
 }: {
     group: { tid: string; taskTitle: string; docs: DocItem[] };
     onClick: () => void;
+    isDark: boolean;
 }) {
     // Collect unique tool icons from this group's docs
     const toolIcons = useMemo(() => {
@@ -206,10 +209,12 @@ function TaskFolderCard({
     return (
         <div
             onClick={onClick}
-            className="cursor-pointer group flex flex-col items-center justify-between rounded-lg transition-all duration-150 ease-out"
+            className={`cursor-pointer group flex flex-col items-center justify-between rounded-lg transition-all duration-150 ease-out ${
+                isDark ? 'hover:bg-white/5' : 'hover:bg-black/5'
+            }`}
             style={{ userSelect: 'none', height: 130, width: '100%', padding: '10px 8px 8px' }}
         >
-            <FolderSVG width={72} height={60} toolIcons={toolIcons} />
+            <FolderSVG width={72} height={60} toolIcons={toolIcons} isDark={isDark} />
             <div style={{ width: '100%', textAlign: 'center' }}>
                 <p className="text-[11px] font-medium transition-colors" title={group.taskTitle} style={{
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2, color: 'var(--color-text-tertiary)',
@@ -229,10 +234,12 @@ function DocCard({
     doc,
     onOpen,
     loadingDocId,
+    isDark,
 }: {
     doc: DocItem;
     onOpen: (doc: DocItem, fmt: string) => void;
     loadingDocId: string | null;
+    isDark: boolean;
 }) {
     const formats: string[] = doc.result.export_formats || (doc.result.conteudo ? ['google_docs'] : []);
     const primaryFmt = formats[0] || 'google_docs';
@@ -250,7 +257,9 @@ function DocCard({
                     {/* Page shape with dog-ear */}
                     <path
                         d="M4,4 L60,4 L86,28 L86,112 Q86,116 82,116 L8,116 Q4,116 4,112 Z"
-                        fill="#1c1c1e" stroke="#2a2a2e" strokeWidth="1"
+                        fill={isDark ? "#27272a" : "#ffffff"} 
+                        stroke={isDark ? "#3f3f46" : "#e4e4e7"} 
+                        strokeWidth="1"
                     />
                     {/* Dog-ear fold */}
                     <path d="M60,4 L60,24 Q60,28 64,28 L86,28 Z" fill="#28282c" />
@@ -295,6 +304,7 @@ export function DocumentsTab({
     session,
     loadingDoc,
     setLoadingDoc,
+    isDark,
 }: DocumentsTabProps) {
     const [selectedTid, setSelectedTid] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -416,9 +426,9 @@ export function DocumentsTab({
                                             return (
                                                 <li key={`${doc.tid}_${doc.idx}`} style={{ position: 'relative' }}>
                                                     {/* Vertical connector */}
-                                                    <div style={{ position: 'absolute', top: -12, left: -12, width: 1, background: '#27272a', ...(isLast ? { height: 28 } : { bottom: 0 }) }} />
+                                                    <div style={{ position: 'absolute', top: -12, left: -12, width: 1, background: isDark ? '#3f3f46' : '#e4e4e7', ...(isLast ? { height: 28 } : { bottom: 0 }) }} />
                                                     {/* Horizontal connector */}
-                                                    <div style={{ position: 'absolute', top: 15, left: -12, width: 12, height: 1, background: '#27272a' }} />
+                                                    <div style={{ position: 'absolute', top: 15, left: -12, width: 12, height: 1, background: isDark ? '#3f3f46' : '#e4e4e7' }} />
                                                     <div
                                                         onClick={(e) => { e.stopPropagation(); handleDocOpen(doc, primaryFmt); }}
                                                         className="cursor-pointer group flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-zinc-500 hover:bg-white/[0.04] group-hover:text-zinc-300 transition-all duration-300 ease-out"
@@ -475,6 +485,7 @@ export function DocumentsTab({
                                         doc={doc}
                                         onOpen={handleDocOpen}
                                         loadingDocId={loadingDoc}
+                                        isDark={isDark}
                                     />
                                 ))}
                             </div>
@@ -489,12 +500,13 @@ export function DocumentsTab({
                                     key={group.tid}
                                     group={group}
                                     onClick={() => setSelectedTid(group.tid)}
+                                    isDark={isDark}
                                 />
                             ))}
                         </div>
                     </div>
                 ) : (
-                    <EmptyState />
+                    <EmptyState isDark={isDark} />
                 )}
             </div>
         </div>
