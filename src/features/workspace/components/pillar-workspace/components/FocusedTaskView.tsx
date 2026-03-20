@@ -146,6 +146,13 @@ export function FocusedTaskView({
 
                         {/* Task Details Card Container */}
                         <div className="flex flex-col w-full">
+                            {showRateLimitWarning && rateLimitError && (
+                                <TaskErrorBanner 
+                                    error={rateLimitError} 
+                                    onClose={handleCloseRateLimit} 
+                                    modelName={selectedTaskAiModel} 
+                                />
+                            )}
                             <div className="w-full p-6 flex flex-col gap-5">
                                 <div className="flex flex-col gap-4 w-full">
                                     <div className="flex items-start justify-between gap-4 w-full">

@@ -96,6 +96,10 @@ class NewsExtractor:
             query = f"{segmento} {location}".strip()
             news_items = client.get_news(query)
             
+            # Fallback: Se não encontrou com localização, tenta só segmento
+            if not news_items and location:
+                news_items = client.get_news(segmento)
+            
             if news_items:
                 for item in news_items:
                     result["news"].append({

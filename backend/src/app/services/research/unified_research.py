@@ -136,14 +136,19 @@ class UnifiedResearchEngine:
         if not force_refresh:
             cached = self._get_cache(cache_key, "task")
             if cached:
-                print(f"  📦 Task research from cache: {pillar_key}", file=sys.stderr)
+                print(f"  📦 [{datetime.now().strftime('%H:%M:%S')}] Task research from cache: {pillar_key}", file=sys.stderr, flush=True)
                 return cached
         
+        # Se o segmento chegar aqui vazio, o sistema deve ter tido uma falha no carregamento do profile.
+        # Não tentaremos "adivinhar" com pedaços do diagnóstico para evitar queries inúteis.
+        if not segmento or not segmento.strip():
+            segmento = pillar_key.replace("_", " ")
+
         # Construir query inteligente
         query = self._build_task_query(pillar_key, score, diagnostic, segmento)
         
-        print(f"  🔍 Task research: {pillar_key} (score: {score})", file=sys.stderr)
-        print(f"    Query: {query[:80]}...", file=sys.stderr)
+        print(f"  🔍 [{datetime.now().strftime('%H:%M:%S')}] Task research: {pillar_key} (score: {score})", file=sys.stderr, flush=True)
+        print(f"    Query: {query[:80]}...", file=sys.stderr, flush=True)
         
         # Executar pesquisa
         search_results = search_duckduckgo(query, max_results=4, region='br-pt')
@@ -161,116 +166,104 @@ class UnifiedResearchEngine:
             "research_type": "task"
         }
         
-        # Processar resultados
-        for i, result in enumerate(search_results or []):
-            url = result.get("href", "")
-            title = result.get("title", "")
-            snippet = result.get("body", "")
-            
-            research_data["results"].append({
-                "url": url,
-                "title": title,
-                "snippet": snippet
-            })
-            
-            research_data["sources"].append(url)
-            
-            # Scraping apenas do TOP 1 resultado usando web_extractor (trafilatura)
-            if i == 0:  # Apenas o primeiro resultado
-                try:
-                    from app.services.intelligence.intelligence_hub import intel_hub
-                    content = intel_hub.extract_content(url, timeout=2, max_chars=1500)
-                except Exception:
-                    content = scrape_page(url, timeout=2)
-                if content:
-                    research_data["content"] += f"Fonte: {title}\n{snippet}\n{content[:1500]}\n\n"
+        # Processar resultados básicos
+        if search_results:
+            for result in search_results:
+                url = result.get("href", "")
+                research_data["results"].append({
+                    "url": url,
+                    "title": result.get("title", ""),
+                    "snippet": result.get("body", "")
+                })
+                research_data["sources"].append(url)
+
+        # ── ENRIQUECIMENTO EM PARALELO (intel_hub + scrapes) ──────
+        print(f"  🧠 [{datetime.now().strftime('%H:%M:%S')}] Applying parallel intel hub analysis for {pillar_key}...", file=sys.stderr, flush=True)
         
-        # ── ENRIQUECIMENTO INTELIGENTE (intel_hub) ────────────────
-        # Todas as ferramentas de inteligência são aplicadas por pilar
         tools_used = []
-        try:
+        
+        # Lista de tarefas para o executor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {}
+            
             from app.services.intelligence.intelligence_hub import intel_hub
             
-            # ── TRENDS: Disponível para TODOS os pilares ─────────────
+            # 1. Scrape do primeiro resultado
+            if search_results and len(search_results) > 0:
+                url = search_results[0].get("href", "")
+                futures[executor.submit(self._scrape_url, url, search_results[0].get("title", ""), search_results[0].get("body", ""), timeout=5)] = "scrape"
+            
+            # 2. Trends: analyze_demand
             if pillar_key in ("publico_alvo", "branding", "trafego_organico", "trafego_pago", "canais_venda", "processo_vendas", "presenca_online"):
-                try:
-                    print(f"  📈 [Intel] Trends: analisando demanda para {pillar_key}...", file=sys.stderr)
-                    trends_data = intel_hub.trends.analyze_demand(segmento, geo="BR")
-                    if "error" not in trends_data:
-                        research_data["intelligence_trends"] = {
-                            "current_interest": trends_data.get("current_interest"),
-                            "growth_rate_3m": trends_data.get("growth_rate_3m"),
-                            "trend_direction": trends_data.get("trend_direction"),
-                        }
-                        research_data["content"] += (
-                            f"\n[DADOS TRENDS] Demanda de busca: interesse={trends_data.get('current_interest')}, "
-                            f"crescimento={trends_data.get('growth_rate_3m', 0):+.1f}% (3 meses), "
-                            f"tendência={trends_data.get('trend_direction')}\n"
-                        )
-                        tools_used.append({"tool": "trend_analyzer", "status": "success", "detail": f"interesse={trends_data.get('current_interest')}, trend={trends_data.get('trend_direction')}"})
-                    else:
-                        tools_used.append({"tool": "trend_analyzer", "status": "error", "detail": str(trends_data.get("error", ""))[:100]})
-                except Exception as te:
-                    tools_used.append({"tool": "trend_analyzer", "status": "error", "detail": str(te)[:100]})
-            
-            # ── RISING QUERIES: Para pilares de tráfego e conteúdo ───
+                futures[executor.submit(intel_hub.trends.analyze_demand, segmento, "BR")] = "trends_demand"
+                
+            # 3. Trends: rising_queries
             if pillar_key in ("trafego_organico", "trafego_pago", "presenca_online", "branding"):
-                try:
-                    print(f"  🔥 [Intel] Trends: buscando termos em alta para {pillar_key}...", file=sys.stderr)
-                    rising = intel_hub.trends.get_rising_queries(segmento, geo="BR")
-                    if rising.get("rising_queries"):
-                        queries_text = ", ".join([q["query"] for q in rising["rising_queries"][:5]])
-                        research_data["intelligence_rising_queries"] = rising["rising_queries"][:5]
-                        research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
-                        tools_used.append({"tool": "trend_analyzer_rising", "status": "success", "detail": f"{len(rising['rising_queries'])} termos encontrados"})
-                    else:
-                        tools_used.append({"tool": "trend_analyzer_rising", "status": "no_data", "detail": "Nenhum termo em alta"})
-                except Exception as re:
-                    tools_used.append({"tool": "trend_analyzer_rising", "status": "error", "detail": str(re)[:100]})
-            
-            # ── NEWS: Para todos os pilares ──────────────────────────
+                futures[executor.submit(intel_hub.trends.get_rising_queries, segmento, "BR")] = "trends_rising"
+                
+            # 4. News
             if pillar_key in ("publico_alvo", "branding", "canais_venda", "processo_vendas", "trafego_organico", "trafego_pago"):
-                try:
-                    print(f"  📰 [Intel] News: buscando notícias do setor para {pillar_key}...", file=sys.stderr)
-                    news_data = intel_hub.news.search_sector_news(segmento, period="30d", max_results=5)
-                    if news_data.get("news"):
-                        news_summary = "; ".join([n["title"] for n in news_data["news"][:3]])
-                        research_data["intelligence_news"] = news_data["news"][:3]
-                        research_data["content"] += f"\n[NOTÍCIAS SETOR] {news_summary}\n"
-                        tools_used.append({"tool": "news_extractor", "status": "success", "detail": f"{len(news_data['news'])} notícias"})
-                    else:
-                        tools_used.append({"tool": "news_extractor", "status": "no_data", "detail": "Nenhuma notícia encontrada"})
-                    
-                    if news_data.get("opportunities"):
-                        opp_summary = "; ".join([o["title"] for o in news_data["opportunities"][:2]])
-                        research_data["intelligence_opportunities"] = news_data["opportunities"][:2]
-                        research_data["content"] += f"\n[OPORTUNIDADES] {opp_summary}\n"
-                except Exception as ne:
-                    tools_used.append({"tool": "news_extractor", "status": "error", "detail": str(ne)[:100]})
-            
-            # ── SALES TRIGGERS: Para pilares de vendas ───────────────
+                futures[executor.submit(intel_hub.news.search_sector_news, segmento, "30d", 5)] = "news"
+
+            # 5. Sales Triggers
             if pillar_key in ("processo_vendas", "canais_venda"):
+                futures[executor.submit(intel_hub.news.detect_sales_triggers, segmento, "14d", 5)] = "triggers"
+            
+            # Recolectar resultados conforme finalizam
+            for future in concurrent.futures.as_completed(futures):
+                tool_name = futures[future]
                 try:
-                    print(f"  🎯 [Intel] News: detectando gatilhos de venda para {pillar_key}...", file=sys.stderr)
-                    triggers = intel_hub.news.detect_sales_triggers(segmento, period="14d", max_results=5)
-                    if triggers:
-                        triggers_text = "; ".join([t.get("title", "") for t in triggers[:3]] if isinstance(triggers, list) else [])
-                        if triggers_text:
-                            research_data["intelligence_triggers"] = triggers[:3] if isinstance(triggers, list) else triggers
-                            research_data["content"] += f"\n[GATILHOS DE VENDA] {triggers_text}\n"
-                            tools_used.append({"tool": "sales_triggers", "status": "success", "detail": f"{len(triggers) if isinstance(triggers, list) else 1} gatilhos"})
-                except Exception as ste:
-                    tools_used.append({"tool": "sales_triggers", "status": "error", "detail": str(ste)[:100]})
-                
-            print(f"  🧠 Intel enrichment applied for {pillar_key}: {[t['tool'] for t in tools_used]}", file=sys.stderr)
-                
-        except Exception as e:
-            print(f"  ⚠️ Intel enrichment skipped: {e}", file=sys.stderr)
-        
-        # Salvar ferramentas usadas nos dados da pesquisa
+                    res = future.result()
+                    if not res: continue
+                    
+                    if tool_name == "scrape":
+                        research_data["content"] += res
+                    
+                    elif tool_name == "trends_demand":
+                        if "error" not in res:
+                            research_data["intelligence_trends"] = {
+                                "current_interest": res.get("current_interest"),
+                                "growth_rate_3m": res.get("growth_rate_3m"),
+                                "trend_direction": res.get("trend_direction"),
+                            }
+                            research_data["content"] += f"\n[TRENDS] Interesse: {res.get('current_interest')}, Crescimento: {res.get('growth_rate_3m', 0):+.1f}% (3m)\n"
+                            tools_used.append({"tool": "trends", "status": "success"})
+                        
+                    elif tool_name == "trends_rising":
+                        if res.get("rising_queries"):
+                            research_data["intelligence_rising_queries"] = res["rising_queries"][:5]
+                            queries_text = ", ".join([q["query"] for q in res["rising_queries"][:5]])
+                            research_data["content"] += f"\n[TERMOS EM ALTA] {queries_text}\n"
+                            tools_used.append({"tool": "trends_rising", "status": "success"})
+                            
+                    elif tool_name == "news":
+                        if res.get("news"):
+                            research_data["intelligence_news"] = res["news"][:3]
+                            news_summary = "; ".join([n["title"] for n in res["news"][:3]])
+                            research_data["content"] += f"\n[NOTÍCIAS SETOR] {news_summary}\n"
+                            tools_used.append({"tool": "news", "status": "success"})
+                            
+                        if res.get("opportunities"):
+                            research_data["intelligence_opportunities"] = res["opportunities"][:2]
+                            opp_summary = "; ".join([o["title"] for o in res["opportunities"][:2]])
+                            research_data["content"] += f"\n[OPORTUNIDADES] {opp_summary}\n"
+
+                    elif tool_name == "triggers":
+                        if res:
+                            triggers_text = "; ".join([t.get("title", "") for t in res[:3]] if isinstance(res, list) else [])
+                            if triggers_text:
+                                research_data["intelligence_triggers"] = res[:3] if isinstance(res, list) else res
+                                research_data["content"] += f"\n[GATILHOS DE VENDA] {triggers_text}\n"
+                                tools_used.append({"tool": "sales_triggers", "status": "success"})
+
+                except Exception as e:
+                    print(f"  ⚠️ Error in parallel tool {tool_name}: {e}", file=sys.stderr, flush=True)
+                    tools_used.append({"tool": tool_name, "status": "error", "error": str(e)})
+
+        # Salvar ferramentas usadas
         research_data["intelligence_tools_used"] = tools_used
         
-        # Só cachear se obteve resultados úteis (evita cache de resultados vazios)
+        # Só cachear se obteve resultados úteis
         has_useful_data = (
             len(research_data["sources"]) > 0
             or research_data.get("intelligence_trends")
@@ -281,9 +274,9 @@ class UnifiedResearchEngine:
             self._set_cache(cache_key, "task", research_data)
             self._save_research_to_db("task", cache_key, research_data)
         else:
-            print(f"  ⚠️ Task research returned empty — NOT caching to avoid stale empty cache", file=sys.stderr)
+            print(f"  ⚠️ [{datetime.now().strftime('%H:%M:%S')}] Task research returned limited data for {pillar_key}", file=sys.stderr, flush=True)
         
-        print(f"  ✅ Task research completed: {len(research_data['results'])} sources", file=sys.stderr)
+        print(f"  ✅ [{datetime.now().strftime('%H:%M:%S')}] Task research completed: {len(research_data['results'])} sources", file=sys.stderr, flush=True)
         return research_data
     
     def search_subtasks(

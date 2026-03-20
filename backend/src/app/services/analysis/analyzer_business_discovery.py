@@ -400,6 +400,7 @@ JSON:
     "outras_plataformas": []
   }},
   "concorrentes_encontrados": [],
+  "segmento_identificado": "o que o negócio faz em no máximo 5 palavras",
   "analise_competitiva_resumo": "Síntese baseada nos dados confirmados",
   "dados_mercado_local": {{ "preco_medio_regiao": string, "tendencias": [], "oportunidades": [] }},
   "problemas_detectados": [],

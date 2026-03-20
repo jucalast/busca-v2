@@ -14,6 +14,8 @@ type CacheRecord = {
 
 const CACHEABLE_ACTIONS = new Set([
     'get-business',
+    'get-business-summary',
+    'get-business-action-plan',
     'list-businesses',
     'pillar-state',
     'all-pillars-state',
@@ -43,6 +45,55 @@ const DEFAULT_CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutes
 const CACHE_TTL_MS = Number(process.env.GROWTH_CACHE_TTL_MS || DEFAULT_CACHE_TTL_MS);
 
 const orchestratorCache = new Map<string, CacheRecord>();
+const CACHE_FILE = path.join(process.cwd(), 'data', 'orchestrator-cache.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(path.join(process.cwd(), 'data'))) {
+    fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
+}
+
+function loadCache() {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+            const now = Date.now();
+            for (const [key, record] of Object.entries(data)) {
+                if ((record as CacheRecord).expiresAt > now) {
+                    orchestratorCache.set(key, record as CacheRecord);
+                }
+            }
+            console.log(`[Cache] Loaded ${orchestratorCache.size} valid records from disk.`);
+        }
+    } catch (err) {
+        console.warn('[Cache] Failed to load persistent cache:', err);
+    }
+}
+
+async function saveCache() {
+    try {
+        const data: Record<string, CacheRecord> = {};
+        const now = Date.now();
+        orchestratorCache.forEach((record, key) => {
+            if (record.expiresAt > now) {
+                data[key] = record;
+            }
+        });
+        
+        // Ensure data directory exists (redundant but safe)
+        const dir = path.dirname(CACHE_FILE);
+        if (!fs.existsSync(dir)) {
+            await fs.promises.mkdir(dir, { recursive: true });
+        }
+        
+        await fs.promises.writeFile(CACHE_FILE, JSON.stringify(data, null, 0), 'utf-8');
+        console.log(`[Cache] Persistent cache updated (${orchestratorCache.size} items).`);
+    } catch (err) {
+        console.warn('[Cache] Failed to save persistent cache:', err);
+    }
+}
+
+// Initial load
+loadCache();
 
 type RunOrchestratorOptions = {
     timeoutMs?: number;
@@ -58,7 +109,9 @@ function normalizeOptions(optionsOrTimeout?: number | RunOrchestratorOptions): R
 
 function buildCacheKey(action: string, inputData: any): string | null {
     try {
-        return `${action}:${JSON.stringify(inputData)}`;
+        // We include action and a hash of inputData for uniqueness
+        const inputString = JSON.stringify(inputData);
+        return `${action}:${inputString}`;
     } catch (err) {
         console.warn('[Orchestrator] Failed to build cache key:', err);
         return null;
@@ -73,6 +126,7 @@ function getCachedResult(action: string, inputData: any, skipCache: boolean) {
     if (!cached) return null;
     if (cached.expiresAt < Date.now()) {
         orchestratorCache.delete(key);
+        saveCache(); // Persistence update
         return null;
     }
     return cached.data;
@@ -86,11 +140,14 @@ function saveCachedResult(action: string, inputData: any, result: any, skipCache
         data: result,
         expiresAt: Date.now() + CACHE_TTL_MS,
     });
+    saveCache(); // Persistence update
 }
 
 function invalidateCacheIfNeeded(action: string) {
     if (CACHE_INVALIDATING_ACTIONS.has(action)) {
+        console.log(`[Cache] Invalidating cache due to action: ${action}`);
         orchestratorCache.clear();
+        saveCache(); // Async persistence
     }
 }
 

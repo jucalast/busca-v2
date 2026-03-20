@@ -24,7 +24,7 @@ function GlobalSidebarLayout({ children }: { children: React.ReactNode }) {
   // For now, we'll let pages call setIsDark etc.
 
   const handleSelectBusiness = (id: string) => {
-    router.push(`/analysis/${id}`);
+    router.push(`/analysis/${id}/especialistas`);
   };
 
   const handleCreateNewBusiness = () => {

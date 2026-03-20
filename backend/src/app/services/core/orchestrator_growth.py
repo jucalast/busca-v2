@@ -1248,35 +1248,51 @@ def main():
             print(json.dumps({"success": False, "error": "analysis_id and pillar_key are required"}, ensure_ascii=False))
         else:
             try:
-                analysis = db.get_analysis(analysis_id)
-                if analysis and "task_data" in analysis:
-                    task_data = analysis["task_data"]
-                    # Buscar tarefas do pilar específico no task_data
-                    pillar_tasks = None
-                    if isinstance(task_data, dict):
-                        # Verificar se há plan_data ou estrutura similar
-                        if "plan_data" in task_data:
-                            plan_data = task_data["plan_data"]
-                            if isinstance(plan_data, dict) and pillar_key in plan_data:
-                                pillar_tasks = plan_data[pillar_key]
-                        elif pillar_key in task_data:
-                            pillar_tasks = task_data[pillar_key]
-                    
-                    if pillar_tasks:
-                        print("--- GET_ANALYSIS_TASKS_RESULT ---")
-                        print(json.dumps({
-                            "success": True, 
-                            "data": {
-                                "plan_data": pillar_tasks,
-                                "status": "loaded"
-                            }
-                        }, ensure_ascii=False, indent=2))
+                # ─── Priority: Check New Pillar Diagnostics Table ───
+                diag_record = db.get_pillar_diagnostic(analysis_id, pillar_key)
+                if diag_record and diag_record.get("diagnostic_data"):
+                    # This table stores the enriched plan_data (including full_thought_log)
+                    diag_data = diag_record["diagnostic_data"]
+                    print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                    print(json.dumps({
+                        "success": True, 
+                        "data": {
+                            "plan_data": diag_data.get("plan_data"),
+                            "full_thought_log": diag_data.get("full_thought_log"),
+                            "full_thought_subtasks": diag_data.get("full_thought_subtasks"),
+                            "analysis_opinions": diag_data.get("analysis_opinions"),
+                            "status": "loaded"
+                        }
+                    }, ensure_ascii=False, indent=2))
+                else:
+                    # ─── Fallback: Legacy Analysis Task Data ───
+                    analysis = db.get_analysis(analysis_id)
+                    if analysis and "task_data" in analysis:
+                        task_data = analysis["task_data"]
+                        pillar_tasks = None
+                        if isinstance(task_data, dict):
+                            if "plan_data" in task_data:
+                                plan_data = task_data["plan_data"]
+                                if isinstance(plan_data, dict) and pillar_key in plan_data:
+                                    pillar_tasks = plan_data[pillar_key]
+                            elif pillar_key in task_data:
+                                pillar_tasks = task_data[pillar_key]
+                        
+                        if pillar_tasks:
+                            print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                            print(json.dumps({
+                                "success": True, 
+                                "data": {
+                                    "plan_data": pillar_tasks,
+                                    "status": "loaded"
+                                }
+                            }, ensure_ascii=False, indent=2))
+                        else:
+                            print("--- GET_ANALYSIS_TASKS_RESULT ---")
+                            print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
                     else:
                         print("--- GET_ANALYSIS_TASKS_RESULT ---")
                         print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
-                else:
-                    print("--- GET_ANALYSIS_TASKS_RESULT ---")
-                    print(json.dumps({"success": True, "data": None}, ensure_ascii=False))
             except Exception as e:
                 print("--- GET_ANALYSIS_TASKS_RESULT ---")
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))

@@ -19,8 +19,9 @@ from app.services.core.service_growth import (
     do_specialist_execute, do_expand_subtasks, do_ai_try_user_task,
     do_execute_all_subtasks, do_get_background_status,
     do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task,
-    do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_delete_business,
-    do_run_production_pillar_agent, do_register, do_login, do_logout, do_validate_session
+    do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_specialist_tasks_stream, do_delete_business,
+    do_run_production_pillar_agent, do_register, do_login, do_logout, do_validate_session,
+    do_get_business_summary, do_get_business_action_plan
 )
 
 router = APIRouter()
@@ -112,6 +113,14 @@ def dimension_chat(req: ActionDimensionChatRequest):
 def list_businesses(req: BaseGrowthRequest):
     return do_list_businesses(req.user_id)
 
+@router.post("/get-business-summary")
+def get_business_summary(req: BaseGrowthRequest):
+    return do_get_business_summary(req.business_id)
+
+@router.post("/get-business-action-plan")
+def get_business_action_plan(req: BaseGrowthRequest):
+    return do_get_business_action_plan(req.business_id)
+
 @router.post("/get-business")
 def get_business(req: BaseGrowthRequest):
     return do_get_business(req.business_id)
@@ -150,7 +159,18 @@ def get_analysis_tasks(req: AnalysisTasksRequest):
 
 @router.post("/specialist-tasks")
 def specialist_tasks(req: AnalysisTasksRequest):
-    return do_specialist_tasks(req.model_dump())
+    """Generate specialist tasks with optional streaming."""
+    # We always use streaming for specialist tasks now to show progress
+    return StreamingResponse(
+        do_specialist_tasks_stream(req.model_dump()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 @router.post("/delete-business")
 def delete_business(req: DeleteBusinessRequest):

@@ -20,7 +20,8 @@ def generate_context_aware_tasks(
     score_data: Dict[str, Any],
     market_data: Dict[str, Any],
     discovery_data: Dict[str, Any],
-    model_provider: str = "groq"
+    model_provider: str = "groq",
+    force_refresh: bool = False
 ) -> Dict[str, Any]:
     """
     Gera tarefas context-aware para um pilar específico.
@@ -43,13 +44,17 @@ def generate_context_aware_tasks(
         # Só usa cache se o plano já tiver a lista de entregaveis (planos antigos sem ela são regenerados)
         existing_plan = db.get_pillar_plan(analysis_id, pillar_key)
         if (
-            existing_plan
+            not force_refresh
+            and existing_plan
             and existing_plan.get("plan_data", {}).get("tarefas")
             and existing_plan.get("plan_data", {}).get("entregaveis")
         ):
             cached_tasks = existing_plan["plan_data"]["tarefas"]
             print(f"  ✅ Tasks already cached for {pillar_key}: {len(cached_tasks)} tasks", file=sys.stderr)
             return {"success": True, "plan": existing_plan["plan_data"]}
+        
+        if force_refresh:
+            print(f"  🔄 Force refresh for {pillar_key} - Bypassing cache.", file=sys.stderr)
         
         # 1. Extrair contexto específico do pilar
         pillar_diagnostic = score_data.get("dimensoes", {}).get(pillar_key, {})
@@ -67,7 +72,7 @@ def generate_context_aware_tasks(
         
         # 3. Gerar tarefas com LLM usando pesquisa unificada
         tasks = _generate_pillar_tasks_with_llm(
-            pillar_key, context, model_provider
+            pillar_key, context, model_provider, force_refresh
         )
         
         # 4. Estruturar plano
@@ -179,7 +184,8 @@ def _prepare_rich_context(
 def _generate_pillar_tasks_with_llm(
     pillar_key: str,
     context: Dict[str, Any],
-    model_provider: str
+    model_provider: str,
+    force_refresh: bool = False
 ) -> List[Dict[str, Any]]:
     """Gera tarefas usando LLM com pesquisa unificada e contexto rico."""
     
@@ -196,11 +202,12 @@ def _generate_pillar_tasks_with_llm(
     
     try:
         import threading
+        from datetime import datetime
         
         research_data = None
         research_error = None
         
-        def research_worker(force_refresh: bool = False):
+        def research_worker(force_refresh_val: bool):
             nonlocal research_data, research_error
             try:
                 research_data = research_engine.search_tasks(
@@ -212,46 +219,66 @@ def _generate_pillar_tasks_with_llm(
                         "meta_pilar": context["meta_pilar"]
                     },
                     segmento=context["negocio"]["segmento"],
-                    force_refresh=force_refresh
+                    force_refresh=force_refresh_val
                 )
             except Exception as e:
                 research_error = e
         
-        # Executar pesquisa em thread com timeout de 15s
-        thread = threading.Thread(target=lambda: research_worker(False), daemon=True)
+        # Executar pesquisa em thread com timeout mais seguro de 90s
+        print(f"  🔍 [{datetime.now().strftime('%H:%M:%S')}] TaskGen ({pillar_key}): Iniciando pesquisa setorial...", file=sys.stderr, flush=True)
+        thread = threading.Thread(target=lambda: research_worker(force_refresh), daemon=True)
         thread.start()
-        thread.join(timeout=15)
+        thread.join(timeout=90)
         
         if thread.is_alive():
-            print(f"  ⚠️ Research timeout for {pillar_key}, using context only", file=sys.stderr)
+            print(f"  ⚠️ [{datetime.now().strftime('%H:%M:%S')}] Research timeout (90s) for {pillar_key}, checking results...", file=sys.stderr, flush=True)
         elif research_error:
-            print(f"  ⚠️ Unified research failed for {pillar_key}: {research_error}, using context only", file=sys.stderr)
+            print(f"  ⚠️ [{datetime.now().strftime('%H:%M:%S')}] Research failed for {pillar_key}: {research_error}", file=sys.stderr, flush=True)
         elif research_data:
             research_sources = research_data.get("sources", [])
             research_content = research_data.get("content", "")
-            print(f"  📦 Unified research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
             
-            # Se 0 sources do cache, forçar nova busca
+            # ATUALIZAÇÃO: Adicionar fontes da pesquisa ao contexto para exibição no frontend
+            if research_sources:
+                if "sources" not in context:
+                    context["sources"] = []
+                context["sources"].extend(research_sources)
+                # Deduplicar mantendo ordem
+                seen = set()
+                context["sources"] = [x for x in context["sources"] if not (tuple(x.items()) if isinstance(x, dict) else x) in seen and not seen.add(tuple(x.items()) if isinstance(x, dict) else x)]
+            
+            print(f"  📦 [{datetime.now().strftime('%H:%M:%S')}] Research for {pillar_key}: {len(research_sources)} sources, {len(research_content)} chars", file=sys.stderr, flush=True)
+            
+            # Se 0 sources do cache e nada de intel, forçar nova busca com timeout 12s
             if len(research_sources) == 0 and not research_data.get("intelligence_trends") and not research_data.get("intelligence_news"):
-                print(f"  🔄 Cache empty for {pillar_key}, retrying with force_refresh...", file=sys.stderr)
+                print(f"  🔄 [{datetime.now().strftime('%H:%M:%S')}] Cache empty for {pillar_key}, retrying with force_refresh...", file=sys.stderr, flush=True)
                 research_data = None
                 research_error = None
                 retry_thread = threading.Thread(target=lambda: research_worker(True), daemon=True)
                 retry_thread.start()
-                retry_thread.join(timeout=20)
+                retry_thread.join(timeout=12)
                 if research_data:
                     research_sources = research_data.get("sources", [])
                     research_content = research_data.get("content", "")
-                    print(f"  ✅ Retry research for {pillar_key}: {len(research_sources)} sources", file=sys.stderr)
+                    
+                    # Adicionar fontes do retry também
+                    if research_sources:
+                        context["sources"].extend(research_sources)
+                        seen = set()
+                        context["sources"] = [x for x in context["sources"] if not (tuple(x.items()) if isinstance(x, dict) else x) in seen and not seen.add(tuple(x.items()) if isinstance(x, dict) else x)]
+                        
+                    print(f"  ✅ [{datetime.now().strftime('%H:%M:%S')}] Retry research success: {len(research_sources)} sources", file=sys.stderr, flush=True)
+                else:
+                    print(f"  ⚠️ [{datetime.now().strftime('%H:%M:%S')}] Retry research failed or timed out for {pillar_key}", file=sys.stderr, flush=True)
         
     except Exception as e:
-        print(f"  ⚠️ Research system error for {pillar_key}: {e}, using context only", file=sys.stderr)
+        print(f"  ⚠️ Research system error for {pillar_key}: {e}", file=sys.stderr, flush=True)
     
     # Construir prompt inteligente
     prompt = _build_context_aware_prompt(pillar_key, context, specialist, research_content)
     
     # Chamar LLM
-    print(f"  🧠 TaskGen ({pillar_key}): Chamando LLM para gerar tarefas. Contexto: {len(prompt)} chars, Pesquisa: {len(research_content)} chars.", file=sys.stderr)
+    print(f"  🧠 [{datetime.now().strftime('%H:%M:%S')}] TaskGen ({pillar_key}): Chamando LLM para gerar tarefas. Contexto: {len(prompt)} chars.", file=sys.stderr, flush=True)
     result = call_llm(
         provider=model_provider,
         prompt=prompt,

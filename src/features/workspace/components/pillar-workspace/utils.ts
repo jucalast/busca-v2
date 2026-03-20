@@ -50,8 +50,9 @@ export function safeRender(value: any): string {
     return String(value);
 }
 
-export function cleanMarkdown(raw: string): string {
+export function cleanMarkdown(raw: string | any): string {
     if (!raw) return '';
+    if (typeof raw !== 'string') return String(raw);
     let s = raw;
 
     // Remove formatting fences the LLM often adds (e.g. ```markdown ... ```)

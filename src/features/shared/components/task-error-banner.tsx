@@ -35,13 +35,9 @@ export default function TaskErrorBanner({ error, onClose, modelName }: TaskError
 
     return (
         <div
-            className="w-full flex items-center justify-between px-3 py-1.5 rounded-t-xl transition-all duration-200"
+            className="w-full flex items-center justify-between px-3 py-1.5 transition-all duration-200"
             style={{
                 backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                borderTop: '1px solid rgba(239, 68, 68, 0.4)',
-                borderBottom: '1px solid rgba(239, 68, 68, 0.1)',
-                borderLeft: 'none',
-                borderRight: 'none',
             }}
         >
             <div className="flex items-center gap-2 overflow-hidden">

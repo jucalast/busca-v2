@@ -109,18 +109,24 @@ export default function SidebarLayout({
 
   useEffect(() => {
     // ─── Instant Cache Load ───
+    let hasCache = false;
     if (typeof window !== 'undefined') {
       const cached = localStorage.getItem(`businesses_${userId}`);
       if (cached) {
         try {
-          setBusinesses(JSON.parse(cached));
-          setLoading(false); // We have cached data, don't show the initial pulse
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setBusinesses(parsed);
+            setLoading(false); // We have cached data, don't show the initial pulse
+            hasCache = true;
+          }
         } catch (e) {
           console.error("Error parsing cached businesses", e);
         }
       }
     }
-    loadBusinesses();
+    // Pass cache status to avoid redundant loading states
+    loadBusinesses(hasCache);
   }, [userId]);
 
   useEffect(() => {
@@ -140,8 +146,12 @@ export default function SidebarLayout({
     setIsPinned(defaultPinned);
   }, [defaultPinned]);
 
-  const loadBusinesses = async () => {
-    setLoading(true);
+  const loadBusinesses = async (hasCache = false) => {
+    // SOMENTE mostrar loading se não tiver nada em cache para exibir
+    // Usamos hasCache como backup se businesses ainda for [] (async state)
+    if (!hasCache && businesses.length === 0) {
+      setLoading(true);
+    }
     setError('');
 
     try {
@@ -285,13 +295,12 @@ export default function SidebarLayout({
                   return (
                     <div key={business.id} className="group relative">
                         <Link
-                          href={`/analysis/${business.id}`}
+                          href={`/analysis/${business.id}/especialistas`}
                           className={`flex items-center gap-2 rounded-xl transition-all duration-150 cursor-pointer relative ${
                             isActive 
                               ? (isDark ? 'bg-white text-zinc-950 shadow-xl shadow-white/5' : 'bg-gray-900 text-white shadow-lg shadow-gray-200') 
                               : (isDark ? 'hover:bg-white/5 text-white/60' : 'hover:bg-gray-100/80 text-gray-500 hover:text-gray-900')
                           } ${isExpanded ? 'px-3 py-2.5' : 'w-10 h-10 justify-center'}`}
-                          onClick={() => onSelectBusiness(business.id)}
                           title={business.name}
                         >
                         {isActive && <div className={`absolute left-[-12px] w-1 h-5 rounded-r-full ${isDark ? 'bg-white' : 'bg-gray-900'}`} />}
@@ -325,7 +334,7 @@ export default function SidebarLayout({
                               e.stopPropagation();
                               setOpenMenuId(openMenuId === business.id ? null : business.id);
                             }}
-                            className={`w-6 h-6 flex items-center justify-center rounded-lg transition-all ${isActive ? (isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-white/10 text-white') : (isDark ? 'hover:bg-white/10 text-white/40' : 'hover:bg-gray-200 text-gray-500')}`}
+                            className={`w-6 h-6 flex items-center justify-center rounded-lg transition-all ${isActive ? (isDark ? 'hover:bg-black/10 text-zinc-950/70' : 'hover:bg-white/10 text-white') : (isDark ? 'hover:bg-white/10 text-white/40' : 'hover:bg-gray-200 text-gray-500')}`}
                           >
                             <MoreVertical size={14} />
                           </button>
@@ -333,7 +342,7 @@ export default function SidebarLayout({
                           {openMenuId === business.id && (
                             <div
                               ref={menuRef}
-                              className="absolute right-0 top-full mt-1 w-44 rounded-xl overflow-hidden z-[100] shadow-xl border border-gray-100 bg-white p-1"
+                              className={`absolute right-0 top-full mt-1 w-44 rounded-xl overflow-hidden z-[100] shadow-2xl border p-1 ${isDark ? 'border-white/10 bg-zinc-900/90 backdrop-blur-xl' : 'border-gray-100 bg-white'}`}
                               onClick={e => e.stopPropagation()}
                             >
                               <button
@@ -343,7 +352,7 @@ export default function SidebarLayout({
                                   setOpenMenuId(null);
                                   handleDeleteBusiness(business.id, business.name, e);
                                 }}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left"
+                                className={`w-full flex items-center gap-2 px-3 py-2.5 text-[12px] font-bold text-red-500 rounded-lg transition-colors text-left ${isDark ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}
                               >
                                 <Trash2 size={14} />
                                 <span>Excluir negócio</span>

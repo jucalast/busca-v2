@@ -7,6 +7,7 @@ import json
 import os
 import hashlib
 import secrets
+import time
 import logging
 import bcrypt
 import jwt
@@ -356,6 +357,15 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_research_results_type ON research_results(research_type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_research_cache_created ON research_cache(cached_at)')
     
+    # Analysis cache - pre-processed UI-ready snapshots
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS analysis_cache (
+            business_id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            ui_data TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -758,9 +768,61 @@ def create_business(user_id: str, name: str, profile_data: Dict) -> Dict:
         "updated_at": now
     }
 
+@with_db_retry()
+def update_business_profile(business_id: str, profile_data: Dict) -> bool:
+    """Update a business profile and extracted fields (segment, model, location)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    perfil = profile_data.get("perfil", {})
+    segment = perfil.get("segmento", "")
+    model = perfil.get("modelo_negocio", perfil.get("modelo", ""))
+    location = perfil.get("localizacao", "")
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        cursor.execute('''
+            UPDATE businesses 
+            SET segment = %s, model = %s, location = %s, 
+                profile_data = %s, updated_at = %s
+            WHERE id = %s
+        ''', (segment, model, location, json.dumps(profile_data, ensure_ascii=False), now, business_id))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Erro ao atualizar negócio {business_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_business_summary(business_id: str) -> Optional[Dict]:
+    """Get only basic business meta-data."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    cursor.execute('SELECT id, user_id, name, segment, model, location, status, created_at, updated_at FROM businesses WHERE id = %s', (business_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "name": row["name"],
+        "segment": row["segment"],
+        "model": row["model"],
+        "location": row["location"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"]
+    }
 
 def get_business(business_id: str) -> Optional[Dict]:
-    """Get business by ID."""
+    """Get business by ID (Full profile data)."""
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
@@ -789,36 +851,58 @@ def get_business(business_id: str) -> Optional[Dict]:
 
 
 def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
-    """List all businesses for a user."""
+    """List all businesses with their latest analysis summary in ONE call (Pillar 4)."""
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('''
-        SELECT * FROM businesses 
-        WHERE user_id = %s AND status = %s
-        ORDER BY updated_at DESC
-    ''', (user_id, status))
+    # Using a CTE or Lateral Join for maximum efficiency in Postgres
+    # This fetches only 1 analysis per business (the latest)
+    query = '''
+        WITH latest_analyses AS (
+            SELECT DISTINCT ON (business_id) 
+                id, business_id, score_geral, classificacao, created_at
+            FROM analyses
+            ORDER BY business_id, created_at DESC
+        )
+        SELECT 
+            b.id, b.user_id, b.name, b.segment, b.model, b.location, b.status, b.created_at, b.updated_at,
+            la.id as analysis_id, la.score_geral, la.classificacao, la.created_at as analysis_date
+        FROM businesses b
+        LEFT JOIN latest_analyses la ON b.id = la.business_id
+        WHERE b.user_id = %s AND b.status = %s
+        ORDER BY b.updated_at DESC
+    '''
     
+    cursor.execute(query, (user_id, status))
     rows = cursor.fetchall()
     conn.close()
     
     businesses = []
     for row in rows:
-        profile_data = json.loads(row["profile_data"])
-        perfil = profile_data.get("perfil", {})
-        
-        businesses.append({
+        biz_data = {
             "id": row["id"],
             "user_id": row["user_id"],
             "name": row["name"],
-            "segment": row["segment"] or perfil.get("segmento", ""),
-            "model": row["model"] or perfil.get("modelo_negocio", perfil.get("modelo", "")),
-            "location": row["location"] or perfil.get("localizacao", ""),
-            "profile_data": profile_data,
+            "segment": row["segment"],
+            "model": row["model"],
+            "location": row["location"],
             "status": row["status"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"]
-        })
+        }
+        
+        # Add summary analysis info if present
+        if row["analysis_id"]:
+            biz_data["latest_analysis"] = {
+                "id": row["analysis_id"],
+                "score_geral": row["score_geral"],
+                "classificacao": row["classificacao"],
+                "created_at": row["analysis_date"]
+            }
+        else:
+            biz_data["latest_analysis"] = None
+            
+        businesses.append(biz_data)
     
     return businesses
 
@@ -1093,8 +1177,99 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
     }
 
 
+def get_latest_analysis_summary(business_id: str) -> Optional[Dict]:
+    """Get only the score and classification of the most recent analysis."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    cursor.execute('''
+        SELECT id, business_id, score_geral, classificacao, created_at FROM analyses 
+        WHERE business_id = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    ''', (business_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "business_id": row["business_id"],
+        "score_geral": row["score_geral"],
+        "classificacao": row["classificacao"],
+        "created_at": row["created_at"]
+    }
+
+@with_db_retry()
+def save_analysis_cache(business_id: str, analysis_id: str, ui_data: Dict) -> bool:
+    """Save pre-processed UI data for a business (Pillar 5)."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    now = datetime.now(timezone.utc).isoformat()
+    
+    cursor.execute('''
+        INSERT INTO analysis_cache (business_id, analysis_id, ui_data, updated_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT(business_id) DO UPDATE SET
+            analysis_id = excluded.analysis_id,
+            ui_data = excluded.ui_data,
+            updated_at = excluded.updated_at
+    ''', (business_id, analysis_id, json.dumps(ui_data, ensure_ascii=False), now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def get_analysis_cache(business_id: str) -> Optional[Dict]:
+    """Get pre-processed UI data for a business (Pillar 5)."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    cursor.execute('SELECT ui_data, analysis_id FROM analysis_cache WHERE business_id = %s', (business_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+        
+    return {
+        "ui_data": json.loads(row["ui_data"]),
+        "analysis_id": row["analysis_id"]
+    }
+
+def get_latest_analysis_action_plan(business_id: str) -> Optional[Dict]:
+    """Get score data and action plan (tasks) but exclude heavy market/discovery data."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    cursor.execute('''
+        SELECT id, business_id, score_data, task_data, score_geral, classificacao, created_at FROM analyses 
+        WHERE business_id = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    ''', (business_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        "id": row["id"],
+        "business_id": row["business_id"],
+        "score_data": json.loads(row["score_data"]),
+        "task_data": json.loads(row["task_data"]),
+        "score_geral": row["score_geral"],
+        "classificacao": row["classificacao"],
+        "created_at": row["created_at"]
+    }
+
 def get_latest_analysis(business_id: str) -> Optional[Dict]:
-    """Get the most recent analysis for a business."""
+    """Get the most recent analysis for a business (Full data)."""
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
@@ -1177,6 +1352,29 @@ def get_analysis(analysis_id: str) -> Optional[Dict]:
         "created_at": row["created_at"]
     }
 
+
+
+@with_db_retry()
+def update_analysis_score_data(analysis_id: str, score_data: Dict) -> bool:
+    """Update the score_data of an existing analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    score_json = json.dumps(score_data, ensure_ascii=False)
+    
+    # Also update score_geral and classificacao if they are in score_data
+    score_geral = score_data.get("score_geral", 50)
+    classificacao = score_data.get("classificacao", "Atenção")
+    
+    cursor.execute('''
+        UPDATE analyses 
+        SET score_data = %s, score_geral = %s, classificacao = %s
+        WHERE id = %s
+    ''', (score_json, score_geral, classificacao, analysis_id))
+    
+    conn.commit()
+    conn.close()
+    return True
 
 
 @with_db_retry()
@@ -1485,6 +1683,12 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, score: float = 0, 
         "dado_chave": dado_chave,
         "justificativa_maturidade": justificativa_maturidade
     }
+    
+    # Preserve extra fields like full_thought_log, full_thought_subtasks and plan_data if present
+    if diagnostic_data:
+        for extra_key in ["full_thought_log", "full_thought_subtasks", "plan_data", "analysis_opinions"]:
+            if extra_key in diagnostic_data:
+                full_diag[extra_key] = diagnostic_data[extra_key]
     diag_json = json.dumps(full_diag, ensure_ascii=False)
     
     cursor.execute('''
@@ -2041,6 +2245,11 @@ def delete_pillar_data(analysis_id: str, pillar_key: str):
             DELETE FROM background_tasks
             WHERE analysis_id = %s AND pillar_key = %s
         ''', (analysis_id, pillar_key))
+        
+        cursor.execute('''
+            DELETE FROM specialist_subtasks
+            WHERE analysis_id = %s AND pillar_key = %s
+        ''', (analysis_id, pillar_key))
 
         conn.commit()
     finally:
@@ -2258,3 +2467,75 @@ def get_research_stats() -> dict:
             "total_cache": 0,
             "total_researches": 0
         }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ANALYSIS UI CACHE
+# ═══════════════════════════════════════════════════════════════════
+
+@with_db_retry()
+def save_analysis_cache(business_id: str, analysis_id: str, ui_data: dict) -> bool:
+    """Salva snapshot de UI da análise no cache."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        ui_data_json = json.dumps(ui_data, ensure_ascii=False)
+        now = datetime.now(timezone.utc).isoformat()
+        
+        cursor.execute("""
+            INSERT INTO analysis_cache (business_id, analysis_id, ui_data, updated_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (business_id) DO UPDATE SET
+                analysis_id = EXCLUDED.analysis_id,
+                ui_data = EXCLUDED.ui_data,
+                updated_at = EXCLUDED.updated_at
+        """, (business_id, analysis_id, ui_data_json, now))
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Error saving analysis cache for {business_id}: {e}")
+        return False
+
+
+def get_analysis_cache(business_id: str) -> Optional[dict]:
+    """Obtém snapshot de UI do cache."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        cursor.execute("SELECT * FROM analysis_cache WHERE business_id = %s", (business_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+            
+        return {
+            "business_id": row["business_id"],
+            "analysis_id": row["analysis_id"],
+            "ui_data": json.loads(row["ui_data"]),
+            "updated_at": row["updated_at"]
+        }
+    except Exception as e:
+        logger.error(f"Error getting analysis cache for {business_id}: {e}")
+        return None
+
+
+@with_db_retry()
+def delete_analysis_cache(business_id: str) -> bool:
+    """Invalida o cache de UI de uma empresa."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        cursor.execute("DELETE FROM analysis_cache WHERE business_id = %s", (business_id,))
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting analysis cache for {business_id}: {e}")
+        return False

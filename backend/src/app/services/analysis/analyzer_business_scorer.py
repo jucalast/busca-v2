@@ -922,3 +922,73 @@ _ESCOPO_PILAR = {
     "trafego_pago": "APENAS: campanhas Meta Ads/Google Ads, segmentação de público para ads, copies de anúncio, orçamento.\nPROIBIDO: fazer SEO, criar conteúdo orgânico, definir identidade visual, configurar canais.",
     "processo_vendas": "APENAS: funil de vendas, scripts, contorno de objeções, precificação, follow-up, pós-venda.\nPROIBIDO: criar conteúdo para redes, fazer SEO, montar campanhas, definir identidade visual.",
 }
+def reanalyze_pillar(analysis_id: str, pillar_key: str, model_provider: str = "groq") -> dict:
+    """Re-runs the scoring process for a single pillar using existing analysis context."""
+    from app.core import database as db
+    
+    # 1. Get existing analysis
+    analysis = db.get_analysis(analysis_id)
+    if not analysis:
+        print(f"  ❌ Reanalyze error: Analysis {analysis_id} not found", file=sys.stderr)
+        return {"success": False, "error": "Analysis not found"}
+        
+    profile = analysis.get("profile_data", {})
+    market_data = analysis.get("market_data", {})
+    discovery_data = analysis.get("discovery_data", {})
+    score_data = analysis.get("score_data", {})
+    
+    # 2. Extract needed context
+    from app.services.agents.engine_specialist import get_dynamic_persona_context
+    contexto_dinamico = get_dynamic_persona_context(profile)
+    
+    dim_cfg = dict(DIMENSIONS.get(pillar_key, {}))
+    if not dim_cfg:
+        return {"success": False, "error": f"Invalid pillar key: {pillar_key}"}
+        
+    restricoes = extract_restrictions(profile)
+    dynamic_weights = get_dynamic_weights(profile)
+    dim_cfg["peso"] = dynamic_weights.get(pillar_key, dim_cfg["peso"])
+    
+    market_text = _filter_market(pillar_key, market_data)
+    dim_sources = _get_all_sources_for_dimension(pillar_key, market_data)
+    disc_text = format_discovery_for_scorer(discovery_data, dim_key=pillar_key) if discovery_data else ""
+    
+    # Reconstruct chain context from existing scores to maintain dependency flow
+    chain_summaries = {}
+    if score_data and "dimensoes" in score_data:
+        for pk, res in score_data["dimensoes"].items():
+            chain_summaries[pk] = _extract_chain_summary(pk, res)
+    chain_ctx = _build_chain_context(pillar_key, chain_summaries)
+    
+    api_key = os.environ.get("GEMINI_API_KEY" if model_provider == "gemini" else "GROQ_API_KEY")
+
+    # 3. Score the specific pillar
+    print(f"  🧠 Re-scoring pillar {pillar_key} for analysis {analysis_id}...", file=sys.stderr)
+    result = _score_dimension(
+        pillar_key, dim_cfg, profile, market_text, dim_sources, restricoes, api_key,
+        previous_actions=[], # Not critical for single pillar score
+        discovery_text=disc_text,
+        strategic_intel=None,
+        chain_context=chain_ctx,
+        model_provider=model_provider,
+        contexto_dinamico=contexto_dinamico
+    )
+    
+    # 4. Update the analysis record
+    if not score_data: score_data = {"dimensoes": {}}
+    if "dimensoes" not in score_data: score_data["dimensoes"] = {}
+    score_data["dimensoes"][pillar_key] = result
+    
+    # Re-calculate overall score based on the updated pillar
+    total_w = sum(d.get("peso", 0.15) for d in score_data["dimensoes"].values())
+    total_s = sum(d.get("score", 50) * d.get("peso", 0.15) for d in score_data["dimensoes"].values())
+    score_geral = round(total_s / total_w) if total_w > 0 else 50
+    score_data["score_geral"] = score_geral
+    score_data["classificacao"] = "Pronto" if score_geral >= 70 else "Atenção"
+    
+    # 5. Save back to DB (both pillar diagnostic and main analysis table)
+    db.save_pillar_diagnostic(analysis_id, pillar_key, result)
+    db.update_analysis_score_data(analysis_id, score_data)
+    
+    print(f"  ✅ Re-score of {pillar_key} complete. New score: {result.get('score', 0)}/100", file=sys.stderr)
+    return {"success": True, "pillar_result": result}

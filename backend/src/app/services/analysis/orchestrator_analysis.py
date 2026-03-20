@@ -115,6 +115,9 @@ class AnalysisOrchestrator:
                 "analysis_id": analysis_id,
             }
             
+            # Step 9: Save to pre-processed cache (Pillar 5)
+            db.save_analysis_cache(business_id, analysis_id, result)
+            
             self.logger.info(f"Analysis completed successfully: {analysis_id}")
             return result
             

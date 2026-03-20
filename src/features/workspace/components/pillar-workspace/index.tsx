@@ -25,6 +25,7 @@ import { usePillarNavigation } from './hooks/usePillarNavigation';
 import { SpecialistGrid } from './components/SpecialistGrid';
 import { LoadingErrorState } from './components/LoadingErrorState';
 import { PillarHeader } from './components/PillarHeader';
+import ConfirmDialog from '@/features/shared/components/confirm-dialog';
 import { TaskProgressBar } from './components/TaskProgressBar';
 import { FocusedTaskView } from './components/FocusedTaskView';
 import { TasksList } from './components/TasksList';
@@ -59,6 +60,8 @@ export default function PillarWorkspace({
     const [selectedPillar, setSelectedPillar] = useState<string | null>(initialActivePillar || null);
     const [pillarStates, setPillarStates] = useState<Record<string, any>>({});
     const [loadingPillar, setLoadingPillar] = useState<string | null>(null);
+    const [generatingPillar, setGeneratingPillar] = useState<string | null>(null);
+    const [isPillarExecuting, setIsPillarExecuting] = useState(false);
     const [executingTask, setExecutingTask] = useState<string | null>(null);
     const [expandingTask, setExpandingTask] = useState<string | null>(null);
     const [taskDeliverables, setTaskDeliverables] = useState<Record<string, any>>({});
@@ -79,6 +82,9 @@ export default function PillarWorkspace({
     const [autoExecResults, setAutoExecResults] = useState<Record<string, Record<number, any>>>({});
     const [autoExecStatuses, setAutoExecStatuses] = useState<Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>>({});
     const [subtasksUpdateKey, setSubtasksUpdateKey] = useState(0);
+    const [generationResults, setGenerationResults] = useState<Record<string, any>>({});
+    const [generationSubtasks, setGenerationSubtasks] = useState<Record<string, any[]>>({});
+    const [generationStatuses, setGenerationStatuses] = useState<Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>>({});
     const abortControllersRef = useRef<Record<string, AbortController>>({});
     const pollingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
@@ -124,6 +130,10 @@ export default function PillarWorkspace({
     // ─── Custom Hooks ───
     const { apiCall, clearCache } = usePillarApi(selectedTaskAiModel, currentAiModel, handleModelFallback);
 
+    const [showHistoricalThoughts, setShowHistoricalThoughts] = useState(false);
+    const [showRedoConfirm, setShowRedoConfirm] = useState(false);
+    const [pillarToRedo, setPillarToRedo] = useState<string | null>(null);
+    
     const { isStorageLoaded } = useLocalStoragePersistence({
         analysisId,
         currentAiModel,
@@ -201,6 +211,7 @@ export default function PillarWorkspace({
     } = usePillarNavigation({
         analysisId, businessId, profile, apiCall,
         pillarStates, taskSubtasks, completedTasks,
+        specialists,
         selectedPillar, autoExecuting, focusedTaskId, executingTask,
         isStorageLoaded, initialActivePillar,
         setPillarStates, setSelectedPillar, setLoadingPillar, setExpandedTaskIds, setError,
@@ -212,7 +223,34 @@ export default function PillarWorkspace({
         setCompletedTasksClear: setCompletedTasks,
         setExpandedTaskIdsClear: setExpandedTaskIds,
         handleAutoExecute,
+        setGeneratingPillar,
+        setGenerationResults,
+        setGenerationSubtasks,
+        setGenerationStatuses,
+        setIsPillarExecuting,
     });
+
+    // Reset view states when pillar changes
+    useEffect(() => {
+        if (selectedPillar) {
+            setFocusedTaskId(null);
+            setActiveRightTab('tasks');
+            setShowHistoricalThoughts(false);
+        }
+    }, [selectedPillar]);
+
+    const handleRedoRequest = (pillarKey: string) => {
+        setPillarToRedo(pillarKey);
+        setShowRedoConfirm(true);
+    };
+
+    const confirmRedo = () => {
+        if (pillarToRedo) {
+            handleRedoPillar(pillarToRedo);
+        }
+        setShowRedoConfirm(false);
+        setPillarToRedo(null);
+    };
 
     // ─── Derived state ───
     const dims = score?.dimensoes || {};
@@ -250,9 +288,10 @@ export default function PillarWorkspace({
     if (selectedPillar) {
         const meta = PILLAR_META[selectedPillar];
         const state = pillarStates[selectedPillar];
-        const plan = state?.plan?.plan_data;
-        const tarefas: TaskItem[] = plan?.tarefas || plan?.acoes || [];
-        const deps = state?.dependencies || { ready: true, blockers: [], warnings: [] };
+        const fullPlan = state?.plan || specialists[selectedPillar]?.plan;
+        const planData = fullPlan?.plan_data;
+        const tarefas: TaskItem[] = planData?.tarefas || planData?.acoes || [];
+        const deps = state?.dependencies || specialists[selectedPillar]?.plan?.dependencies || { ready: true, blockers: [], warnings: [] };
         const done = completedTasks[selectedPillar] || new Set<string>();
         const isLoading = loadingPillar === selectedPillar;
 
@@ -261,7 +300,7 @@ export default function PillarWorkspace({
             if (businessId) router.push(`/analysis/${businessId}/especialistas`);
         };
 
-        if (isLoading || !plan) {
+        if (!planData || (generatingPillar === selectedPillar)) {
             return (
                 <LoadingErrorState
                     selectedPillar={selectedPillar}
@@ -269,6 +308,12 @@ export default function PillarWorkspace({
                     businessId={businessId}
                     handleSelectPillar={handleSelectPillar}
                     onBack={onBack}
+                    isGenerating={generatingPillar === selectedPillar}
+                    isExecuting={isPillarExecuting}
+                    results={generationResults[selectedPillar] || {}}
+                    subtasks={generationSubtasks[selectedPillar] || []}
+                    statuses={generationStatuses[selectedPillar] || {}}
+                    onComplete={() => setGeneratingPillar(null)}
                 />
             );
         }
@@ -276,8 +321,8 @@ export default function PillarWorkspace({
         const visibleTasks = tarefas.filter(t => t.executavel_por_ia);
         const totalTasks = visibleTasks.length;
         const completedCount = visibleTasks.filter(t => done.has(t.id)).length;
-        const planSources = plan.sources || [];
-        const planEntregaveis = plan.entregaveis || [];
+        const planSources = planData?.context_sources || planData?.sources || [];
+        const planEntregaveis = planData?.entregaveis || [];
 
         const mktCats = marketData?.categories || [];
         const mktCat = mktCats.find((c: any) => c.id === selectedPillar);
@@ -306,7 +351,7 @@ export default function PillarWorkspace({
                 {/* Left Column - Info & Docs (Slate Background for separation) */}
                 <PillarHeader
                     selectedPillar={selectedPillar}
-                    plan={plan}
+                    plan={planData}
                     specialists={specialists}
                     dims={dims}
                     allSources={allSources}
@@ -314,7 +359,7 @@ export default function PillarWorkspace({
                     businessId={businessId}
                     setLoadingDoc={setLoadingDoc}
                     setError={setError}
-                    handleRedoPillar={handleRedoPillar}
+                    handleRedoPillar={handleRedoRequest}
                     onBack={onBack}
                     docsForDropdown={docsForDropdown}
                     visibleTasks={visibleTasks}
@@ -322,12 +367,51 @@ export default function PillarWorkspace({
                     setOpenFolders={setOpenFolders}
                     loadingDoc={loadingDoc}
                     done={done}
+                    onVerPensamento={() => setShowHistoricalThoughts(true)}
                 />
 
                 {/* Right Column - Tasks Area (Pure White / Dark Surface) */}
                 <div className={`flex-1 min-w-0 flex flex-col pt-0 relative z-10 transition-colors duration-300 ${
                     isDark ? 'bg-[--color-bg]' : 'bg-white'
                 }`}>
+                    {/* Replay of thought history */}
+                    {showHistoricalThoughts && (
+                        <div className="absolute inset-0 z-[200]">
+                            <LoadingErrorState
+                                selectedPillar={selectedPillar}
+                                error={error}
+                                businessId={businessId}
+                                handleSelectPillar={handleSelectPillar}
+                                onBack={() => setShowHistoricalThoughts(false)}
+                                isGenerating={true}
+                                isExecuting={false}
+                                // Use saved results log if available, otherwise reconstruct basic version
+                                results={(() => {
+                                    if (fullPlan?.full_thought_log) return fullPlan.full_thought_log;
+                                    const ops = fullPlan?.analysis_opinions || {};
+                                    return {
+                                        0: { type: 'thought', text: 'Especialista Acionado', opiniao: 'Conexão estratégica estabelecida.', _tokens: 0 },
+                                        1: { type: 'thought', text: 'Analise de Cenário Inicial', opiniao: ops.diagnostic?.opiniao || 'Análise técnica concluída.', _tokens: 0 },
+                                        2: { type: 'thought', text: 'Pesquisa de Mercado', opiniao: ops.research?.opiniao || 'Tendências capturadas.', _tokens: 0 },
+                                        3: { type: 'thought', text: 'Plano de Ações Estruturado', opiniao: ops.plan?.opiniao || 'Tarefas validadas.', _tokens: 0 }
+                                    };
+                                })()}
+                                subtasks={fullPlan?.full_thought_subtasks || [
+                                    { id: 1, titulo: 'Especialista Acionado', status: 'done' },
+                                    { id: 2, titulo: 'Analise de Cenário Inicial', status: 'done' },
+                                    { id: 3, titulo: 'Pesquisa de Mercado', status: 'done' },
+                                    { id: 4, titulo: 'Plano de Ações Estruturado', status: 'done' }
+                                ]}
+                                statuses={(() => {
+                                    const len = fullPlan?.full_thought_subtasks?.length || 4;
+                                    const s: Record<number, any> = {};
+                                    for (let i = 0; i < len; i++) s[i] = 'done';
+                                    return s;
+                                })()} 
+                                onComplete={() => setShowHistoricalThoughts(false)}
+                            />
+                        </div>
+                    )}
                     {/* Progress Bar Header */}
                     <div className={`border-b z-[120] px-8 py-2 transition-colors duration-300 ${
                         isDark ? 'bg-[--color-bg] border-white/5' : 'bg-white border-gray-100'
@@ -359,12 +443,6 @@ export default function PillarWorkspace({
                                         {(deps.blockers || []).map((b: any) => <DepBadge key={b.pillar} dep={b} />)}
                                         {(deps.warnings || []).map((w: any) => <DepBadge key={w.pillar} dep={w} />)}
                                     </div>
-                                </div>
-                            )}
-
-                            {showRateLimitWarning && rateLimitError && (
-                                <div className="mb-8">
-                                    <TaskErrorBanner error={rateLimitError} onClose={handleCloseRateLimitWarning} modelName={selectedTaskAiModel} />
                                 </div>
                             )}
 
@@ -437,6 +515,21 @@ export default function PillarWorkspace({
                         </div>
                     </div>
                 </div>
+
+                {/* Redo Confirmation Modal */}
+                <ConfirmDialog
+                    isOpen={showRedoConfirm}
+                    title="Refazer Análise"
+                    message={`Tem certeza que deseja refazer a análise do pilar "${selectedPillar}"? Isso apagará todas as tarefas geradas e executadas deste pilar.`}
+                    confirmText="Refazer"
+                    cancelText="Cancelar"
+                    onConfirm={confirmRedo}
+                    onCancel={() => {
+                        setShowRedoConfirm(false);
+                        setPillarToRedo(null);
+                    }}
+                    isDangerous
+                />
             </div>
         );
     }
@@ -469,6 +562,8 @@ export default function PillarWorkspace({
             handleSelectPillar={handleSelectPillar}
             error={error}
             setError={setError}
+            generationResults={generationResults}
+            isReanalyzing={normalizedReanalysisState.isReanalyzing}
         />
     );
 }

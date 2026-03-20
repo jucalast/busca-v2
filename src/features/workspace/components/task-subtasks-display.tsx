@@ -313,7 +313,7 @@ export default function TaskSubtasksDisplay({
             }
         }
 
-        return cleanMarkdown(safeRender(base));
+        return cleanMarkdown(String(safeRender(base) || ''));
     };
 
     const renderOpinionParagraphs = (text: string, variant: 'full' | 'compact' = 'full') => {
@@ -456,9 +456,7 @@ export default function TaskSubtasksDisplay({
                                     {subtaskTitle}
                                 </div>
                                 {result !== undefined && (
-                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors duration-300 ${
-                                        isDark ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-200'
-                                    }`}>
+                                    <div className="flex items-center gap-2 opacity-60">
                                         <span className={`text-[10px] font-bold tabular-nums whitespace-nowrap ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
                                             1 req
                                         </span>
@@ -491,8 +489,12 @@ export default function TaskSubtasksDisplay({
                                                 </span>
                                             </div>
                                         )}
-                                        <Zap className="w-3 h-3 text-amber-500" />
-                                        <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{result._tokens || 0} tokens</span>
+                                        {result._tokens > 0 && (
+                                            <>
+                                                <Zap className="w-3 h-3 text-amber-500" />
+                                                <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{result._tokens} tokens</span>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -576,9 +578,7 @@ export default function TaskSubtasksDisplay({
                             <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors ${
                                 isDark ? 'text-zinc-600 group-hover:text-zinc-500' : 'text-slate-400 group-hover:text-slate-500'
                             }`}>Total Tokens do Processo</span>
-                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors duration-300 ${
-                                isDark ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-200'
-                            }`}>
+                            <div className="flex items-center gap-2">
                                 <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
                                 <span className={`text-[13px] font-mono font-bold ${isDark ? 'text-zinc-300' : 'text-slate-800'}`}>
                                     {items.reduce((sum, item) => sum + (item.result?._tokens || 0), 0)}

@@ -78,7 +78,7 @@
 
   .dark {
     color-scheme: dark;
-    --color-bg: #09090b;
+    --color-bg: #111111;
     --color-surface-1: rgba(255, 255, 255, 0.04);
     --color-surface-2: rgba(255, 255, 255, 0.08);
     --color-surface-3: rgba(255, 255, 255, 0.12);
@@ -99,12 +99,12 @@
 
   html,
   body {
-
+    @apply bg-[--color-bg];
     min-height: 100vh;
   }
 
   body {
-    @apply text-[--color-text-primary] antialiased min-h-screen relative;
+    @apply bg-[--color-bg] text-[--color-text-primary] antialiased min-h-screen relative;
     font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   }
 

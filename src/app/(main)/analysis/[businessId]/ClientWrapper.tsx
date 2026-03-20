@@ -45,6 +45,7 @@ export default function AnalysisClientWrapper({
     const [reanalyzeEvents, setReanalyzeEvents] = useState<any[]>([]);
     const [reanalyzeSubtasks, setReanalyzeSubtasks] = useState<any[]>([]);
     const [reanalyzeStatuses, setReanalyzeStatuses] = useState<Record<number, 'waiting' | 'running' | 'done' | 'error'>>({});
+    const [liveMarketData, setLiveMarketData] = useState<any>(null);
     const [reanalyzeResults, setReanalyzeResults] = useState<Record<number, any>>({});
     const [reanalyzeStep, setReanalyzeStep] = useState(0);
 
@@ -166,6 +167,13 @@ export default function AnalysisClientWrapper({
                                     sources: payload.sources || []
                                 }
                             }));
+
+                            if (payload.step === 'market' && payload.categories) {
+                                setLiveMarketData({
+                                    categories: payload.categories,
+                                    allSources: payload.sources || []
+                                });
+                            }
                             setReanalyzeStatuses(prev => ({ ...prev, [idx]: 'done' }));
                         } else if (payload.type === 'result') {
                             const data = payload.data;
@@ -207,7 +215,7 @@ export default function AnalysisClientWrapper({
                 <BusinessMindMap
                     score={growthData.score}
                     specialists={growthData.specialists || {}}
-                    marketData={growthData.marketData || null}
+                    marketData={liveMarketData || growthData.marketData || null}
                     pillarStates={mindMapPillarStates}
                     completedTasks={mindMapCompletedTasks}
                     userProfile={userProf}
@@ -219,7 +227,7 @@ export default function AnalysisClientWrapper({
 
         // Cleanup when unmounting or changing
         return () => setRightSidebarContent(null);
-    }, [growthData, mindMapPillarStates, mindMapCompletedTasks, userProf, setRightSidebarContent]);
+    }, [growthData, mindMapPillarStates, mindMapCompletedTasks, liveMarketData, userProf, setRightSidebarContent]);
 
     return (
         <div className="relative h-full">
@@ -229,7 +237,7 @@ export default function AnalysisClientWrapper({
                 analysisId={growthData.analysis_id || null}
                 businessId={currentBusinessId}
                 profile={profile}
-                marketData={growthData.marketData || null}
+                marketData={liveMarketData || growthData.marketData || null}
                 userProfile={userProf}
                 onRedo={handleRedoAnalysis}
                 onStateChange={handlePillarStateChange}

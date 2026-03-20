@@ -173,19 +173,61 @@ def do_assist(data: dict) -> dict:
 
 def do_list_businesses(user_id: str) -> dict:
     businesses = db.list_user_businesses(user_id)
-    # Add latest analysis info to each business
-    for biz in businesses:
-        latest = db.get_latest_analysis(biz["id"])
-        if latest:
-            biz["latest_analysis"] = {
-                "id": latest["id"],
-                "score_geral": latest["score_geral"],
-                "classificacao": latest["classificacao"],
-                "created_at": latest["created_at"]
-            }
     return {"success": True, "businesses": businesses}
 
+def do_get_business_summary(business_id: str) -> dict:
+    business = db.get_business_summary(business_id)
+    if business:
+        latest = db.get_latest_analysis_summary(business_id)
+        if latest:
+            business["latest_analysis"] = latest
+        return {"success": True, "business": business}
+    return {"success": False, "error": "Business not found"}
+
+def do_get_business_action_plan(business_id: str) -> dict:
+    # Pillar 5: Try pre-processed cache first
+    cached = db.get_analysis_cache(business_id)
+    if cached:
+        # We need to wrap it back in the expected "business" object structure
+        business = db.get_business_summary(business_id)
+        if business:
+            business["latest_analysis"] = cached["ui_data"]
+            return {"success": True, "business": business, "cached": True}
+
+    # Fallback to granular DB fetching (Pillar 4)
+    business = db.get_business_summary(business_id)
+    if business:
+        latest = db.get_latest_analysis_action_plan(business_id)
+        if latest:
+            business["latest_analysis"] = latest
+            
+            # --- POPULATE CACHE ON MISS ---
+            try:
+                # Reconstruct result format for cache compatibility
+                # This makes subsequent loads hit Pillar 5 code path
+                analysis_result = {
+                    "success": True,
+                    "analysis_id": latest.get("id"),
+                    "business_id": business_id,
+                    "score": latest.get("score_data"),
+                    "taskPlan": latest.get("task_data"),
+                    "marketData": {}, # We don't have it here but Action Plan doesn't need it
+                }
+                db.save_analysis_cache(business_id, latest.get("id"), analysis_result)
+            except: pass
+
+        return {"success": True, "business": business}
+    return {"success": False, "error": "Business not found"}
+
 def do_get_business(business_id: str) -> dict:
+    # Pillar 5: Try pre-processed cache first
+    cached = db.get_analysis_cache(business_id)
+    if cached:
+        business = db.get_business_summary(business_id)
+        if business:
+            business["latest_analysis"] = cached["ui_data"]
+            return {"success": True, "business": business, "cached": True}
+
     business = db.get_business(business_id)
     if business:
         latest = db.get_latest_analysis(business_id)
@@ -616,7 +658,22 @@ def do_redo_pillar(data: dict) -> dict:
     if not analysis_id or not pillar_key:
         return {"success": False, "error": "analysis_id and pillar_key are required"}
 
+    # Invalidate analysis cache to ensure fresh load
+    analysis = db.get_analysis(analysis_id)
+    if analysis and "business_id" in analysis:
+        db.delete_analysis_cache(analysis["business_id"])
+
+    # First: Delete previous pillar data (tasks, diagnostic, etc.) to get a clean slate
     db.delete_pillar_data(analysis_id, pillar_key)
+
+    # Second: Re-run the scoring for this pillar to get a fresh diagnostic
+    # This allows the LLM to reconsider the state of the pillar
+    try:
+        from app.services.analysis.analyzer_business_scorer import reanalyze_pillar
+        reanalyze_pillar(analysis_id, pillar_key)
+    except Exception as e:
+        print(f"  ⚠️ Re-scoring failed in redo-pillar: {e}", file=sys.stderr)
+    
     return {"success": True}
 
 def do_analyze(data: dict):
@@ -791,8 +848,19 @@ def do_analyze(data: dict):
                             perfil_node["whatsapp"] = info.get("url")
                             updated_dna = True
                 
+                # Enrich Segment if missing
+                if is_empty(perfil_node.get("segmento")):
+                    disc_segment = discovery_data.get("segmento_identificado")
+                    if disc_segment and not is_empty(disc_segment):
+                        perfil_node["segmento"] = disc_segment
+                        profile["segmento"] = disc_segment
+                        updated_dna = True
+                        log_success(f"Segmento identificado via Discovery: {disc_segment}")
+
                 if updated_dna:
                     log_success("DNA do negócio enriquecido com dados do Discovery")
+                    if business_id:
+                        db.update_business_profile(business_id, profile)
 
                 total_fontes = discovery_data.get('total_fontes', 0)
                 yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'success', 'detail': f'Encontradas {total_fontes} fontes de discovery'})}\n\n"
@@ -862,7 +930,8 @@ def do_analyze(data: dict):
             
             opiniao_text_val = str(opiniao_text)
             market_sources_val = market_data.get('allSources', [])[:5]
-            yield f"data: {json.dumps({'type': 'step_result', 'step': 'market', 'title': 'Inteligência de Mercado', 'opiniao': opiniao_text_val, 'sources': market_sources_val})}\n\n"
+            market_categories = market_data.get("categories", [])
+            yield f"data: {json.dumps({'type': 'step_result', 'step': 'market', 'title': 'Inteligência de Mercado', 'opiniao': opiniao_text_val, 'sources': market_sources_val, 'categories': market_categories})}\n\n"
 
             # Step 3: Synthesis & Profile Enrichment
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Sintetizando inteligência coletada e gerando Briefing Estratégico...'})}\n\n"
@@ -1003,6 +1072,15 @@ def do_analyze(data: dict):
                 "total_tokens": total_tokens
             }
             yield f"data: {json.dumps({'type': 'thought', 'text': 'Análise concluída com sucesso!'})}\n\n"
+            
+            # --- PILLAR 5 CACHING ---
+            # Save pre-processed result for instant load next time
+            try:
+                db.save_analysis_cache(business_id, analysis_id, result)
+                log_success(f"Cache de Análise salvo para o negócio {business_id} (Pillar 5)")
+            except Exception as ex:
+                log_warning(f"Falha ao salvar cache de análise (Pillar 5): {ex}")
+
             yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
         except Exception as e:
             import traceback
@@ -1097,6 +1175,335 @@ def do_specialist_tasks(data: dict) -> dict:
         brief=profile,
         model_provider="auto"
     )
+
+def do_specialist_tasks_stream(data: dict):
+    """Generate specialist tasks for a pillar with streaming updates."""
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    profile = data.get("profile", {})
+    
+    pillar_labels = {
+        "publico_alvo": "Público-Alvo",
+        "branding": "Branding",
+        "identidade_visual": "Identidade Visual",
+        "canais_venda": "Canais de Venda",
+        "trafego_organico": "Tráfego Orgânico",
+        "trafego_pago": "Tráfego Pago",
+        "processo_vendas": "Processo de Vendas",
+    }
+    pillar_label = pillar_labels.get(pillar_key, pillar_key)
+
+    def _llm_opinions_batch(
+        pillar_label: str, negocio: str, score_atual, justificativa: str,
+        source_urls: list, tarefas_titulos: list, tarefas_count: int, profile: dict
+    ) -> dict:
+        """Gera 3 opiniões profundas de 3 linhas conectando processo e próximos passos."""
+        try:
+            from app.core.llm_router import call_llm
+            import json
+            
+            biz_desc = profile.get("descricao_negocio") or profile.get("business_description") or ""
+            src_text = ", ".join(source_urls[:6]) or "dados setoriais gerais"
+            tasks_text = "; ".join(tarefas_titulos[:5])
+            
+            prompt = (
+                f"Você é o Chief Growth Officer (CGO) do Gomo. Sua missão é dar um feedback BRUTALMENTE REAL para o negócio '{negocio}' sobre o pilar '{pillar_label}'.\n\n"
+                f"DADOS OPERACIONAIS:\n"
+                f"- Score: {score_atual}/100. Justificativa: {justificativa[:400]}\n"
+                f"- Fontes detectadas: {src_text}\n"
+                f"- Ações propostas: {tasks_text}\n\n"
+                f"TASK: Para cada uma das 3 áreas abaixo, gere exatamente 3 linhas de texto (um pequeno parágrafo denso).\n"
+                f"A estrutura deve ser: [O que o dado revela]+[Qual o perigo oculto]+[O que faremos agora com as tarefas geradas].\n\n"
+                f"ÁREAS:\n"
+                f"1. 'research': Sobre a inteligência de mercado e as fontes encontradas.\n"
+                f"2. 'diagnostic': Sobre o score de {score_atual}/100 e a saúde estratégica real.\n"
+                f"3. 'plan': Sobre a execução imediata e o impacto esperado no faturamento/crescimento.\n\n"
+                f"REGRAS DE OURO:\n"
+                f"- Sem 'espero que isso ajude' ou introduções.\n"
+                f"- Linguagem de negócios, focada em ROI e eficiência.\n"
+                f"- Retorne APENAS um JSON:\n"
+                f'{{"research": "...", "diagnostic": "...", "plan": "..."}}\n\n'
+                f"Responda em Português Brasileiro."
+            )
+            
+            raw = call_llm("auto", prompt=prompt, temperature=0.7, json_mode=True, prefer_small=False) # Use false for more tokens/detail
+            if not raw: return {}
+            
+            if isinstance(raw, str):
+                clean = raw.strip()
+                if clean.startswith("```"):
+                    clean = clean.split("```")[1]
+                    if clean.startswith("json"): clean = clean[4:]
+                return json.loads(clean)
+            return raw
+        except Exception as e:
+            import sys
+            print(f"  ⚠️ Error in _llm_opinions_batch: {e}", file=sys.stderr)
+            return {}
+
+    async def generator():
+        import sys
+        import json
+        try:
+            from app.services.analysis.generator_task_context_aware import generate_context_aware_tasks
+            from app.core import database as db
+
+            # ── Carrega dados do banco ANTES de qualquer yield ──
+            score_data = {}
+            market_data_db = {}
+            discovery_data_db = {}
+            try:
+                analysis_record = db.get_analysis(analysis_id)
+                if analysis_record:
+                    score_data = analysis_record.get("score_data") or {}
+                    market_data_db = analysis_record.get("market_data") or {}
+                    discovery_data_db = analysis_record.get("discovery_data") or {}
+
+                if not score_data.get("dimensoes", {}).get(pillar_key):
+                    pillar_diag = db.get_pillar_diagnostic(analysis_id, pillar_key)
+                    if pillar_diag and pillar_diag.get("diagnostic_data"):
+                        diag_data = pillar_diag["diagnostic_data"]
+                        if not score_data.get("dimensoes"):
+                            score_data = {"dimensoes": {}}
+                        score_data["dimensoes"][pillar_key] = diag_data
+            except Exception as db_err:
+                print(f"  ⚠️ Could not load analysis record: {db_err}", file=sys.stderr)
+
+            pillar_diag_data = score_data.get("dimensoes", {}).get(pillar_key, {})
+            score_atual = pillar_diag_data.get("score", pillar_diag_data.get("pontuacao", "?"))
+            justificativa = pillar_diag_data.get("justificativa", "")
+            negocio = profile.get("nome_negocio") or profile.get("business_name") or "o negócio"
+
+            # Accumulator for the full loader state to be saved in DB
+            loader_results = {}
+            loader_subtasks = []
+            current_slot = 0
+
+            # Helper to update loader_results mirroring frontend logic
+            def update_loader(slot, data_type, **kwargs):
+                nonlocal loader_results, loader_subtasks
+                if slot not in loader_results:
+                    loader_results[slot] = {"intelligence_tools_used": [], "opiniao": "", "_tokens": 0}
+                    # Auto-add to subtasks if name provided
+                    if "text" in kwargs:
+                        loader_subtasks.append({"titulo": kwargs["text"], "status": "done"})
+                
+                res = loader_results[slot]
+                if data_type == "thought":
+                    res["text"] = kwargs.get("text", res.get("text", ""))
+                    res["opiniao"] = kwargs.get("opiniao", res.get("opiniao", ""))
+                    res["_tokens"] += kwargs.get("_tokens", 0)
+                    # Sync subtask title/status
+                    for st in loader_subtasks:
+                        if st["titulo"] == kwargs.get("text"):
+                            st["status"] = "done"
+                            break
+                            
+                elif data_type == "tool":
+                    tools = res["intelligence_tools_used"]
+                    tool_data = kwargs.get("tool_data", {})
+                    t_name = tool_data.get("tool", "tool")
+                    t_status = tool_data.get("status", "running")
+                    
+                    # Special handling for subtasks of tools
+                    t_display_name = "Web Search" if t_name == "web_search" else t_name
+                    target_title_running = f"{t_display_name} em andamento..."
+                    target_title_done = f"{t_display_name} concluída"
+                    
+                    found_st = False
+                    for st in loader_subtasks:
+                        if st["titulo"] == target_title_running or st["titulo"] == target_title_done:
+                            st["status"] = "done" if t_status == "success" else "running"
+                            st["titulo"] = target_title_done if t_status == "success" else target_title_running
+                            found_st = True; break
+                    
+                    if not found_st and t_name:
+                        loader_subtasks.append({
+                            "titulo": target_title_done if t_status == "success" else target_title_running,
+                            "status": "done" if t_status == "success" else "running"
+                        })
+                    
+                    idx = -1
+                    for i, t in enumerate(tools):
+                        if t.get("tool") == t_name:
+                            idx = i; break
+                    if idx >= 0: tools[idx] = tool_data
+                    else: tools.append(tool_data)
+                elif data_type == "step_result":
+                    res["opiniao"] = kwargs.get("opiniao", res["opiniao"])
+                    res["sources"] = kwargs.get("sources", [])
+                    res["_tokens"] += kwargs.get("_tokens", 0)
+
+            # ── Step 1: LLM-generated Initial Thoughts Bundle (Real AI from the start) ──
+            from app.core.llm_router import call_llm
+            initial_bundle_prompt = f"""Aja como um Estrategista de Growth sênior. O negócio '{negocio}' está com score {score_atual}/100 no pilar '{pillar_label}'.
+Diagnóstico Base: {justificativa[:400]}
+
+Gere 3 pensamentos técnicos curtos (máx 150 caracteres cada) para as fases iniciais:
+1. activation: Sobre sua prontidão para auditar esse pilar específico.
+2. audit: Sua primeira impressão real sobre o score e o gargalo.
+3. research: Sua estratégia de pesquisa (o que você vai buscar na web para este caso).
+
+Responda APENAS um JSON: {{"activation": "...", "audit": "...", "research": "..."}}"""
+            
+            bundle_res = call_llm("auto", prompt=initial_bundle_prompt, temperature=0.7, prefer_small=True, json_mode=True)
+            bundle = {}
+            bundle_tokens = 0
+            try:
+                if isinstance(bundle_res, dict):
+                    bundle = bundle_res.get("data", {}) if "data" in bundle_res else bundle_res
+                    bundle_tokens = bundle_res.get("usage", {}).get("total_tokens", 0)
+                else:
+                    bundle = json.loads(bundle_res)
+            except:
+                bundle = {
+                    "activation": f"Estrategista pronto. Analisando o gargalo de {score_atual}/100 em {pillar_label}.",
+                    "audit": f"Iniciando auditoria técnica para elevar o pilar de {pillar_label}.",
+                    "research": f"Vou buscar tendências de 2025 para identificar gaps competitivos."
+                }
+
+            # Phase 1: Ativação
+            op1 = bundle.get("activation", "Conexão estratégica estabelecida.")
+            txt1 = f"Acionando estrategista: {pillar_label}"
+            update_loader(0, "thought", text=txt1, opiniao=op1, _tokens=bundle_tokens // 3)
+            yield f"data: {json.dumps({'type': 'thought', 'text': txt1, 'opiniao': op1, '_tokens': bundle_tokens // 3})}\n\n"
+
+            # Phase 2: Auditoria
+            current_slot += 1
+            op2 = bundle.get("audit", "Iniciando análise técnica.")
+            txt2 = f"Auditoria técnica em {pillar_label}"
+            update_loader(current_slot, "thought", text=txt2, opiniao=op2, _tokens=bundle_tokens // 3)
+            yield f"data: {json.dumps({'type': 'thought', 'text': txt2, 'opiniao': op2, '_tokens': bundle_tokens // 3})}\n\n"
+
+            # Phase 3: Research
+            current_slot += 1
+            op3 = bundle.get("research", "Iniciando varredura por tendências.")
+            txt3 = f"Varredura de mercado: {pillar_label} (2025)"
+            update_loader(current_slot, "thought", text=txt3, opiniao=op3, _tokens=bundle_tokens // 3)
+            yield f"data: {json.dumps({'type': 'thought', 'text': txt3, 'opiniao': op3, '_tokens': bundle_tokens // 3})}\n\n"
+            
+            tool_res = {'tool': 'web_search', 'status': 'running', 'detail': f'Buscando dados de mercado para {pillar_label}'}
+            update_loader(current_slot, "tool", tool_data=tool_res)
+            yield f"data: {json.dumps({'type': 'tool', **tool_res})}\n\n"
+
+            # ── Geração Principal ──
+            force_refresh = data.get("force_refresh", False)
+            gen_result = generate_context_aware_tasks(
+                analysis_id=analysis_id, pillar_key=pillar_key, profile=profile,
+                score_data=score_data, market_data=market_data_db,
+                discovery_data=discovery_data_db, model_provider="auto",
+                force_refresh=force_refresh
+            )
+
+            if gen_result.get("success") and gen_result.get("plan"):
+                plan = gen_result["plan"]
+                sources = plan.get("context_sources", [])
+                tarefas = plan.get("tarefas", [])
+                source_urls = [s if isinstance(s, str) else (s.get('url') or s.get('link') or '') for s in sources]
+                source_urls = [u for u in source_urls if u]
+                tarefas_titulos = [t.get("titulo", "") for t in tarefas if isinstance(t, dict)]
+                
+                # Tokens da geração de tarefas (se disponíveis)
+                gen_tokens = gen_result.get("usage", {}).get("total_tokens", 0)
+
+                # ── Geração Final Deep ──
+                t_res_src = {'tool': 'web_search', 'status': 'success', 'detail': f'{len(source_urls)} fontes encontradas'}
+                update_loader(current_slot, "tool", tool_data=t_res_src)
+                yield f"data: {json.dumps({'type': 'tool', **t_res_src})}\n\n"
+                
+                import asyncio
+                await asyncio.sleep(1.5) # Pausa estratégica para leitura das fontes
+                
+                current_slot += 1
+                txt4 = "Consolidando inteligência estratégica"
+                op4 = 'Cruzando os dados coletados na web com seu diagnóstico interno para gerar o plano final.'
+                update_loader(current_slot, "thought", text=txt4, opiniao=op4, _tokens=gen_tokens)
+                yield f"data: {json.dumps({'type': 'thought', 'text': txt4, 'opiniao': op4, '_tokens': gen_tokens})}\n\n"
+                
+                t_res_triggers = {'tool': 'sales_triggers', 'status': 'running', 'detail': f'Finalizando análise estratégica de {pillar_label}'}
+                update_loader(current_slot, "tool", tool_data=t_res_triggers)
+                yield f"data: {json.dumps({'type': 'tool', **t_res_triggers})}\n\n"
+                
+                # Assume ~1000 tokens para o batch de opiniões se não rastreado
+                batch_tokens = 1200 
+
+                t_res_final = {'tool': 'sales_triggers', 'status': 'success', 'detail': 'Inteligência estratégica concluída'}
+                update_loader(current_slot, "tool", tool_data=t_res_final)
+                yield f"data: {json.dumps({'type': 'tool', **t_res_final})}\n\n"
+
+                opinions = _llm_opinions_batch(
+                    pillar_label=pillar_label, negocio=negocio, score_atual=score_atual,
+                    justificativa=justificativa, source_urls=source_urls,
+                    tarefas_titulos=tarefas_titulos, tarefas_count=len(tarefas), profile=profile
+                )
+                
+                # ═══ Resultados por Step ═══
+                # Research
+                op_research = opinions.get('research', '')
+                update_loader(current_slot, "step_result", opiniao=op_research, sources=source_urls, _tokens=batch_tokens // 3)
+                yield f"data: {json.dumps({'type': 'step_result', 'step': 'research', 'title': f'Inteligência de Mercado — {pillar_label}', 'opiniao': op_research, 'sources': source_urls, '_tokens': batch_tokens // 3})}\n\n"
+                
+                await asyncio.sleep(1.5) # Pausa para leitura da inteligência de mercado
+                
+                # Diagnostic
+                current_slot += 1
+                txt5 = f"Síntese Diagnóstica de {pillar_label}"
+                op_diag = opinions.get('diagnostic', '')
+                update_loader(current_slot, "thought", text=txt5, opiniao=op_diag, _tokens=batch_tokens // 3)
+                yield f"data: {json.dumps({'type': 'thought', 'text': txt5, 'opiniao': op_diag, '_tokens': batch_tokens // 3})}\n\n"
+                
+                update_loader(current_slot, "step_result", step="diagnostic", opiniao=op_diag, _tokens=0)
+                yield f"data: {json.dumps({'type': 'step_result', 'step': 'diagnostic', 'title': f'Diagnóstico Estratégico — {pillar_label}', 'opiniao': op_diag, 'sources': [], '_tokens': 0})}\n\n"
+                
+                await asyncio.sleep(1.5) # Pausa para leitura do diagnóstico
+                
+                # Plan
+                current_slot += 1
+                txt6 = "Geração de Ações Operacionais"
+                op_plan = opinions.get('plan', '')
+                update_loader(current_slot, "thought", text=txt6, opiniao=op_plan, _tokens=batch_tokens // 3)
+                yield f"data: {json.dumps({'type': 'thought', 'text': txt6, 'opiniao': op_plan, '_tokens': batch_tokens // 3})}\n\n"
+                
+                update_loader(current_slot, "step_result", step="plan", opiniao=op_plan, _tokens=0)
+                yield f"data: {json.dumps({'type': 'step_result', 'step': 'plan', 'title': f'Plano de Ação — {pillar_label}', 'opiniao': op_plan, 'sources': [], '_tokens': 0})}\n\n"
+                
+                await asyncio.sleep(2.0) # Pausa final gloriosa antes do botão
+
+                # ── FINAL ──
+                # Envia confirmação final de salvamento para o loader
+                yield f"data: {json.dumps({'type': 'thought', 'text': 'Plano Estratégico gerado com sucesso!', '_tokens': 0})}\n\n"
+                await asyncio.sleep(2)  # Pausa para o usuário ver a conclusão
+                
+                # Persist result to database so it stays saved
+                try:
+                    from app.core import database as db
+                    db.save_pillar_diagnostic(
+                        analysis_id, pillar_key,
+                        {
+                            "success": True,
+                            "plan_data": gen_result.get("plan"),
+                            "full_thought_log": loader_results,
+                            "full_thought_subtasks": loader_subtasks,
+                            "analysis_opinions": opinions
+                        }
+                    )
+                except Exception as db_save_err:
+                    print(f"  ⚠️ Error saving pillar redo diagnostic: {db_save_err}")
+
+                # [IMPORTANT] Ensure these are also in the gen_result sent to the frontend
+                # so the frontend can hydrate its immediate state without a reload
+                gen_result["full_thought_log"] = loader_results
+                gen_result["full_thought_subtasks"] = loader_subtasks
+                gen_result["analysis_opinions"] = opinions
+
+                yield f"data: {json.dumps({'type': 'result', 'data': gen_result})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'message': gen_result.get('error', 'Unknown error')})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return generator()
 
 def do_register(data: dict) -> dict:
     """Register a new user."""

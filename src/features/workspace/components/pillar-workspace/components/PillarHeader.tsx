@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ArrowLeft, RefreshCw, BadgeCheck, Link2, MapPin, Calendar, Share2, MoreHorizontal, FileText, Globe } from 'lucide-react';
+import { ArrowLeft, RefreshCw, BadgeCheck, Link2, MapPin, Calendar, Share2, MoreHorizontal, FileText, Globe, Brain } from 'lucide-react';
 import { PILLAR_META } from '../constants';
 import { safeRender } from '../utils';
 import { SourceBadgeList } from '@/features/shared/components/SourceBadgeList';
@@ -28,14 +28,17 @@ interface PillarHeaderProps {
     setOpenFolders: React.Dispatch<React.SetStateAction<Set<string>>>;
     loadingDoc: string | null;
     done: Set<string>;
+    onVerPensamento: () => void;
 }
 
-function getHostname(src: string) {
+function getHostname(src: any) {
     try {
-        const url = new URL(src);
+        const urlStr = typeof src === 'string' ? src : (src?.url || src?.link || '');
+        if (!urlStr) return '';
+        const url = new URL(urlStr);
         return url.hostname.replace(/^www\./i, '');
     } catch (e) {
-        return src;
+        return typeof src === 'string' ? src : (src?.url || src?.link || '');
     }
 }
 
@@ -104,6 +107,7 @@ export function PillarHeader({
     setOpenFolders,
     loadingDoc,
     done,
+    onVerPensamento,
 }: PillarHeaderProps) {
     const { isDark } = useSidebar();
     const [showAllSources, setShowAllSources] = React.useState(false);
@@ -153,6 +157,13 @@ export function PillarHeader({
                             <ArrowLeft size={18} />
                         </button>
                         <div className="flex gap-2">
+                            <button 
+                                onClick={onVerPensamento}
+                                title="Ver pensamento da IA"
+                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all"
+                            >
+                                <Brain size={16} />
+                            </button>
                             <button className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all">
                                 <Share2 size={16} />
                             </button>
@@ -209,12 +220,10 @@ export function PillarHeader({
                         <div className="flex flex-wrap items-center gap-4">
                             <button 
                                 onClick={() => setShowAllSources(!showAllSources)}
-                                className={`flex items-center gap-1 transition-colors ${
-                                    showAllSources ? 'text-blue-500 hover:text-blue-400' : 'text-zinc-400 hover:text-zinc-300'
-                                }`}
+                                className="flex items-center gap-1 transition-colors text-blue-500 hover:text-blue-400 active:scale-95"
                             >
-                                <Link2 size={14} />
-                                <span className={`text-[13px] font-normal ${showAllSources ? 'underline' : ''}`}>
+                                <Link2 size={13} />
+                                <span className={`text-[13px] font-bold ${showAllSources ? 'underline' : ''}`}>
                                     {showAllSources ? 'Recolher' : `Ver Fontes (${allSources.length})`}
                                 </span>
                             </button>

@@ -23,6 +23,9 @@ class TrendAnalyzer:
         self._pytrends = None
         self._TrendReq = None
         self._available = None
+        self._cache = {}
+        import threading
+        self._lock = threading.Lock()
     
     def _ensure_loaded(self):
         """Lazy import do pytrends."""
@@ -46,8 +49,8 @@ class TrendAnalyzer:
                 hl='pt-BR',
                 tz=180,  # UTC-3 Brasil
                 timeout=(10, 25),
-                retries=2,
-                backoff_factor=0.5,
+                retries=5,
+                backoff_factor=2.0,
             )
         return self._pytrends
     
@@ -73,6 +76,10 @@ class TrendAnalyzer:
         Returns:
             Dict com trend_data, growth_rate, peak_period, current_interest
         """
+        cache_key = f"demand_{keyword}_{geo}_{timeframe}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         client = self._get_client()
         
         result = {
@@ -90,16 +97,22 @@ class TrendAnalyzer:
             return result
         
         try:
-            # Build payload
-            client.build_payload(
-                [keyword],
-                cat=0,
-                timeframe=timeframe,
-                geo=geo,
-            )
-            
-            # Interest over time
-            iot = client.interest_over_time()
+            # ── PROTEÇÃO GLOBAL CONTRA BLOQUEIO (429) ──────────────
+            # Usando lock para garantir que NUNCA dois workers chamem o Trends ao mesmo tempo
+            with self._lock:
+                # Build payload
+                client.build_payload(
+                    [keyword],
+                    cat=0,
+                    timeframe=timeframe,
+                    geo=geo,
+                )
+                
+                # Pequena pausa tática após o payload (limite de 1 rps)
+                time.sleep(1.0)
+                
+                # Interest over time
+                iot = client.interest_over_time()
             
             if iot.empty:
                 result["error"] = "Sem dados de tendências para este termo"
@@ -153,9 +166,25 @@ class TrendAnalyzer:
             
             print(f"  📈 Trend '{keyword}': interest={current}, growth={growth_rate:+.1f}%, direction={trend_direction}", file=sys.stderr)
             
+            # Save to cache
+            self._cache[cache_key] = result
+            
         except Exception as e:
-            result["error"] = str(e)[:300]
-            print(f"  ⚠️ TrendAnalyzer error: {e}", file=sys.stderr)
+            err_msg = str(e)
+            is_429 = "too many 429 error responses" in err_msg.lower() or "page: /sorry/index" in err_msg.lower()
+            
+            if is_429:
+                # Tenta novamente UMA VEZ com pausa maior se for 429
+                try:
+                    print(f"  ⏳ TrendAnalyzer: Recebeu 429. Aguardando 5s para re-tentativa...", file=sys.stderr)
+                    time.sleep(5.0)
+                    return self.analyze_demand(keyword, geo, timeframe)
+                except:
+                    result["error"] = "Google Trends: Bloqueio persistente (429)."
+                    print(f"  ⚠️ TrendAnalyzer: Bloqueio persistente (429) para '{keyword}'", file=sys.stderr)
+            else:
+                result["error"] = err_msg[:300]
+                print(f"  ⚠️ TrendAnalyzer error: {e}", file=sys.stderr)
         
         return result
     

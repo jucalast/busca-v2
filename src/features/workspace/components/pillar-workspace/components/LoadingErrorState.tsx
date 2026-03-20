@@ -2,10 +2,11 @@
 
 import React from 'react';
 import {
-    AlertCircle, Loader2, RotateCcw
+    AlertCircle, RotateCcw
 } from 'lucide-react';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { PILLAR_META } from '../constants';
+import { PillarSkeletonLoading } from './PillarSkeletonLoading';
 import AnalysisExecutionLoader from '@/features/shared/components/analysis-execution-loader';
 
 interface LoadingErrorStateProps {
@@ -14,6 +15,12 @@ interface LoadingErrorStateProps {
     businessId: string | null;
     handleSelectPillar: (key: string) => void;
     onBack: () => void;
+    isGenerating?: boolean;
+    isExecuting?: boolean;
+    results?: Record<number, any>;
+    subtasks?: any[];
+    statuses?: Record<number, 'waiting' | 'running' | 'done' | 'error'>;
+    onComplete?: () => void;
 }
 
 export function LoadingErrorState({
@@ -22,15 +29,34 @@ export function LoadingErrorState({
     businessId,
     handleSelectPillar,
     onBack,
+    isGenerating = false,
+    isExecuting = true,
+    results = {},
+    subtasks,
+    statuses,
+    onComplete,
 }: LoadingErrorStateProps) {
     const { isDark } = useSidebar();
     const meta = PILLAR_META[selectedPillar];
 
+    // Use live subtasks if provided and non-empty, otherwise fall back to mock
+    const hasliveSubtasks = subtasks && subtasks.length > 0;
+
+    const mockLoadingSubtasks = hasliveSubtasks ? subtasks! : [
+        { id: 1, titulo: `Ativando especialista em ${meta?.label || 'Negócio'}...`, status: 'done' as const },
+        { id: 2, titulo: 'Cruzando dados de mercado com perfil do negócio...', status: 'running' as const },
+        { id: 3, titulo: 'Gerando plano de tarefas personalizadas...', status: 'waiting' as const }
+    ];
+
+    const mockStatuses: Record<number, any> = hasliveSubtasks && statuses && Object.keys(statuses).length > 0
+        ? statuses
+        : { 0: 'done', 1: 'running', 2: 'waiting' };
+
     return (
-        <div className="h-full flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg)' }}>
-            <div className="text-center max-w-md px-6">
+        <div className="h-full w-full" style={{ backgroundColor: 'var(--color-bg)' }}>
+            <div className="text-center w-full h-full relative">
                 {error ? (
-                    <>
+                    <div className="max-w-md mx-auto pt-20">
                         <div
                             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
                             style={{
@@ -63,20 +89,21 @@ export function LoadingErrorState({
                                 Voltar para o Hub
                             </button>
                         </div>
-                    </>
-                ) : (
-                    <div className={`absolute inset-0 backdrop-blur-2xl rounded-3xl overflow-hidden transition-colors duration-300 ${
-                        isDark ? 'bg-zinc-950/80' : 'bg-white/80'
-                    }`}>
+                    </div>
+                ) : isGenerating ? (
+                    <div className="absolute inset-0">
                         <AnalysisExecutionLoader
-                            subtasks={[]}
-                            statuses={{}}
-                            results={{}}
-                            businessName=""
-                            isExecuting={true}
-                            currentStep={0}
+                            subtasks={mockLoadingSubtasks}
+                            statuses={mockStatuses}
+                            results={results}
+                            businessName={`Especialista: ${meta?.label || 'Negócio'}`}
+                            isExecuting={isExecuting ?? true}
+                            currentStep={hasliveSubtasks ? subtasks!.length : 1}
+                            onComplete={onComplete}
                         />
                     </div>
+                ) : (
+                    <PillarSkeletonLoading />
                 )}
             </div>
         </div>

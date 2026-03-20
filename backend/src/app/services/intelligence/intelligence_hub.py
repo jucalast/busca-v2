@@ -148,6 +148,10 @@ class IntelligenceHub:
                 # Geolocalização para trends
                 geo = self._location_to_geo(localizacao)
                 
+                # Add jitter to avoid 429
+                import random
+                time.sleep(random.uniform(0.2, 1.0))
+                
                 # Análise de demanda principal
                 demand = self.trends.analyze_demand(segmento, geo=geo)
                 

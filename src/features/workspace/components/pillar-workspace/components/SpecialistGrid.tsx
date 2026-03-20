@@ -35,6 +35,8 @@ interface SpecialistGridProps {
     handleSelectPillar: (key: string) => void;
     error: string;
     setError: (error: string) => void;
+    generationResults?: Record<string, any>;
+    isReanalyzing?: boolean;
 }
 
 export function SpecialistGrid({
@@ -60,7 +62,9 @@ export function SpecialistGrid({
     onRedo,
     handleSelectPillar,
     error,
-    setError
+    setError,
+    generationResults = {},
+    isReanalyzing = false,
 }: SpecialistGridProps) {
     const { isDark } = useSidebar();
     const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>({ x: 80, y: 150, scale: 0.85 });
@@ -156,11 +160,27 @@ export function SpecialistGrid({
         const mktCats = marketData?.categories || [];
         const mktCat = mktCats.find((c: any) => c.id === key);
         const mktSources = mktCat?.fontes || [];
-        const planSources = pillarStates[key]?.sources || [];
-        const pillarSources = [...new Set([...mktSources, ...planSources])];
+        const planSources = 
+            pillarStates[key]?.sources || 
+            pillarStates[key]?.plan?.plan_data?.sources ||
+            pillarStates[key]?.plan?.plan_data?.context_sources ||
+            pillarStates[key]?.plan_data?.sources ||
+            pillarStates[key]?.plan_data?.context_sources ||
+            specialists[key]?.plan?.plan_data?.sources || 
+            specialists[key]?.plan?.plan_data?.context_sources || 
+            specialists[key]?.plan?.plan_data?.fontes_consultadas || [];
+        
+        // Combine with live sources from mid-flight research
+        const liveSources = Object.values(generationResults[key] || {}).flatMap((r: any) => r?.sources || []);
+        
+        const pillarSources = [...new Set([
+            ...mktSources.map((s: any) => typeof s === 'string' ? s : (s.url || s.link)),
+            ...planSources.map((s: any) => typeof s === 'string' ? s : (s.url || s.link)),
+            ...liveSources.map((s: any) => typeof s === 'string' ? s : (s.url || s.link))
+        ])].filter(Boolean);
 
-        const isExecuted = !!(pillarStates[key] || (completedTasks[key]?.size ?? 0) > 0);
-        const hoverColor = isExecuted ? meta.color : '#A1A1AA';
+        const isExecuted = !!(pillarStates[key] || specialists[key]?.plan || (completedTasks[key]?.size ?? 0) > 0);
+        const hoverColor = (isExecuted || isLoading || isReanalyzing) ? meta.color : '#A1A1AA';
 
         return (
             <div
@@ -205,7 +225,7 @@ export function SpecialistGrid({
                                     {typeof dim.score === 'number' ? Math.round(dim.score) : 0}
                                 </span>
                             </div>
-                            {isExecuted && pillarSources.length > 0 && <StackedSources sources={pillarSources} max={3} />}
+                            {(isExecuted || isLoading || isReanalyzing) && pillarSources.length > 0 && <StackedSources sources={pillarSources} max={3} />}
                         </div>
                     </div>
 

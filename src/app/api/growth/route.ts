@@ -118,17 +118,39 @@ export async function POST(request: Request) {
             return NextResponse.json(result);
         }
 
+        // ━━━ Action: Get Business Summary ━━━
+        if (action === 'get-business-summary') {
+            if (!business_id) {
+                return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+            }
+            const result = await runOrchestrator('get-business-summary', {
+                aiModel,
+                business_id,
+            }, 30000, jwtToken);
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Get Business Action Plan ━━━
+        if (action === 'get-business-action-plan') {
+            if (!business_id) {
+                return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+            }
+            const result = await runOrchestrator('get-business-action-plan', {
+                aiModel,
+                business_id,
+            }, 30000, jwtToken);
+            return NextResponse.json(result);
+        }
+
         // ━━━ Action: Get Business ━━━
         if (action === 'get-business') {
             if (!business_id) {
                 return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
             }
-
             const result = await runOrchestrator('get-business', {
                 aiModel,
                 business_id,
             }, 30000, jwtToken);
-
             return NextResponse.json(result);
         }
 
@@ -303,15 +325,22 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'analysis_id and pillar_key are required' }, { status: 400 });
             }
 
-            const result = await runOrchestrator('specialist-tasks', {
+            const stream = runOrchestratorStreaming({
                 aiModel,
+                action: 'specialist-tasks',
                 analysis_id,
                 pillar_key,
                 business_id: body.business_id || null,
                 profile: profile || {},
-            }, 120000);
+            }, 120000, jwtToken);
 
-            return NextResponse.json(result);
+            return new Response(stream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
         }
 
         // ━━━ Action: Specialist Execute (AI agent executes a task) ━━━
