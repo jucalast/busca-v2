@@ -19,6 +19,9 @@ interface UsePillarNavigationProps {
     executingTask: string | null;
     isStorageLoaded: boolean;
     initialActivePillar?: string | null;
+    autoExecResults: Record<string, Record<number, any>>;
+    autoExecSubtasks: Record<string, any[]>;
+    autoExecStatuses: Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>;
     setPillarStates: React.Dispatch<React.SetStateAction<Record<string, any>>>;
     setSelectedPillar: React.Dispatch<React.SetStateAction<string | null>>;
     setLoadingPillar: React.Dispatch<React.SetStateAction<string | null>>;
@@ -62,6 +65,9 @@ export function usePillarNavigation({
     executingTask,
     isStorageLoaded,
     initialActivePillar,
+    autoExecResults,
+    autoExecSubtasks,
+    autoExecStatuses,
     setPillarStates,
     setSelectedPillar,
     setLoadingPillar,
@@ -672,28 +678,77 @@ export function usePillarNavigation({
         const tasks = state.plan.plan_data.tarefas || [];
 
         const checkRunningTasks = async () => {
+            console.log(`🔍 [Recovery] Checking tasks for pillar ${selectedPillar}`);
+            
+            // Early safety check: if any execution state exists, don't remount anything
+            if (autoExecuting || Object.keys(autoExecResults).length > 0 || Object.keys(autoExecSubtasks).length > 0) {
+                console.log(`⚠️ [Recovery] Execution state already exists, skipping recovery check`);
+                return;
+            }
+            
             for (const task of tasks) {
                 if (task.executavel_por_ia) {
                     const tid = `${selectedPillar}_${task.id}`;
                     const isTaskDone = completedTasks[selectedPillar]?.has(task.id) || completedTasks[selectedPillar]?.has(tid);
-                    if (isTaskDone) continue;
+                    if (isTaskDone) {
+                        console.log(`⏭️ [Recovery] Task ${task.id} already completed, skipping`);
+                        continue;
+                    }
 
+                    // Additional safety check: if we have any execution state for this task, don't remount
+                    if (autoExecResults[tid] || autoExecSubtasks[tid] || autoExecStatuses[tid]) {
+                        console.log(`⚠️ [Recovery] Task ${task.id} has existing execution state, skipping remount`);
+                        continue;
+                    }
+
+                    console.log(`🔍 [Recovery] Checking status for task ${task.id}...`);
                     try {
                         const pollResult = await apiCall('poll-background-status', {
                             analysis_id: analysisId,
-                            task_id: task.id
+                            task_id: task.id,
+                            pillar_key: selectedPillar
                         }, { skipCache: true });
 
-                        if (pollResult.success && pollResult.progress && pollResult.progress.status === 'running') {
-                            console.log(`🔄 Re-mounting background task polling for: ${task.id}`);
-                            handleAutoExecute(selectedPillar, task, true);
-                            break;
+                        if (pollResult.success && pollResult.progress) {
+                            const status = pollResult.progress.status;
+                            console.log(`📊 [Recovery] Task ${task.id} status: ${status}`);
+                            
+                            // Só remonta se for "running", ignora "cancelled" e "error"
+                            if (status === 'running') {
+                                console.log(`🔄 [Recovery] Re-mounting background task polling for: ${task.id}`);
+                                handleAutoExecute(selectedPillar, task, true);
+                                break;
+                            } else if (status === 'cancelled' || status === 'error') {
+                                console.log(`⚠️ [Recovery] Task ${task.id} was ${status}, not remounting`);
+                                // Limpa qualquer estado residual de execução
+                                setAutoExecuting(null);
+                                setAutoExecStep(0);
+                                setAutoExecTotal(0);
+                            }
+                        } else {
+                            // Se a tarefa não existe mais (Task not found), limpa o estado completamente
+                            console.log(`❌ [Recovery] Task ${task.id} not found, cleaning up state`);
+                            setAutoExecuting(null);
+                            setAutoExecStep(0);
+                            setAutoExecTotal(0);
+                            setAutoExecLog([]);
+                            // Limpa também do localStorage se existir
+                            if (typeof window !== 'undefined') {
+                                const key = `pillar_execution_${analysisId}_${selectedPillar}_${task.id}`;
+                                localStorage.removeItem(key);
+                            }
                         }
                     } catch (err) {
                         console.error('Background recovery error:', err);
+                        // Em caso de erro, também limpa o estado para evitar loops infinitos
+                        console.log(`🧹 [Recovery] Error checking ${task.id}, cleaning up state`);
+                        setAutoExecuting(null);
+                        setAutoExecStep(0);
+                        setAutoExecTotal(0);
                     }
                 }
             }
+            console.log(`✅ [Recovery] Check completed for pillar ${selectedPillar}`);
         };
         const pillarStateKey = `${analysisId}_${selectedPillar}`;
         if (!hasCheckedRecovery.current[pillarStateKey]) {

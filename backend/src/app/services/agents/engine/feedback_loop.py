@@ -90,8 +90,28 @@ def apply_feedback_loop(analysis_id: str, pillar_key: str, insight_data: dict):
         diag = db.get_pillar_diagnostic(analysis_id, pillar_key)
         if diag:
             diag_data = diag.get("diagnostic_data", diag)
-            old_score = diag_data.get("score", 50)
-            new_score = max(0, min(100, old_score + adj["delta"]))
+            
+            # Robust score extraction (handle if it's a dict or string)
+            raw_old_score = diag_data.get("score", 50)
+            if isinstance(raw_old_score, dict):
+                old_score = int(raw_old_score.get("value", raw_old_score.get("points", 50)))
+            else:
+                try:
+                    old_score = int(raw_old_score)
+                except (ValueError, TypeError):
+                    old_score = 50
+            
+            # Robust delta extraction
+            raw_delta = adj.get("delta", 0)
+            if isinstance(raw_delta, dict):
+                delta = int(raw_delta.get("value", raw_delta.get("amount", 0)))
+            else:
+                try:
+                    delta = int(raw_delta)
+                except (ValueError, TypeError):
+                    delta = 0
+            
+            new_score = max(0, min(100, old_score + delta))
             
             if new_score != old_score:
                 diag_data["score"] = new_score

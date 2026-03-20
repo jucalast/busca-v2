@@ -25,18 +25,32 @@ class TrendAnalyzer:
         self._available = None
         self._cache = {}
         import threading
-        self._lock = threading.Lock()
+        self._lock = threading.RLock() # Usar RLock para permitir recursão (retry)
     
     def _ensure_loaded(self):
         """Lazy import do pytrends."""
         if self._TrendReq is None:
             try:
+                # Monkey-patch para compatibilidade do pytrends com urllib3 2.0+
+                try:
+                    import urllib3.util.retry
+                    # Patch global para garantir que method_whitelist nunca quebre o __init__
+                    orig_init = urllib3.util.retry.Retry.__init__
+                    def patched_init(self, *args, **kwargs):
+                        if 'method_whitelist' in kwargs:
+                            kwargs['allowed_methods'] = kwargs.pop('method_whitelist')
+                        return orig_init(self, *args, **kwargs)
+                    urllib3.util.retry.Retry.__init__ = patched_init
+                except Exception as pe:
+                    print(f"  ⚠️ Falha ao aplicar patch no urllib3: {pe}", file=sys.stderr)
+
                 from pytrends.request import TrendReq
                 self._TrendReq = TrendReq
                 self._available = True
             except ImportError:
                 self._available = False
                 print("⚠️ pytrends não instalado.", file=sys.stderr)
+
     
     def _get_client(self):
         """Cria/retorna cliente pytrends."""
@@ -45,12 +59,13 @@ class TrendAnalyzer:
             return None
         
         if self._pytrends is None:
+            # Configurações mais conservadoras para evitar bloqueios rápidos
             self._pytrends = self._TrendReq(
                 hl='pt-BR',
                 tz=180,  # UTC-3 Brasil
-                timeout=(10, 25),
-                retries=5,
-                backoff_factor=2.0,
+                timeout=(15, 60), # Aumentado para lidar com conexões lentas
+                retries=2, # Reduzido para não entupir o pool se houver erro
+                backoff_factor=3.0,
             )
         return self._pytrends
     
@@ -249,8 +264,19 @@ class TrendAnalyzer:
             print(f"  🔎 Rising queries for '{keyword}': {len(result['rising_queries'])} rising, {len(result['top_queries'])} top", file=sys.stderr)
             
         except Exception as e:
-            result["error"] = str(e)[:300]
-            print(f"  ⚠️ Rising queries error: {e}", file=sys.stderr)
+            err_msg = str(e)
+            is_429 = "too many 429 error responses" in err_msg.lower() or "page: /sorry/index" in err_msg.lower()
+            
+            if is_429:
+                try:
+                    print(f"  ⏳ TrendAnalyzer(rising): Recebeu 429. Aguardando 10s...", file=sys.stderr)
+                    time.sleep(10.0)
+                    # Não re-tenta recursivamente aqui para evitar loops infinitos em sub-ferramentas
+                    result["error"] = "Google Trends: Bloqueio (429)."
+                except: pass
+            else:
+                result["error"] = err_msg[:300]
+                print(f"  ⚠️ Rising queries error: {e}", file=sys.stderr)
         
         return result
     

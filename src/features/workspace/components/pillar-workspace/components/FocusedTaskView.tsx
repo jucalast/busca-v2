@@ -108,6 +108,7 @@ export function FocusedTaskView({
                                 handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
                                 safeRender={safeRender}
                                 displayMode="result"
+                                onStopExecution={() => handleStopExecution(tid)}
                             />
                         </AutoScrollContainer>
                     </div>
@@ -141,6 +142,7 @@ export function FocusedTaskView({
                                 handleRetryAutoExecSubtask={handleRetryAutoExecSubtask}
                                 safeRender={safeRender}
                                 displayMode="subtasks"
+                                onStopExecution={() => handleStopExecution(tid)}
                             />
                         </div>
 

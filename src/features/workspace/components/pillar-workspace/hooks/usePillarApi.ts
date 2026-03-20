@@ -37,16 +37,34 @@ export function usePillarApi(selectedTaskAiModel: string, currentAiModel: string
             try {
                 console.log('🌐 Making fresh API call for:', action, 'with model:', selectedTaskAiModel);
                 const requestBody = { action, ...data, aiModel: selectedTaskAiModel || currentAiModel };
-                const res = await fetch('/api/growth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                    signal: options?.signal,
-                });
+                let res;
+                let retryCount = 0;
+                const MAX_RETRIES = 2;
 
-                if (!res.ok) {
-                    const error = await res.json();
-                    throw new Error(error.error || `HTTP error! status: ${res.status}`);
+                while (retryCount <= MAX_RETRIES) {
+                    try {
+                        res = await fetch('/api/growth', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestBody),
+                            signal: options?.signal,
+                        });
+                        break; // Success, exit while
+                    } catch (fetchErr: any) {
+                        if (fetchErr.name === 'AbortError') throw fetchErr;
+                        retryCount++;
+                        if (retryCount > MAX_RETRIES) {
+                            console.error('Final API fetch failure after retries:', fetchErr);
+                            throw fetchErr;
+                        }
+                        console.warn(`⚠️ API fetch failed, retrying (${retryCount}/${MAX_RETRIES})...`, fetchErr.message);
+                        await new Promise(r => setTimeout(r, 1000 * retryCount)); // Exponential backoff
+                    }
+                }
+
+                if (!res || !res.ok) {
+                    const error = res ? await res.json().catch(() => ({ error: `HTTP error! status: ${res.status}` })) : { error: 'Unknown fetch error' };
+                    throw new Error(error.error || `HTTP error! status: ${res?.status}`);
                 }
 
                 const result = await res.json();

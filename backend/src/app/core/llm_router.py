@@ -8,11 +8,20 @@ import warnings
 from typing import Callable, Any, Optional, Dict, List, Union
 
 try:
-    from google import genai
-    HAS_NEW_GENAI = True
-except ImportError:
-    genai = None
+    import google.generativeai as google_generative_ai
+    HAS_GENATIVE_AI = True
+except (ImportError, Exception) as e_old:
+    google_generative_ai = None
+    HAS_GENATIVE_AI = False
+    print(f"  ⚠️ Old Gemini SDK (google-generativeai) not available: {e_old}", file=sys.stderr)
+
+try:
+    from google import genai as google_genai_new
+    HAS_NEW_GENAI = bool(google_genai_new)
+except (ImportError, Exception) as e_new:
+    google_genai_new = None
     HAS_NEW_GENAI = False
+    print(f"  ⚠️ New Gemini SDK (google-genai) not available: {e_new}", file=sys.stderr)
 
 class LLMResponse(str):
     """
@@ -34,8 +43,19 @@ from dotenv import load_dotenv
 from app.services.intelligence.usage_tracker import usage_tracker
 from app.services.common import log_info, log_error, log_debug
 
-# Load .env from project root (4 levels up from backend/src/app/core/)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))
+# Load .env - try multiple paths to be robust
+current_dir = os.path.dirname(__file__)
+env_paths = [
+    os.path.join(current_dir, '..', '..', '..', '.env'), # backend/.env
+    os.path.join(current_dir, '..', '..', '..', '..', '.env'), # root/.env
+    '.env'
+]
+for p in env_paths:
+    if os.path.exists(p):
+        load_dotenv(dotenv_path=p)
+        break
+else:
+    load_dotenv() # Fallback to default search
 
 # ── Gemini model cascade ──────────────────────────────────────
 # Each model has its own separate daily quota on the free tier,
@@ -299,7 +319,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     
                     # Don't mark as broken permanently, just skip for this specific call chain if needed
                     if mi < len(models) - 1:
-                        print(f"  ➡️ {model} falhou no JSON. Tentando próximo modelo...", file=sys.stderr)
+                        print(f"  ➡️ {model} não respondeu em formato JSON. Tentando próximo modelo...", file=sys.stderr)
                         break
                     raise
 
@@ -308,7 +328,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     _GROQ_TPD_EXHAUSTED.add(model)
                     usage_tracker.mark_exhausted("groq")
                     if attempt == 0 and mi < len(models) - 1:
-                        print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                        print(f"  🔄 Limite diário atingido em {model}. Trocando para próximo modelo...", file=sys.stderr)
                         break
                     elif attempt < max_retries - 1:
                         retry_secs = _parse_retry_wait(error_msg)
@@ -318,7 +338,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                             _sleep_with_cancellation(wait, cancellation_check)
                             continue
                     elif mi < len(models) - 1:
-                        print(f"  🔄 TPD esgotado em {model}. Trocando modelo...", file=sys.stderr)
+                        print(f"  🔄 Limite diário atingido em {model}. Trocando para próximo modelo...", file=sys.stderr)
                         break
                     raise
                 # TPM (per-minute) — wait less, fallback faster
@@ -328,7 +348,7 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
                     wait = min(wait, 15)  # Cap at 15s instead of 120s
                     # If wait is too long, just skip to next model
                     if wait > 10 and mi < len(models) - 1:
-                        print(f"  🔄 Rate limit alto em {model} ({wait}s). Pulando para próximo...", file=sys.stderr)
+                        print(f"  🔄 Rate limit alto em {model} ({wait}s). Pulando para próximo modelo...", file=sys.stderr)
                         break
                     print(f"  ⏳ Rate limit em {model}. Aguardando {wait}s... ({attempt+1}/{max_retries})", file=sys.stderr)
                     _sleep_with_cancellation(wait, cancellation_check)
@@ -342,9 +362,11 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
 
 
 def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, max_retries: int = 4, cancellation_check: Callable[[], None] = None):
-    """Executes call via Google Gemini API with aggressive retry for 429 rate limits."""
-    if not HAS_NEW_GENAI:
-        raise RuntimeError("A biblioteca google-genai não está instalada.")
+    """Executes call via Google Gemini API with support for both old and new SDKs."""
+    if not HAS_GENATIVE_AI and not HAS_NEW_GENAI:
+        # Diagnostic attempt to check environment
+        log_error("CRITICAL: Gemini libraries missing in current Python path!")
+        raise RuntimeError("As bibliotecas Google GenAI (google-generativeai ou google-genai) não estão acessíveis no ambiente atual. Verifique se o ambiente virtual (.venv) está configurado e se pacotes foram instalados.")
     
     import re as _re
     
@@ -400,94 +422,108 @@ def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: 
 
 
 def _call_gemini_once(api_key: str, prompt: str, temperature: float, json_mode: bool, messages: list, model_name: str, cancellation_check: Callable[[], None] = None):
-    """Single Gemini call with cancellation support."""
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
+    """Single Gemini call using whichever SDK is available (prefers new SDK)."""
     
-    model = genai.GenerativeModel(model_name)
-    
-    # Build prompt
-    if messages:
-        # Convert messages to Gemini format
-        gemini_messages = []
-        for msg in messages:
-            if msg.get("role") == "system":
-                gemini_messages.append({"text": f"System: {msg.get('content')}"})
+    # ── CASE 1: New SDK (google-genai) ──
+    if HAS_NEW_GENAI and google_genai_new:
+        try:
+            client = google_genai_new.Client(api_key=api_key)
+            from google.genai import types as new_types
+            
+            # Prepare content
+            contents = []
+            if messages:
+                for m in messages:
+                    # Map role 'system' or 'user' -> 'user' (simplified for Gemini SDK)
+                    role = "user" if m["role"] == "user" else "model"
+                    contents.append(new_types.Content(role=role, parts=[new_types.Part(text=m["content"])]))
             else:
-                gemini_messages.append({"text": msg.get("content")})
-        prompt_text = "\n".join([m["text"] for m in gemini_messages])
-    else:
-        prompt_text = prompt
-    
-    # Configure generation
-    generation_config = genai.types.GenerationConfig(
-        temperature=temperature,
-        max_output_tokens=12000,
-    )
-    
-    if json_mode:
-        generation_config.response_mime_type = "application/json"
-    
-    # Start generation with cancellation check
-    try:
-        # Check cancellation before starting
-        if cancellation_check:
-            cancellation_check()
-        
-        # For long prompts, add aggressive cancellation during generation
-        if len(prompt_text) > 10000 and cancellation_check:
-            # Use streaming for large prompts to allow cancellation
-            response = model.generate_content(
-                prompt_text,
-                generation_config=generation_config,
-                stream=True
+                contents = [prompt]
+            
+            # Prepare config
+            config = new_types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=12000,
             )
-            
-            result_text = ""
-            for chunk in response:
-                # Check cancellation between chunks
-                if cancellation_check:
-                    cancellation_check()
-                result_text += chunk.text
-            
-            # Parse final result
             if json_mode:
-                try:
-                    import json
-                    return json.loads(result_text), estimate_tokens(result_text), model_name
-                except json.JSONDecodeError:
-                    return {"raw_response": result_text}, estimate_tokens(result_text), model_name
-            else:
-                return result_text, estimate_tokens(result_text), model_name
-        else:
-            # Standard call for smaller prompts
-            response = model.generate_content(
-                prompt_text,
-                generation_config=generation_config
-            )
+                config.response_mime_type = "application/json"
+            
+            if cancellation_check: cancellation_check()
+            response = client.models.generate_content(model=model_name, contents=contents, config=config)
             
             result_text = response.text
-            if json_mode:
-                try:
-                    import json
-                    return json.loads(result_text), estimate_tokens(result_text), model_name
-                except json.JSONDecodeError:
-                    return {"raw_response": result_text}, estimate_tokens(result_text), model_name
-            else:
-                return result_text, estimate_tokens(result_text), model_name
+            if not result_text:
+                raise Exception("Gemini NEW SDK returned empty response")
                 
-    except Exception as e:
-        error_msg = str(e)
-        if "quota" in error_msg.lower() or "rate limit" in error_msg.lower() or "429" in error_msg:
-            raise Exception(f"Rate limit: {error_msg}")
-        elif "cancelled" in error_msg.lower() or cancellation_check:
-            # Check if this was a cancellation
-            if cancellation_check:
-                try:
-                    cancellation_check()
-                except:
-                    raise Exception("Task cancelled by user")
-        raise Exception(f"Gemini API error: {error_msg}")
+            if json_mode:
+                try: 
+                    import json
+                    return json.loads(result_text), estimated_tokens(result_text) if 'estimated_tokens' in globals() else len(result_text)//4, model_name
+                except: 
+                    return {"raw_response": result_text}, len(result_text)//4, model_name
+            return result_text, len(result_text)//4, model_name
+        except Exception as e_new:
+            # If new SDK fails but old one is available, try fallback
+            if HAS_GENATIVE_AI:
+                print(f"  ⚠️ Gemini NEW SDK failed: {e_new}. Falling back to old SDK...", file=sys.stderr)
+            else:
+                raise e_new
+
+    # ── CASE 2: Old SDK (google-generativeai) ──
+    if HAS_GENATIVE_AI and google_generative_ai:
+        genai = google_generative_ai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+        
+        # Build prompt
+        if messages:
+            gemini_messages = []
+            for msg in messages:
+                if msg.get("role") == "system":
+                    gemini_messages.append({"text": f"System: {msg.get('content')}"})
+                else:
+                    gemini_messages.append({"text": msg.get("content")})
+            prompt_text = "\n".join([m["text"] for m in gemini_messages])
+        else:
+            prompt_text = prompt
+        
+        # Configure generation
+        generation_config = genai.types.GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=12000,
+        )
+        if json_mode:
+            generation_config.response_mime_type = "application/json"
+        
+        try:
+            if cancellation_check: cancellation_check()
+            
+            # For long prompts, allow cancellation
+            if (len(prompt_text) if prompt_text else 0) > 10000 and cancellation_check:
+                # OLD SDK Streaming
+                response = model.generate_content(prompt_text, generation_config=generation_config, stream=True)
+                result_text = ""
+                for chunk in response:
+                    if cancellation_check: cancellation_check()
+                    result_text += chunk.text
+            else:
+                response = model.generate_content(prompt_text, generation_config=generation_config)
+                result_text = response.text
+                
+            if json_mode:
+                try: 
+                    import json
+                    return json.loads(result_text), len(result_text)//4, model_name
+                except: 
+                    return {"raw_response": result_text}, len(result_text)//4, model_name
+            return result_text, len(result_text)//4, model_name
+        except Exception as e:
+            error_msg = str(e)
+            if "quota" in error_msg.lower() or "rate limit" in error_msg.lower() or "429" in error_msg:
+                raise Exception(f"Rate limit: {error_msg}")
+            raise e
+
+    raise RuntimeError("No working Gemini SDK found in current context (tried old and new)")
 
 
 def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3, json_mode: bool = True, messages: List = None, model: str = None, cancellation_check: Callable[[], None] = None):
@@ -501,6 +537,7 @@ def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, 
     target_model = model or SAMBANOVA_MODELS[0]
     msg_payload = messages if messages else [{"role": "user", "content": prompt}]
     
+    # Reduzido para 2 retries e failover rápido em 429
     for attempt in range(max_retries):
         if cancellation_check: cancellation_check()
         try:
@@ -508,7 +545,8 @@ def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, 
                 model=target_model,
                 messages=msg_payload,
                 temperature=temperature,
-                response_format={"type": "json_object"} if json_mode else None
+                response_format={"type": "json_object"} if json_mode else None,
+                timeout=60 # Prevent hanging
             )
             content = response.choices[0].message.content
             tokens = response.usage.total_tokens
@@ -517,20 +555,26 @@ def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, 
             return content, tokens, target_model
         except Exception as e:
             err_str = str(e).lower()
-            is_json_fail = "400" in err_str and ("json" in err_str or "format" in err_str)
             
-            if is_json_fail:
-                print(f"  ⚠️ SambaNova {target_model} falhou ao gerar JSON. Tentando sem constraint...", file=sys.stderr)
-                extracted, f_tokens = _try_without_json_constraint(client, msg_payload, target_model, temperature, "sambanova")
-                if extracted is not None:
-                    return extracted, f_tokens, target_model
-            
+            # Se for 429, espera pouco e pula logo (a cota do SambaNova é muito restrita)
+            is_429 = "429" in err_str or "too many" in err_str
+            if is_429:
+                if attempt == 0:
+                    wait_time = 2
+                    print(f"  ⏳ SambaNova 429. Tentando mais uma vez em {wait_time}s...", file=sys.stderr)
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Falha rápida após a segunda tentativa de 429
+                    print(f"  🛑 SambaNova cota esgotada (429 persistente). Pulando provider.", file=sys.stderr)
+                    raise Exception("SambaNova rate limit reached (429)")
+
             if "insufficient balance" in err_str or "unpaid" in err_str or "402" in err_str:
-                print(f"  ⚠️ SambaNova saldo insuficiente. Pulando...", file=sys.stderr)
                 raise Exception("SambaNova saldo insuficiente")
+            
             if "Task cancelled" in str(e): raise
             if attempt == max_retries - 1: raise
-            time.sleep(1 * (attempt + 1))
+            time.sleep(1)
     return None, 0, target_model
 
 def _call_deepseek_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3, json_mode: bool = True, messages: List = None, model: str = None, cancellation_check: Callable[[], None] = None):

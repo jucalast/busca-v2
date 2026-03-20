@@ -3,9 +3,18 @@
 import React from 'react';
 import { ArrowLeft, RefreshCw, BadgeCheck, Link2, MapPin, Calendar, Share2, MoreHorizontal, FileText, Globe, Brain } from 'lucide-react';
 import { PILLAR_META } from '../constants';
-import { safeRender } from '../utils';
+import { 
+    safeRender, 
+    openInGoogleDocs, 
+    openInGoogleSheets, 
+    openInGoogleForms, 
+    exportAsCSV,
+    savePendingDocAction
+} from '../utils';
 import { SourceBadgeList } from '@/features/shared/components/SourceBadgeList';
+import { signIn } from 'next-auth/react';
 import { DocumentsTab, DocItem } from './DocumentsTab';
+import { DocumentsGrid } from './DocumentsGrid';
 import { GaugeArc } from './ScoreGauge';
 import { TaskItem, PillarWorkspaceProps } from '../types';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -61,35 +70,6 @@ function ferramentaIcon(ferramenta: string): string {
     return '/docs.png';
 }
 
-function PlannedDeliverables({ entregaveis, isDark }: { entregaveis: any[], isDark: boolean }) {
-    if (!entregaveis?.length) return null;
-    return (
-        <div className="flex-1 overflow-y-auto px-6 py-6 pb-20" style={{ scrollbarWidth: 'none' }}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-4 opacity-50" style={{ color: isDark ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
-                Entregas previstas
-            </p>
-            <div className="flex flex-col gap-2">
-                {entregaveis.map((e: any, i: number) => (
-                    <div
-                        key={i}
-                        className={`flex items-center gap-3 py-3 px-4 rounded-xl border transition-colors duration-300 ${
-                            isDark ? 'bg-white/5 border-white/5' : 'bg-white border-gray-200'
-                        }`}
-                    >
-                        <img
-                            src={ferramentaIcon(e.ferramenta)}
-                            alt=""
-                            className="w-4 h-4 object-contain shrink-0 opacity-80"
-                        />
-                        <span className="text-[12px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text-secondary)' }}>
-                            {safeRender(e.titulo)}
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
 
 export function PillarHeader({
     selectedPillar,
@@ -111,6 +91,7 @@ export function PillarHeader({
 }: PillarHeaderProps) {
     const { isDark } = useSidebar();
     const [showAllSources, setShowAllSources] = React.useState(false);
+    const [activeTab, setActiveTab] = React.useState<'arquivos' | 'feed'>('feed');
     const meta = PILLAR_META[selectedPillar];
     const specialist = specialists[selectedPillar] || {};
     
@@ -137,37 +118,73 @@ export function PillarHeader({
         return `https://ui-avatars.com/api/?name=${encodeURIComponent(cargo)}&background=${colors[key] || '6366f1'}&color=fff&bold=true`;
     };
 
+    const handleDocOpen = React.useCallback((doc: DocItem, fmt: string) => {
+        // Not logged in or token expired — save action and redirect to OAuth
+        if (!session?.accessToken || session?.error === 'RefreshAccessTokenError') {
+            savePendingDocAction({
+                type: fmt as any,
+                tid: doc.tid,
+                idx: doc.idx,
+                result: doc.result,
+                title: doc.title,
+                fmt,
+            });
+            signIn('google', { callbackUrl: window.location.href });
+            return;
+        }
+
+        if (fmt === 'csv' && doc.result.structured_data) {
+            exportAsCSV(doc.result.structured_data, doc.title);
+        } else if (fmt === 'google_sheets' && doc.result.structured_data?.abas?.length > 0) {
+            openInGoogleSheets(doc.result, session, (id) => setLoadingDoc(id ? `${doc.tid}_${doc.idx}_${fmt}` : null), `${doc.tid}_st${doc.idx}`);
+        } else if (fmt === 'google_forms' && doc.result.structured_data?.secoes?.length > 0) {
+            openInGoogleForms(doc.result, session, (id) => setLoadingDoc(id ? `${doc.tid}_${doc.idx}_${fmt}` : null), `${doc.tid}_st${doc.idx}`);
+        } else if (fmt === 'google_docs' || fmt === 'pdf') {
+            openInGoogleDocs({ ...doc.result, conteudo_completo: doc.result.conteudo }, '', session, (id) => setLoadingDoc(id ? `${doc.tid}_${doc.idx}_${fmt}` : null), `${doc.tid}_st${doc.idx}`);
+        }
+    }, [session, setLoadingDoc]);
+
     return (
-        <div className={`w-[45%] flex flex-col pt-0 relative z-10 overflow-y-auto custom-scrollbar border-r transition-all duration-300 ${
+        <div className={`w-[45%] flex flex-col pt-0 relative z-10 overflow-y-auto hide-scrollbar border-r transition-all duration-300 ${
             isDark ? 'bg-[--color-bg]/90 backdrop-blur-3xl border-white/10' : 'bg-white border-gray-100'
         }`}>
             {/* ─── Social Profile Header ─── */}
             <div className="relative shrink-0">
                 {/* 1. Cover Image */}
                 <div className={`h-32 w-full relative overflow-hidden ${
-                    isDark ? 'bg-gradient-to-br from-zinc-800 to-[--color-bg]' : 'bg-gradient-to-br from-slate-100 to-slate-200'
+                    isDark ? 'bg-gradient-to-br from-zinc-800 to-zinc-900' : 'bg-gradient-to-br from-slate-100 to-slate-200'
                 }`}>
                     {/* Decorative pattern/blur for cover */}
                     <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-                    <div className={`absolute -bottom-16 -right-16 w-64 h-64 blur-3xl rounded-full opacity-20`} style={{ backgroundColor: meta.color }} />
+                    
+                    {/* Pillar colored shadows/glows */}
+                    <div className="absolute -bottom-16 -right-16 w-64 h-64 blur-3xl rounded-full opacity-30" style={{ backgroundColor: meta.color }} />
+                    <div className="absolute -top-16 -left-16 w-48 h-48 blur-3xl rounded-full opacity-10" style={{ backgroundColor: meta.color }} />
                     
                     {/* Top Floating Buttons */}
                     <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-20">
-                        <button onClick={onBack} className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all">
+                        <button 
+                            onClick={onBack} 
+                            className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                        >
                             <ArrowLeft size={18} />
                         </button>
                         <div className="flex gap-2">
                             <button 
                                 onClick={onVerPensamento}
                                 title="Ver pensamento da IA"
-                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all"
+                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
                             >
                                 <Brain size={16} />
                             </button>
-                            <button className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all">
+                            <button 
+                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                            >
                                 <Share2 size={16} />
                             </button>
-                            <button className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-all">
+                            <button 
+                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                            >
                                 <MoreHorizontal size={16} />
                             </button>
                         </div>
@@ -276,49 +293,114 @@ export function PillarHeader({
                 </p>
                 <div className="flex gap-5 overflow-x-auto pb-4 hide-scrollbar">
                     {/* Dummy "Novo" Highlight */}
-                    <div className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer">
+                    <div className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer" onClick={onVerPensamento}>
                         <div className={`w-16 h-16 rounded-full border-2 border-dashed flex items-center justify-center transition-all ${
                             isDark ? 'border-zinc-800 text-zinc-600 group-hover:border-zinc-600' : 'border-zinc-200 text-zinc-400 group-hover:border-zinc-400'
                         }`}>
-                            <RefreshCw size={20} />
+                            <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" />
                         </div>
                         <span className="text-[10px] font-bold text-zinc-500">Scan</span>
                     </div>
 
-                    {deliverables.map((e: any, i: number) => (
-                        <div key={i} className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer scale-100 hover:scale-105 transition-transform">
-                            <div className={`w-16 h-16 rounded-full border-2 p-1 transition-all ${
-                                isDark ? 'border-zinc-800 group-hover:border-white/20' : 'border-zinc-100 group-hover:border-zinc-300'
-                            }`}>
-                                <div className={`w-full h-full rounded-full flex items-center justify-center ${
-                                    isDark ? 'bg-zinc-900' : 'bg-zinc-50'
-                                }`}>
-                                    <img src={ferramentaIcon(e.ferramenta)} alt="" className="w-6 h-6 object-contain opacity-70" />
+                    {/* Deliverables (Finished) */}
+                    {[...docsForDropdown].reverse().map((doc, i) => (
+                        <div 
+                            key={`${doc.tid}_${doc.idx}`} 
+                            onClick={() => setActiveTab('feed')}
+                            className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer scale-100 hover:scale-105 transition-transform"
+                        >
+                            <div className="w-16 h-16 rounded-full p-[2px] transition-all bg-gradient-to-tr from-yellow-400 via-fuchsia-600 to-purple-600 group-hover:scale-110">
+                                <div className={`w-full h-full rounded-full p-[2px] ${isDark ? 'bg-black' : 'bg-white'}`}>
+                                    <div className={`w-full h-full rounded-full flex items-center justify-center ${
+                                        isDark ? 'bg-zinc-900 border border-white/5' : 'bg-zinc-50 border border-black/5'
+                                    }`}>
+                                        <img src={ferramentaIcon(doc.result?.ferramenta || 'documento')} alt="" className="w-6 h-6 object-contain opacity-70" />
+                                    </div>
                                 </div>
                             </div>
-                            <span className={`text-[10px] font-bold text-center w-16 line-clamp-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                                {safeRender(e.titulo).split(' ')[0]}
+                            <span className={`text-[10px] font-bold text-center w-16 line-clamp-1 ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
+                                {doc.title}
                             </span>
                         </div>
                     ))}
+
+                    {/* Planned Fallback (Upcoming) */}
+                    {deliverables.map((e: any, i: number) => {
+                        // Avoid showing if it's already in finished (by title matching)
+                        const isDone = docsForDropdown.some(d => d.title === safeRender(e.titulo));
+                        if (isDone) return null;
+                        
+                        return (
+                            <div key={`pl-${i}`} className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer scale-100 hover:scale-105 transition-transform">
+                                <div className={`w-16 h-16 rounded-full border-2 p-1 transition-all ${
+                                    isDark ? 'border-zinc-800' : 'border-zinc-100'
+                                }`}>
+                                    <div className={`w-full h-full rounded-full flex items-center justify-center ${
+                                        isDark ? 'bg-zinc-900 border border-white/10' : 'bg-zinc-50 border border-black/10'
+                                    }`}>
+                                        <img src={ferramentaIcon(e.ferramenta)} alt="" className="w-6 h-6 object-contain opacity-70" />
+                                    </div>
+                                </div>
+                                <span className={`text-[10px] font-bold text-center w-16 line-clamp-1 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                    {safeRender(e.titulo)}
+                                </span>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
             {/* ─── Content Feed / Documents ─── */}
             <div className="flex-1 flex flex-col min-h-0">
-                <div className={`flex border-b ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
-                    <button className={`px-8 py-4 text-[12px] font-black uppercase tracking-widest border-b-2 transition-all ${
-                        isDark ? 'text-white border-white' : 'text-zinc-900 border-black'
-                    }`}>
+                <div className={`flex border-b transition-all duration-300 overflow-x-auto hide-scrollbar shrink-0 ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
+                    <button 
+                        onClick={() => setActiveTab('feed')}
+                        className={`px-8 py-4 text-[12px] font-black uppercase tracking-widest border-b-2 transition-all shrink-0 ${
+                            activeTab === 'feed'
+                            ? (isDark ? 'text-white border-white' : 'text-zinc-900 border-black')
+                            : 'text-zinc-500 border-transparent hover:text-zinc-400'
+                        }`}
+                    >
+                        Feed
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('arquivos')}
+                        className={`px-8 py-4 text-[12px] font-black uppercase tracking-widest border-b-2 transition-all shrink-0 ${
+                            activeTab === 'arquivos'
+                            ? (isDark ? 'text-white border-white' : 'text-zinc-900 border-black')
+                            : 'text-zinc-500 border-transparent hover:text-zinc-400'
+                        }`}
+                    >
                         Arquivos
                     </button>
-                    <button className="px-8 py-4 text-[12px] font-black uppercase tracking-widest text-zinc-500 opacity-50 cursor-not-allowed">
-                        Feed
+                    <button className="px-8 py-4 text-[12px] font-black uppercase tracking-widest text-zinc-500 opacity-30 cursor-not-allowed shrink-0">
+                        Insights
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto pt-4 pb-20">
-                    {hasDocs ? (
+                <div className="flex-1 overflow-y-auto pt-6 pb-20 hide-scrollbar">
+                    {activeTab === 'feed' ? (
+                        hasDocs ? (
+                            <DocumentsGrid 
+                                docs={[...docsForDropdown].reverse()}
+                                isDark={isDark}
+                                getAvatarUrl={getAvatarUrl}
+                                selectedPillar={selectedPillar}
+                                cargo={cargo}
+                                onOpen={(doc) => {
+                                    const formats = doc.result?.export_formats || (doc.result?.conteudo ? ['google_docs'] : []);
+                                    handleDocOpen(doc, formats[0] || 'google_docs');
+                                }}
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                                <FileText size={48} className="mb-4 text-zinc-600" />
+                                <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
+                                    Nenhum entregável disponível
+                                </p>
+                            </div>
+                        )
+                    ) : hasDocs ? (
                         <DocumentsTab
                             docsForDropdown={docsForDropdown}
                             visibleTasks={visibleTasks}
@@ -331,10 +413,24 @@ export function PillarHeader({
                             isDark={isDark}
                         />
                     ) : (
-                        <PlannedDeliverables entregaveis={deliverables} isDark={isDark} />
+                        <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                            <FileText size={48} className="mb-4 text-zinc-600" />
+                            <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
+                                Nenhum entregável disponível
+                            </p>
+                        </div>
                     )}
                 </div>
             </div>
+            <style jsx global>{`
+                .hide-scrollbar {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+                .hide-scrollbar::-webkit-scrollbar {
+                    display: none;
+                }
+            `}</style>
         </div>
     );
 }

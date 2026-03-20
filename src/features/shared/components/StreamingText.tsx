@@ -11,23 +11,38 @@ export function StreamingText({ text, speed = 8, className = '', style = {}, onD
     const [done, setDone] = useState(false);
 
     useEffect(() => {
-        if (!text) return;
-        setDisplayed('');
-        setDone(false);
-        let idx = 0;
+        if (!text) {
+            setDisplayed('');
+            setDone(false);
+            return;
+        }
+        
+        // If current text is a continuation of what we are already showing, don't restart from 0
+        // BUT if it's completely different (e.g., next task), we DO need to reset
+        const isContinuation = text.startsWith(displayed) && displayed.length > 0;
+        
+        if (!isContinuation) {
+            setDisplayed('');
+            setDone(false);
+        } else if (displayed.length === text.length) {
+            setDone(true);
+            return;
+        }
+
+        let idx = isContinuation ? displayed.length : 0;
         const interval = setInterval(() => {
-            // Reveal in chunks for smoother feel
             const chunk = Math.min(3, text.length - idx);
-            idx += chunk;
-            setDisplayed(text.slice(0, idx));
-            if (idx >= text.length) {
+            if (chunk <= 0) {
                 clearInterval(interval);
                 setDone(true);
                 onDone?.();
+                return;
             }
+            idx += chunk;
+            setDisplayed(text.slice(0, idx));
         }, speed);
         return () => clearInterval(interval);
-    }, [text, speed, onDone]);
+    }, [text, speed, onDone]); // note: using displayed in check, but not in dependency list to avoid loops
 
     return (
         <span className={className} style={style}>

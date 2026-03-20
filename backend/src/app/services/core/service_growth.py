@@ -468,7 +468,7 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
         total_steps = len(subtasks_list)  # Update total to include finalization
         
         # Update progress to show we're working on finalization
-        db.save_background_task_progress(analysis_id, task_id, pillar_key, "running", current_step=total, total_steps=total_steps)
+        db.save_background_task_progress(analysis_id, task_id, pillar_key, "running", current_step=total_steps, total_steps=total_steps)
         
         log_info(f"Executando subtarefa de finalização: {finalization_task.get('titulo', '')}")
         log_debug(f"Input da finalização: {len(combined_content)} chars de conteúdo + {len(accumulated_research)} chars de pesquisa")
@@ -627,10 +627,95 @@ def do_cancel_task(data: dict) -> dict:
     log_warning(f"CANCELANDO TAREFA: {task_id} para a análise {analysis_id}")
     db.save_background_task_progress(analysis_id, task_id, pillar_key, "cancelled")
     
+    # 2.5. Clean up task state to prevent recovery
+    try:
+        # Remove subtasks, executions, and results to prevent remounting
+        db.delete_subtasks(analysis_id, pillar_key, task_id)
+        db.delete_specialist_executions(analysis_id, pillar_key, task_id)
+        db.delete_specialist_results(analysis_id, pillar_key, task_id)
+        log_warning(f"Cleaned up task state for {task_id}")
+    except Exception as e:
+        log_warning(f"Failed to clean up task state: {e}")
+    
+    # 3. Force terminate Celery task if running
+    try:
+        from app.core.worker import celery_app
+        import psutil
+        import os
+        
+        # Method 1: Try Celery revoke first
+        inspect = celery_app.control.inspect()
+        active_tasks = inspect.active()
+        
+        celery_task_id = None
+        if active_tasks:
+            for worker_name, tasks in active_tasks.items():
+                for task in tasks:
+                    if task.get('args') and task_id in str(task.get('args', [])):
+                        celery_task_id = task['id']
+                        # Revoke the task forcefully
+                        celery_app.control.revoke(task['id'], terminate=True, signal='SIGKILL')
+                        log_warning(f"Forcefully terminated Celery task {task['id']} for {task_id}")
+                        break
+        
+        # Method 2: Kill the entire Celery worker process (more aggressive)
+        try:
+            current_pid = os.getpid()
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    if proc.info['name'] == 'celery.exe' and proc.info['pid'] != current_pid:
+                        # Check if this worker is running our task
+                        cmdline = ' '.join(proc.info['cmdline'] or [])
+                        if 'run_analysis_subtasks' in cmdline or task_id in cmdline:
+                            log_warning(f"Killing Celery worker process {proc.info['pid']} for task {task_id}")
+                            proc.kill()
+                            log_warning(f"Successfully killed Celery worker {proc.info['pid']}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception as e:
+            log_warning(f"Failed to kill Celery process: {e}")
+            
+    except Exception as e:
+        log_warning(f"Failed to terminate Celery task: {e}")
+    
     method = "Redis" if redis_cancelled else "Database"
     log_warning(f"Tarefa {task_id} marcada como cancelada via {method}.")
     
     return {"success": True, "message": f"Task cancelled via {method}"}
+
+def do_clear_task_status(data: dict) -> dict:
+    """Clear cancelled status for a task to allow new operations."""
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    task_id = data.get("task_id")
+    
+    if not analysis_id or not task_id:
+        return {"success": False, "error": "analysis_id and task_id are required"}
+
+    from app.core import database as db
+    
+    try:
+        # Check current status
+        current_status = db.get_background_task_progress(analysis_id, task_id)
+        if current_status and current_status.get("status") == "cancelled":
+            # 1. Limpa do Redis
+            from app.core.cancellation_watchdog import CancellationWatchdog
+            CancellationWatchdog.clear_task(task_id)
+
+            # 2. Delete the cancelled task entry completely to allow fresh start
+            log_info(f"Deleting cancelled task entry for {task_id}")
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM background_tasks WHERE analysis_id = %s AND task_id = %s', 
+                          (analysis_id, task_id))
+            conn.commit()
+            conn.close()
+            return {"success": True, "message": "Task status cleared"}
+        else:
+            return {"success": True, "message": "Task was not cancelled"}
+    except Exception as e:
+        log_error(f"Failed to clear task status: {e}")
+        return {"success": False, "error": str(e)}
 
 def do_redo_task(data: dict) -> dict:
     analysis_id = data.get("analysis_id")

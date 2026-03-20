@@ -167,8 +167,10 @@ export default function TaskCard({
       {currentSubtask && (
         <div className="mt-2 pl-11">
           <div
-            className={`relative overflow-hidden transition-colors rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card border ${
-              isDark ? 'bg-white/5 border-white/5' : 'bg-white/40 border-black/5'
+            className={`relative overflow-hidden transition-all duration-300 rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card border ${
+              isDark 
+                ? 'bg-zinc-900/40 border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.3)]' 
+                : 'bg-white/60 border-black/5 shadow-[0_2px_8px_rgba(0,0,0,0.05)]'
             }`}
           >
             <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative z-10">

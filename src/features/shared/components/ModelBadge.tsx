@@ -22,7 +22,7 @@ const MODEL_MAP: Record<string, { label: string; logo: string; accent: string }>
     sambanova: {
         label: 'SambaNova',
         logo: '/sambanova.png',
-        accent: '#8b5cf6',
+        accent: '#71717a',
     },
     cerebras: {
         label: 'Cerebras',

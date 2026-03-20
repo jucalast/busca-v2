@@ -106,6 +106,23 @@ class CancellationWatchdog:
             print(f"  ⚠️ Failed to cancel task via Redis: {e}", file=sys.stderr)
             return False
 
+    @classmethod
+    def clear_task(cls, task_id: str) -> bool:
+        """Limpa o status de cancelamento de uma tarefa no Redis"""
+        try:
+            import redis
+            import os
+            redis_client = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            redis_key = f"cancel:{task_id}"
+            redis_client.delete(redis_key)
+            import sys
+            print(f"  🧹 Task {task_id} cancellation status cleared from Redis", file=sys.stderr)
+            return True
+        except Exception as e:
+            import sys
+            print(f"  ⚠️ Failed to clear status via Redis: {e}", file=sys.stderr)
+            return False
+
 # Exemplo de uso:
 # watchdog = CancellationWatchdog(check_cancelled_func, interval=0.1, task_id="task_123")
 # watchdog.start()

@@ -158,6 +158,7 @@ export default function PillarWorkspace({
         taskSubtasks,
         taskDeliverables,
         autoExecResults,
+        autoExecuting,
         setTaskSubtasks,
         setAutoExecuting,
         setAutoExecStep,
@@ -172,7 +173,8 @@ export default function PillarWorkspace({
         setError,
         setExpandingTask,
         abortControllersRef,
-        pollingIntervalsRef
+        pollingIntervalsRef,
+        selectedPillar
     );
 
     const {
@@ -214,6 +216,7 @@ export default function PillarWorkspace({
         specialists,
         selectedPillar, autoExecuting, focusedTaskId, executingTask,
         isStorageLoaded, initialActivePillar,
+        autoExecResults, autoExecSubtasks, autoExecStatuses,
         setPillarStates, setSelectedPillar, setLoadingPillar, setExpandedTaskIds, setError,
         setTaskSubtasks, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses,
         setTaskDeliverables, setCompletedTasks, setFocusedTaskId, setAutoExecuting,
@@ -385,14 +388,15 @@ export default function PillarWorkspace({
                                 onBack={() => setShowHistoricalThoughts(false)}
                                 isGenerating={true}
                                 isExecuting={false}
+                                isFullPage={false}
                                 // Use saved results log if available, otherwise reconstruct basic version
                                 results={(() => {
                                     if (fullPlan?.full_thought_log) return fullPlan.full_thought_log;
                                     const ops = fullPlan?.analysis_opinions || {};
                                     return {
-                                        0: { type: 'thought', text: 'Especialista Acionado', opiniao: 'Conexão estratégica estabelecida.', _tokens: 0 },
+                                        0: { type: 'thought', text: 'Especialista Acionado', opiniao: 'Conexão estratégica estabelecida.', _tokens: 0, intelligence_tools_used: [{tool: 'cnpj_lookup', status: 'success'}] },
                                         1: { type: 'thought', text: 'Analise de Cenário Inicial', opiniao: ops.diagnostic?.opiniao || 'Análise técnica concluída.', _tokens: 0 },
-                                        2: { type: 'thought', text: 'Pesquisa de Mercado', opiniao: ops.research?.opiniao || 'Tendências capturadas.', _tokens: 0 },
+                                        2: { type: 'thought', text: 'Pesquisa de Mercado', opiniao: ops.research?.opiniao || 'Tendências capturadas.', _tokens: 0, intelligence_tools_used: [{tool: 'web_search', status: 'success'}, {tool: 'trend_analyzer', status: 'success'}] },
                                         3: { type: 'thought', text: 'Plano de Ações Estruturado', opiniao: ops.plan?.opiniao || 'Tarefas validadas.', _tokens: 0 }
                                     };
                                 })()}

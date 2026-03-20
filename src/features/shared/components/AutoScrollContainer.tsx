@@ -50,10 +50,8 @@ export function AutoScrollContainer({ children }: { children: React.ReactNode })
 
     return (
         <div className="absolute inset-x-0 top-0 bottom-0">
-            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto pb-48 scrollbar-hide flex flex-col">
-                <div className="mt-auto">
+            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto pb-48 scrollbar-hide">
                     {children}
-                </div>
             </div>
 
             {showScrollBtn && (

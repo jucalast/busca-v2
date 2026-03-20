@@ -80,6 +80,7 @@ class ActionExecuteAllSubtasksRequest(BaseModel):
 class ActionPollBackgroundStatusRequest(BaseModel):
     analysis_id: str
     task_id: str
+    pillar_key: Optional[str] = None
 
 class ActionRedoSubtasksRequest(BaseModel):
     analysis_id: str
@@ -94,6 +95,9 @@ class ActionRedoTaskRequest(BaseModel):
 class ActionRedoPillarRequest(BaseModel):
     analysis_id: str
     pillar_key: str
+
+class ActionCheckExecutionStatusRequest(BaseModel):
+    analysis_id: str
 
 # Auth actions schemas
 class ActionRegisterRequest(BaseGrowthRequest):

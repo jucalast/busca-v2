@@ -224,6 +224,21 @@ def agent_execute_task(
 
         print(f"  🤖 Agent executing: {task_title[:60]}...", file=sys.stderr)
         
+        # ── INITIAL SAVE (BEFORE RESEARCH): Show 'Searching...' in UI ──
+        try:
+            db.save_execution_result(
+                analysis_id, pillar_key, task_id, task_title,
+                status="ai_executing", outcome="Iniciando pesquisa...",
+                result_data={
+                    "task_id": task_id,
+                    "opiniao": f"Iniciando pesquisa estratégica para {task_title}...",
+                    "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados do mercado..."}],
+                    "streaming": True
+                }
+            )
+        except Exception as e:
+            print(f"  ⚠️ Failed to save pre-research execution state: {e}", file=sys.stderr)
+
         # Check for cancellation before search
         check_cancelled_ultra()
         
@@ -251,6 +266,23 @@ def agent_execute_task(
             # Add web_extractor if we got content
             if research:
                 intelligence_tools_used.insert(1, {"tool": "web_extractor", "status": "success", "detail": f"{len(research)} chars extraídos"})
+            
+            # ── SECOND SAVE (AFTER RESEARCH): Update sources in UI during execution ──
+            try:
+                db.save_execution_result(
+                    analysis_id, pillar_key, task_id, task_title,
+                    status="ai_executing", outcome="Pesquisa concluída",
+                    result_data={
+                        "task_id": task_id,
+                        "opiniao": f"Pesquisa concluída. Encontrei {len(task_sources)} fontes relevantes. Iniciando análise e redação...",
+                        "sources": task_sources,
+                        "intelligence_tools_used": intelligence_tools_used,
+                        "streaming": True
+                    }
+                )
+            except Exception as e:
+                print(f"  ⚠️ Failed to save post-research execution state: {e}", file=sys.stderr)
+
             print(f"  📦 Task execute via unified_research: {len(task_sources)} sources | tools: {[t['tool'] for t in intelligence_tools_used]}", file=sys.stderr)
         except Exception as e:
             print(f"  ⚠️ Unified research failed for task exec: {e}", file=sys.stderr)
@@ -404,10 +436,24 @@ def agent_execute_task(
             else:
                 print(f"  📚 RESEARCH MODE: generic execution for '{task_title[:50]}'", file=sys.stderr)
                         
-        except Exception as tool_err:
-            print(f"  ⚠️ Tool system error (non-fatal, using generic): {tool_err}", file=sys.stderr)
+        except Exception as te:
+            print(f"  ⚠️ Tool matching/execution failed: {te}", file=sys.stderr)
 
-    # Scope boundaries for execution (generic fallback)
+        # Update status before LLM call to show generic progress
+        try:
+            db.save_execution_result(
+                analysis_id, pillar_key, task_id, task_title,
+                status="ai_executing", outcome="Gerando conteúdo...",
+                result_data={
+                    "task_id": task_id,
+                    "opiniao": f"Analisando dados e gerando o entregável final para {dim_cfg.get('label', pillar_key)}...",
+                    "intelligence_tools_used": intelligence_tools_used,
+                    "streaming": True
+                }
+            )
+        except Exception: pass
+
+        # Scope boundaries for execution (generic fallback)
         escopo = spec.get("escopo", "")
         nao_fazer = spec.get("nao_fazer", "")
 
@@ -552,6 +598,21 @@ Retorne APENAS o JSON."""
             
             content_len = len(content)
             print(f"  📤 Generated content length: {content_len} chars", file=sys.stderr)
+            
+            # Progress update: content received, but checking quality
+            try:
+                db.save_execution_result(
+                    analysis_id, pillar_key, task_id, task_title,
+                    status="ai_executing", outcome="Validando conteúdo...",
+                    result_data={
+                        "task_id": task_id,
+                        "opiniao": result.get("opiniao", f"Documento de {content_len} caracteres gerado. Validando qualidade e conformidade estratégica..."),
+                        "sources": sources,
+                        "intelligence_tools_used": intelligence_tools_used,
+                        "streaming": True
+                    }
+                )
+            except: pass
             
             # Determine minimum acceptable content length based on task type
             task_tipo = task_data.get("tipo", "").lower()
@@ -745,7 +806,7 @@ def expand_task_subtasks(
         return False
 
     if check_cancelled():
-        return {"success": False, "error": "Task cancelled by user"}
+        return {"success": False, "error": "Task was cancelled"}
 
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
@@ -1015,6 +1076,14 @@ def ai_try_user_task(
     if check_cancelled():
         return {"success": False, "error": "Task cancelled by user"}
 
+    # Ultra-aggressive cancellation check with database polling
+    def check_cancelled_ultra():
+        """Ultra aggressive cancellation that polls database frequently"""
+        current_status = db.get_background_task_progress(analysis_id, task_id)
+        if current_status and current_status.get("status") == "cancelled":
+            print(f"  🛑 ULTRA CANCELLATION DETECTED for task {task_id}", file=sys.stderr)
+            raise Exception("Task cancelled by user")
+
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -1041,6 +1110,20 @@ def ai_try_user_task(
             sources.extend(cat.get("fontes", [])[:2])
         sources = list(dict.fromkeys(sources))
 
+    # ── INITIAL SAVE (BEFORE RESEARCH): Show 'Searching...' in UI ──
+    try:
+        db.save_execution_result(
+            analysis_id, pillar_key, task_id, task_title,
+            status="ai_executing", outcome="Iniciando pesquisa...",
+            result_data={
+                "task_id": task_id,
+                "opiniao": f"Iniciando pesquisa estratégica e análise de contexto para {task_title}...",
+                "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados específicos..."}],
+                "streaming": True
+            }
+        )
+    except Exception: pass
+
     # Smart task-specific RAG search via unified_research
     dna = brief.get("dna", {})
     segmento = dna.get("segmento", "")
@@ -1050,6 +1133,7 @@ def ai_try_user_task(
         return {"success": False, "error": "Task cancelled by user"}
 
     research = ""
+    intelligence_tools_used = []
     try:
         from app.services.research.unified_research import research_engine
         research_data = research_engine.search_subtasks(
@@ -1063,6 +1147,23 @@ def ai_try_user_task(
         )
         research = research_data.get("content", "")
         sources.extend(research_data.get("sources", []))
+        intelligence_tools_used = research_data.get("intelligence_tools_used", [])
+        
+        # ── SECOND SAVE (AFTER RESEARCH): Update tools/sources in UI ──
+        try:
+            db.save_execution_result(
+                analysis_id, pillar_key, task_id, task_title,
+                status="ai_executing", outcome="Analisando dados...",
+                result_data={
+                    "task_id": task_id,
+                    "opiniao": f"Pesquisa concluída ({len(research_data.get('sources', []))} fontes). Iniciando geração da proposta...",
+                    "intelligence_tools_used": intelligence_tools_used,
+                    "sources": research_data.get("sources", []),
+                    "streaming": True
+                }
+            )
+        except Exception: pass
+
         print(f"  📦 AI user task via unified_research: {len(research_data.get('sources', []))} sources", file=sys.stderr)
     except Exception as e:
         print(f"  ⚠️ Unified research failed for AI user task: {e}", file=sys.stderr)

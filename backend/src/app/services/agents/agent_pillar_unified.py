@@ -31,7 +31,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 
 # Enhanced features
-from app.services.intelligence.vector_store import get_vector_store, get_objection_responses, store_objection_learning
+# from app.services.intelligence.vector_store import get_vector_store, get_objection_responses, store_objection_learning
 from app.services.intelligence.jina_reader_service import scrape_competitor_site, enhance_research_with_jina
 from app.services.search.context_service import extract_structured_context
 
@@ -544,7 +544,7 @@ class UnifiedPillarAgent:
         )
         
         if not result.get("success"):
-            raise Exception(f"LLM falhou: {result.get('error')}")
+            raise Exception(f"Provedor LLM indisponível: {result.get('error')}")
         
         try:
             structured_output = safe_json_loads(result["content"])

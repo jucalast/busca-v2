@@ -17,6 +17,7 @@ interface LoadingErrorStateProps {
     onBack: () => void;
     isGenerating?: boolean;
     isExecuting?: boolean;
+    isFullPage?: boolean;
     results?: Record<number, any>;
     subtasks?: any[];
     statuses?: Record<number, 'waiting' | 'running' | 'done' | 'error'>;
@@ -31,6 +32,7 @@ export function LoadingErrorState({
     onBack,
     isGenerating = false,
     isExecuting = true,
+    isFullPage = true,
     results = {},
     subtasks,
     statuses,
@@ -100,6 +102,8 @@ export function LoadingErrorState({
                             isExecuting={isExecuting ?? true}
                             currentStep={hasliveSubtasks ? subtasks!.length : 1}
                             onComplete={onComplete}
+                            onBack={onBack}
+                            isFullPage={isFullPage}
                         />
                     </div>
                 ) : (

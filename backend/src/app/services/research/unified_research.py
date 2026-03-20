@@ -671,9 +671,13 @@ class UnifiedResearchEngine:
         }
         
         # Combine title and desc
+        hint_clean = ferramenta_hint.strip() if ferramenta_hint else ""
+        if hint_clean.lower() in ("nenhuma", "none", "n/a", "", "null"):
+            hint_clean = ""
+
         base_text = task_title + " " + task_desc
-        if ferramenta_hint:
-            base_text = f"{ferramenta_hint} {base_text}"
+        if hint_clean:
+            base_text = f"{hint_clean} {base_text}"
             
         all_words = base_text.lower().split()
         keywords = [w for w in all_words if _norm(w) not in stop_words and len(w) > 2]
@@ -738,9 +742,9 @@ class UnifiedResearchEngine:
                 used_norms.add(_norm(sw))
         
         # Add tool hint early if present
-        if ferramenta_hint:
-            parts.append(ferramenta_hint)
-            for hw in ferramenta_hint.lower().split():
+        if hint_clean:
+            parts.append(hint_clean)
+            for hw in hint_clean.lower().split():
                 used_norms.add(_norm(hw))
         
         added = 0
@@ -757,7 +761,7 @@ class UnifiedResearchEngine:
         
         query = " ".join(parts)
         if len(query.split()) < 4:
-            query = f"{segmento} {intel} {ferramenta_hint}".strip()
+            query = f"{segmento if segmento and segmento != 'N/A' else ''} {intel} {hint_clean}".strip()
         
         return query
     

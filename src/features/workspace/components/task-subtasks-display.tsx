@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check, Globe, Newspaper, TrendingUp, Search, Building2, Zap } from 'lucide-react';
+import { Circle, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Clock, Play, ListTree, ChevronDown, ChevronUp, Check, Globe, Newspaper, TrendingUp, Search, Building2, Zap, Square } from 'lucide-react';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
 import { SourceBadgeList } from '@/features/shared/components/SourceBadgeList';
 import { MarkdownContent } from '@/features/shared/components/MarkdownContent';
@@ -70,12 +70,6 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
 
     return (
         <>
-            <style>{`
-                @keyframes subtask-shimmer {
-                    0%   { transform: translateX(-100%); }
-                    100% { transform: translateX(200%); }
-                }
-            `}</style>
             <div className="flex flex-col gap-1 w-full">
                 {itemsToShow.filter(st => st != null).map((st: any, arrayIdx: number) => {
                     const i = isExp ? arrayIdx : effectiveIndex;
@@ -252,6 +246,7 @@ interface TaskSubtasksDisplayProps {
     handleRetryAutoExecSubtask?: (pillarKey: string, task: TaskItem, subtaskIndex: number) => void;
     safeRender?: (text: string) => string;
     displayMode?: 'all' | 'result' | 'lines' | 'subtasks';
+    onStopExecution?: () => void;
 }
 
 export default function TaskSubtasksDisplay({
@@ -274,8 +269,10 @@ export default function TaskSubtasksDisplay({
     onAutoExecute,
     handleRetryAutoExecSubtask,
     displayMode = 'all',
+    onStopExecution,
     safeRender = (text) => text
 }: TaskSubtasksDisplayProps) {
+    // console.log('DEBUG: TaskSubtasksDisplay Render', { tid, displayMode, autoExecuting, isDone });
     const isExecuting = executingTask === tid;
     const isExpanding = expandingTask === tid;
     const isAutoExec = autoExecuting === tid;
@@ -289,9 +286,11 @@ export default function TaskSubtasksDisplay({
     const taskExecSubtasks = autoExecSubtasks?.[tid] || [];
     const taskExecResults = autoExecResults?.[tid] || {};
     const taskExecStatuses = autoExecStatuses?.[tid] || {};
-    const hasExecPanel = taskExecSubtasks.length > 0;
+    const hasExecPanel = taskExecSubtasks.length > 0 || Object.keys(taskExecResults).length > 0;
 
-    if (isDone && !deliverable && !hasExecPanel) return null;
+    if (isDone && !isAutoExec && !deliverable && !hasExecPanel) {
+        return null;
+    }
 
     const getOpinionText = (result: any, allowFallback = false) => {
         if (!result) return '';
@@ -357,26 +356,35 @@ export default function TaskSubtasksDisplay({
     );
 
     const renderResult = () => {
-        if (!hasExecPanel) return null;
+        if (!hasExecPanel && !isAutoExec) return null;
 
         // Collect all subtasks that have results or are currently streaming
         const items: { index: number; result: any; isStreaming: boolean }[] = [];
-        const currentStep = (autoExecStep || 0) - 1; // index of the step currently streaming
+        const rawStep = autoExecStep || 0;
+        const streamingIdx = isAutoExec ? Math.max(0, rawStep - 1) : -1;
+        
+        // If executing, ensures we show at least the initial state even if subtasks list is empty
+        const loopCount = Math.max(isAutoExec ? streamingIdx + 1 : 0, taskExecSubtasks.length);
 
-        for (let i = 0; i < taskExecSubtasks.length; i++) {
+        for (let i = 0; i < loopCount; i++) {
             const status = taskExecStatuses[i];
             const result = taskExecResults[i];
-            const isStreaming = isAutoExec && i === currentStep;
+            const isStreaming = i === streamingIdx;
 
-            if (status === 'done' || isStreaming || (result && (result.opiniao || result.conteudo || result.resumo))) {
+            if (status === 'done' || isStreaming || (result && (result.opiniao || result.conteudo || result.resumo || result.sources || result.intelligence_tools_used))) {
                 items.push({ index: i, result, isStreaming });
             }
         }
 
-        if (items.length === 0) return null;
+        if (items.length === 0 && !isAutoExec && !deliverable) {
+            // console.log('DEBUG: renderResult returns null', { itemsCount: items.length, isAutoExec, tid });
+            return null;
+        }
+        
+        // console.log('DEBUG: renderResult rendering items', { itemsCount: items.length, isAutoExec, streamingIdx, tid });
 
         return (
-            <div className="w-full space-y-6 px-1">
+            <div className="w-full space-y-6 px-1 min-h-[100px]" style={{ border: isAutoExec ? '1px solid rgba(59, 130, 246, 0.1)' : 'none' }}>
                 <style>{`
                     @keyframes result-block-fade-in {
                         from { opacity: 0; transform: translateY(10px); }
@@ -389,12 +397,13 @@ export default function TaskSubtasksDisplay({
                     // Use opinion/resumo for streaming, never use the full technical content (conteudo) in the feed
                     const streamingText = safeRender(result?.opiniao || result?.resumo || '');
                     const hasSources = result && (result.sources?.length > 0 || result.fontes_consultadas?.length > 0);
-                    const subtaskTitle = safeRender(taskExecSubtasks[index]?.titulo || '');
+                    
+                    const st = taskExecSubtasks[index];
+                    const subtaskTitle = safeRender(st?.titulo || st?.entregavel_ia || (isStreaming ? "Iniciando análise estratégica..." : `Etapa ${index + 1}`));
 
                     return (
                         <div key={index} className="w-full" style={{
-                            animation: 'result-block-fade-in 0.5s ease-out forwards',
-                            opacity: 0
+                            animation: 'result-block-fade-in 0.5s ease-out forwards'
                         }}>
                             {/* 🔄 STRATEGIC FEEDBACK LOOP INSIGHTS */}
                             {result?.strategic_insights && (
@@ -592,9 +601,9 @@ export default function TaskSubtasksDisplay({
     };
 
 
-    const renderLines = () => {
-        const [isExpanded, setIsExpanded] = React.useState(false);
+    const [isLinesExpanded, setIsLinesExpanded] = React.useState(false);
 
+    const renderLines = () => {
         if (displayMode === 'result') {
             return null;
         }
@@ -627,12 +636,12 @@ export default function TaskSubtasksDisplay({
                                     }
                                 }
 
-                                const itemsToShow = isExpanded
+                                const itemsToShow = isLinesExpanded
                                     ? taskExecSubtasks
                                     : [taskExecSubtasks[defaultIndexToShow]];
 
                                 return itemsToShow.map((st: any, arrayIndex: number) => {
-                                    const i = isExpanded ? arrayIndex : defaultIndexToShow;
+                                    const i = isLinesExpanded ? arrayIndex : defaultIndexToShow;
                                     if (!st) return null;
                                     const status = taskExecStatuses[i] || 'waiting';
                                     const isAI = st.executavel_por_ia;
@@ -657,17 +666,20 @@ export default function TaskSubtasksDisplay({
                                     };
 
                                     return (
-                                        <div key={i} className={`transition-colors rounded-lg overflow-hidden flex flex-col border border-transparent`}
+                                        <div key={i} className={`transition-all duration-300 rounded-[10px] overflow-hidden flex flex-col border glass-card ${
+                                            status === 'running' 
+                                                ? (isDark ? 'bg-white/5 border-white/5 shadow-2xl' : 'bg-white/40 border-black/5 shadow-sm')
+                                                : 'border-transparent'
+                                        }`}
                                             style={{
-                                                backgroundColor: status === 'running' ? 'var(--color-surface-active)' : 'transparent',
-                                                borderColor: status === 'running' ? 'var(--color-border-strong)' : 'transparent',
+                                                backgroundColor: status === 'running' ? undefined : 'transparent',
+                                                borderColor: status === 'running' ? undefined : 'transparent',
                                                 ...(status === 'error' ? { backgroundColor: 'var(--color-destructive-muted)', borderColor: 'rgba(239,68,68,0.1)' } : {}),
-                                                ...(status !== 'running' && status !== 'error' ? { ':hover': { backgroundColor: 'var(--color-surface-hover)' } } : {}) as any // Simple fallback inline
                                             }}>
                                             <div className="flex items-center gap-3 px-3 w-full">
                                                 <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center">
                                                     {status === 'waiting' && <Circle className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />}
-                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />}
+                                                    {status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-accent)' }} />}
                                                     {status === 'done' && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: 'var(--color-success)' }} />}
                                                     {status === 'error' && <AlertTriangle className="w-3.5 h-3.5" style={{ color: 'var(--color-destructive)' }} />}
                                                 </div>
@@ -696,9 +708,20 @@ export default function TaskSubtasksDisplay({
                                                 </span>
 
                                                 {status === 'running' && (
-                                                    <span className="text-[9px] font-medium animate-pulse px-2" style={{ color: 'var(--color-accent)' }}>
-                                                        {st.modo_execucao === 'producao' ? '🏭 Produzindo...' : 'Executando...'}
-                                                    </span>
+                                                    <div className="flex items-center gap-2 relative z-10">
+                                                        <span className="text-[9px] font-semibold tracking-wider uppercase opacity-40 px-2" style={{ color: 'var(--color-accent)' }}>
+                                                            {st.modo_execucao === 'producao' ? 'Produzindo' : 'Processando'}
+                                                        </span>
+                                                        {onStopExecution && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); onStopExecution(); }}
+                                                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+                                                                title="Parar execução"
+                                                            >
+                                                                <Square size={10} className="fill-current" />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 )}
 
                                                 {status === 'done' && resultForSubtask?._tokens > 0 && (
@@ -728,14 +751,14 @@ export default function TaskSubtasksDisplay({
                                                 {/* Expand/Collapse Toggle on First Item */}
                                                 {isFirstItemInList && taskExecSubtasks.length > 1 && (
                                                     <button
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsLinesExpanded(!isLinesExpanded); }}
                                                         className="flex items-center justify-center p-1 rounded transition-colors ml-2"
                                                         style={{ color: 'var(--color-text-muted)' }}
                                                         onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-text-secondary)' }}
                                                         onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
-                                                        title={isExpanded ? 'Recolher' : 'Expandir'}
+                                                        title={isLinesExpanded ? 'Recolher' : 'Expandir'}
                                                     >
-                                                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                        {isLinesExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                                     </button>
                                                 )}
                                             </div>
@@ -815,14 +838,14 @@ export default function TaskSubtasksDisplay({
                         {/* Summary generation indicator */}
                         {(isAutoExec && (autoExecStep || 0) > (autoExecTotal || 0)) || (taskExecSubtasks.length > 0 && !deliverable && (autoExecTotal || 0) > 0 && (autoExecStep || 0) > (autoExecTotal || 0) && !isAutoExec) ? (
                             <div
-                                className="flex items-center gap-3 px-3 py-2 rounded-lg mt-1"
-                                style={{
-                                    backgroundColor: 'var(--color-accent-muted)',
-                                    border: '1px solid rgba(59,130,246,0.1)',
-                                }}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-xl mt-1 border glass-card ${
+                                    isDark ? 'bg-white/5 border-white/5 shadow-2xl' : 'bg-white/40 border-black/5 shadow-sm'
+                                }`}
                             >
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-accent)' }} />
-                                <span className="text-[11px] font-medium" style={{ color: 'var(--color-accent)' }}>Gerando resumo executivo...</span>
+                                <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative z-10">
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-accent)' }} />
+                                </div>
+                                <span className="text-[11px] font-medium relative z-10" style={{ color: 'var(--color-accent)' }}>Gerando resumo executivo...</span>
                             </div>
                         ) : null}
 
@@ -866,6 +889,17 @@ export default function TaskSubtasksDisplay({
 
     return (
         <div className="mt-3 space-y-3 w-full">
+            <style>{`
+                @keyframes subtask-shimmer {
+                    0%   { transform: translateX(-100%); }
+                    100% { transform: translateX(200%); }
+                }
+                @keyframes dot-pulse {
+                    0% { opacity: 0.3; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.1); }
+                    100% { opacity: 0.3; transform: scale(0.8); }
+                }
+            `}</style>
             {renderResult()}
             {renderLines()}
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Loader2, Globe } from 'lucide-react';
+import { Loader2, Globe, ArrowLeft } from 'lucide-react';
 import { useSidebar } from '@/contexts/SidebarContext';
 import TaskSubtasksDisplay from '@/features/workspace/components/task-subtasks-display';
 import { TaskItem } from '@/features/workspace/components/pillar-workspace/types';
@@ -14,6 +14,8 @@ interface AnalysisExecutionLoaderProps {
     isExecuting: boolean;
     currentStep: number;
     onComplete?: () => void;
+    onBack?: () => void;
+    isFullPage?: boolean;
 }
 
 export default function AnalysisExecutionLoader({
@@ -23,7 +25,9 @@ export default function AnalysisExecutionLoader({
     businessName,
     isExecuting,
     currentStep,
-    onComplete
+    onComplete,
+    onBack,
+    isFullPage = true
 }: AnalysisExecutionLoaderProps) {
     const { isDark } = useSidebar();
 
@@ -47,12 +51,29 @@ export default function AnalysisExecutionLoader({
 
     return (
         <div
-            className="absolute inset-0 z-[100] flex flex-col items-center justify-center p-6 sm:pr-14 sm:pb-14 overflow-hidden transition-all duration-700"
+            className="absolute inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden transition-all duration-700"
             style={{ backgroundColor: 'var(--color-bg)', backdropFilter: 'blur(24px)' }}
         >
-            <div className="w-full max-w-3xl flex flex-col relative z-20 h-full max-h-[85vh] text-left">
+            {/* Top Back Button (Only for inner pilar / thought history) */}
+            {onBack && !isFullPage && (
+                <div className="absolute top-8 left-8 z-30">
+                    <button
+                        onClick={onBack}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${isDark
+                                ? 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+                                : 'bg-black/5 border-black/5 text-black hover:bg-black/10'
+                            }`}
+                    >
+                        <ArrowLeft size={16} /> Voltar
+                    </button>
+                </div>
+            )}
+
+            <div className={`w-full ${isFullPage ? 'max-w-5xl' : 'max-w-3xl'} flex flex-col relative z-20 h-full max-h-[85vh] text-left`}>
+
+
                 {/* Feed Area - Using the SAME component as task execution */}
-                <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar mt-4">
+                <div className="flex-1 overflow-y-auto px-4 sm:px-0 custom-scrollbar mt-4">
                     <TaskSubtasksDisplay
                         task={mockTask}
                         pillarKey="geral"
@@ -71,16 +92,19 @@ export default function AnalysisExecutionLoader({
                 </div>
 
                 {/* Footer - Only Action Button */}
-                <div className="mt-8 flex items-center justify-start border-t pt-6 transition-colors duration-300" style={{ borderColor: 'var(--color-border)' }}>
-                    {!isExecuting && (
-                        <button 
+                {!isExecuting && isFullPage && (
+                    <div className={`mt-8 flex items-center justify-center transition-colors duration-300 w-full ${isFullPage ? 'border-t-0' : 'border-t pt-6'}`} style={{ borderColor: 'var(--color-border)' }}>
+                        <button
                             onClick={() => (onComplete as any)?.()}
-                            className="flex items-center gap-2 px-8 py-3 rounded-full bg-accent text-white font-black text-[13px] uppercase tracking-[0.2em] hover:brightness-110 active:scale-95 transition-all shadow-xl shadow-accent/20 animate-in fade-in slide-in-from-bottom-2 duration-700"
+                            className={`flex items-center justify-center gap-2 py-5 rounded-2xl font-black text-[15px] uppercase tracking-[0.3em] transition-all hover:scale-[1.01] active:scale-95 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-700 ${isFullPage
+                                    ? `w-full ${isDark ? 'bg-white text-black' : 'bg-black text-white'} ring-1 ring-inset ${isDark ? 'ring-white/10' : 'ring-black/10'}`
+                                    : 'px-8 bg-accent text-white'
+                                }`}
                         >
-                            Ir para o Pilar →
+                            Ir para o Pilar
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         </div>
     );

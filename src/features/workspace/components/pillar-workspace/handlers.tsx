@@ -9,6 +9,7 @@ export const useTaskHandlers = (
     taskSubtasks: Record<string, any>,
     taskDeliverables: Record<string, any>,
     autoExecResults: Record<string, Record<number, any>>,
+    autoExecuting: string | null,
     setTaskSubtasks: React.Dispatch<React.SetStateAction<Record<string, any>>>,
     setAutoExecuting: React.Dispatch<React.SetStateAction<string | null>>,
     setAutoExecStep: React.Dispatch<React.SetStateAction<number>>,
@@ -23,7 +24,8 @@ export const useTaskHandlers = (
     setError: React.Dispatch<React.SetStateAction<string>>,
     setExpandingTask: React.Dispatch<React.SetStateAction<string | null>>,
     abortControllersRef: React.RefObject<Record<string, AbortController>>,
-    pollingIntervalsRef: React.RefObject<Record<string, NodeJS.Timeout>>
+    pollingIntervalsRef: React.RefObject<Record<string, NodeJS.Timeout>>,
+    selectedPillar: string | null = null
 ) => {
 
     // ─── Expand Subtasks Handler ───
@@ -35,6 +37,17 @@ export const useTaskHandlers = (
         setAutoExecTotal(0);
         setAutoExecLog([]);
         setError('');
+
+        // Clear any cancelled status for this task before starting new operation
+        try {
+            const clearResult = await apiCall('clear-task-status', {
+                analysis_id: analysisId,
+                task_id: task.id
+            }, { skipCache: true });
+            console.log(`🧹 [Expand] Cleared task status: ${clearResult.success}`);
+        } catch (clearErr) {
+            console.log(`⚠️ [Expand] Could not clear status, continuing...`);
+        }
 
         const controller = new AbortController();
         abortControllersRef.current[tid] = controller;
@@ -51,7 +64,14 @@ export const useTaskHandlers = (
             } else { setError(result.error || 'Erro ao expandir'); }
         } catch (err: any) {
             if (err.name === 'AbortError') setError('Ação cancelada pelo usuário.');
-            else setError(err.message || 'Erro');
+            else if (err.message && (err.message.includes('Task cancelled by user') || err.message.includes('Task was cancelled'))) {
+                // Handle the specific cancellation error
+                console.log(`⚠️ [Expand] Task cancelled during expansion, handling gracefully`);
+                setError('');
+                // Don't show error to user, just stop
+            } else {
+                setError(err.message || 'Erro');
+            }
         } finally {
             if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
             // Clear expanding state
@@ -63,11 +83,12 @@ export const useTaskHandlers = (
     const handleAutoExecute = useCallback(async (pillarKey: string, task: TaskItem, skipTrigger = false) => {
         const tid = `${pillarKey}_${task.id}`;
         
-        console.log(`🤖 handleAutoExecute: ${tid} (skipTrigger: ${skipTrigger})`);
+        console.log(`🤖 [AutoExec] handleAutoExecute: ${tid} (skipTrigger: ${skipTrigger})`);
+        console.log(`🤖 [AutoExec] autoExecuting current: ${autoExecuting}`);
 
         // If already polling for this task, don't start a second loop
         if (pollingIntervalsRef.current?.[tid]) {
-            console.log(`⏳ Already polling for ${tid}, ignoring repeat call.`);
+            console.log(`⏳ [AutoExec] Already polling for ${tid}, ignoring repeat call.`);
             return;
         }
 
@@ -81,15 +102,51 @@ export const useTaskHandlers = (
         abortControllersRef.current[tid] = controller;
 
         setAutoExecuting(tid);
-        setAutoExecStep(0);
+        setAutoExecStep(1);
         setAutoExecTotal(0);
         setAutoExecLog([]);
         setError('');
+        
+        // NOVO: Se for uma execução nova (não recovery), limpa qualquer status de cancelamento prévio
+        if (!skipTrigger) {
+            try {
+                await apiCall('clear-task-status', {
+                    analysis_id: analysisId,
+                    task_id: task.id,
+                    pillar_key: pillarKey
+                }, { skipCache: true });
+            } catch (err) {
+                console.warn('⚠️ Could not clear task status before start:', err);
+            }
+        }
 
         try {
             // Step 1: Ensure we have subtasks locally for the UI list
             let subtasks = taskSubtasks[tid]?.subtarefas;
             if (!subtasks) {
+                // Check for cancellation before expanding subtasks
+                try {
+                    const statusResult = await apiCall('poll-background-status', {
+                        analysis_id: analysisId,
+                        task_id: task.id,
+                        pillar_key: pillarKey
+                    }, { skipCache: true });
+                    
+                    if (statusResult.success && statusResult.progress) {
+                        const status = statusResult.progress.status;
+                        if (status === 'cancelled') {
+                            console.log(`⚠️ [AutoExec] Task ${task.id} was cancelled, stopping execution`);
+                            setAutoExecuting(null);
+                            setAutoExecStep(0);
+                            setAutoExecTotal(0);
+                            return;
+                        }
+                    }
+                } catch (statusErr) {
+                    // If status check fails, continue with subtask expansion
+                    console.log(`⚠️ [AutoExec] Could not check status, continuing...`);
+                }
+                
                 const expandResult = await apiCall('expand-subtasks', {
                     analysis_id: analysisId, pillar_key: pillarKey,
                     task_data: task, profile: profile?.profile || profile,
@@ -140,9 +197,11 @@ export const useTaskHandlers = (
                         const finalStatuses = ['done', 'completed', 'finalization', 'finalized', 'success'];
 
                         // Only update step if actually running ou finalizado
-                        if (status === 'running' || finalStatuses.includes(status) || status === 'error') {
-                            setAutoExecStep(current_step);
-                            setAutoExecTotal(total_steps);
+                        if (status === 'running' || status === 'started' || status === 'processing' || finalStatuses.includes(status) || status === 'error') {
+                            // Backend may send 0 while starting, default to 1 for the UI
+                            const step = current_step > 0 ? (current_step > total_steps && total_steps > 0 ? total_steps : current_step) : 1;
+                            setAutoExecStep(step);
+                            setAutoExecTotal(total_steps || (subtasks?.length ? subtasks.length + 1 : 0));
                         }
 
                         // Atualiza status das subtarefas
@@ -176,9 +235,14 @@ export const useTaskHandlers = (
                         if (subtask_results) {
                             const resultsMap: Record<number, any> = {};
                             subtask_results.forEach((res: any) => {
+                                // Match _st1, _st2, etc. OR _finalization
                                 const match = res.task_id.match(/_st(\d+)$/);
                                 if (match) {
                                     const index = parseInt(match[1]) - 1;
+                                    resultsMap[index] = res.result_data;
+                                } else if (res.task_id.endsWith('_finalization')) {
+                                    // Finalization task is always at the end
+                                    const index = subtasks ? subtasks.length : total_steps - 1;
                                     resultsMap[index] = res.result_data;
                                 }
                             });
@@ -273,8 +337,18 @@ export const useTaskHandlers = (
             }
 
         } catch (err: any) {
-            setError(err.message || 'Erro na execução automática');
-            setAutoExecuting(null);
+            if (err.message && (err.message.includes('Task cancelled by user') || err.message.includes('Task was cancelled'))) {
+                // Handle the specific cancellation error gracefully
+                console.log(`⚠️ [AutoExec] Task cancelled during execution, handling gracefully`);
+                setError('');
+                setAutoExecuting(null);
+                setAutoExecStep(0);
+                setAutoExecTotal(0);
+                return;
+            } else {
+                setError(err.message || 'Erro na execução automática');
+                setAutoExecuting(null);
+            }
         }
     }, [analysisId, profile, apiCall, taskSubtasks, taskDeliverables, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setError]);
 
@@ -425,8 +499,21 @@ export const useTaskHandlers = (
         // Notify backend to cancel the task loop
         try {
             // tid format is usually `${selectedPillar}_${task.id}`
-            const [pillar_key, ...rest] = tid.split('_');
-            const task_id = rest.join('_');
+            // Robust extraction: remove the pillar prefix if it matches
+            let pillar_key = '';
+            let task_id = '';
+            
+            if (selectedPillar && tid.startsWith(`${selectedPillar}_`)) {
+                pillar_key = selectedPillar;
+                task_id = tid.substring(selectedPillar.length + 1);
+            } else {
+                // Fallback to old splitting logic if selectedPillar doesn't match
+                const [p, ...rest] = tid.split('_');
+                pillar_key = p;
+                task_id = rest.join('_');
+            }
+
+            console.log(`📡 Sending cancel-task for pillar: ${pillar_key}, task: ${task_id}`);
 
             await apiCall('cancel-task', {
                 analysis_id: analysisId,
@@ -442,6 +529,18 @@ export const useTaskHandlers = (
         setAutoExecStep(0);
         setAutoExecTotal(0);
         setAutoExecLog([]);
+
+        // Clear all execution-related state from localStorage
+        if (typeof window !== 'undefined') {
+            const keysToRemove = [
+                `pillar_execution_${analysisId}_${tid}`,
+                `auto_executing_${analysisId}`,
+                `auto_exec_step_${analysisId}`,
+                `auto_exec_total_${analysisId}`,
+                `auto_exec_log_${analysisId}`
+            ];
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+        }
 
         // Remove lingering 'running' UI states so spinners disappear
         setAutoExecStatuses(prev => {

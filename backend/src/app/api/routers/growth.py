@@ -1,5 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
+import psycopg2
+import psycopg2.extras
 from app.core.auth_middleware import get_current_user
 import json
 from app.services.common import log_info, log_debug, log_error
@@ -11,14 +13,15 @@ from app.schemas.requests import (
     ActionExecuteAllSubtasksRequest, ActionPollBackgroundStatusRequest,
     ActionRedoSubtasksRequest, ActionRedoTaskRequest, ActionRedoPillarRequest,
     PillarStateRequest, AnalysisTasksRequest, DeleteBusinessRequest, ProductionAgentRequest,
-    ActionRegisterRequest, ActionLoginRequest, ActionLogoutRequest, ActionValidateSessionRequest
+    ActionRegisterRequest, ActionLoginRequest, ActionLogoutRequest, ActionValidateSessionRequest,
+    ActionCheckExecutionStatusRequest
 )
 from app.services.core.service_growth import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
     do_list_businesses, do_get_business, do_specialist_plan,
     do_specialist_execute, do_expand_subtasks, do_ai_try_user_task,
     do_execute_all_subtasks, do_get_background_status,
-    do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task,
+    do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task, do_clear_task_status,
     do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_specialist_tasks_stream, do_delete_business,
     do_run_production_pillar_agent, do_register, do_login, do_logout, do_validate_session,
     do_get_business_summary, do_get_business_action_plan
@@ -53,6 +56,10 @@ def redo_task(req: ActionRedoTaskRequest):
 @router.post("/cancel-task")
 def cancel_task(req: ActionRedoTaskRequest):
     return do_cancel_task(req.model_dump())
+
+@router.post("/clear-task-status")
+def clear_task_status(req: ActionRedoTaskRequest):
+    return do_clear_task_status(req.model_dump())
 
 @router.post("/redo-pillar")
 def redo_pillar(req: ActionRedoPillarRequest):
@@ -148,6 +155,25 @@ def execute_all_subtasks(req: ActionExecuteAllSubtasksRequest):
 @router.post("/poll-background-status")
 def poll_background_status(req: ActionPollBackgroundStatusRequest):
     return do_get_background_status(req.analysis_id, req.task_id)
+
+@router.post("/clear-task-status")
+def clear_task_status(req: ActionPollBackgroundStatusRequest):
+    return do_clear_task_status(req.model_dump())
+
+@router.post("/check-execution-status")
+def check_execution_status(req: ActionCheckExecutionStatusRequest):
+    """Checks if there's any active background task for this analysis."""
+    from app.core import database as db
+    # Check all background tasks for this analysis
+    conn = db.get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cursor.execute('SELECT status FROM background_tasks WHERE analysis_id = %s', (req.analysis_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # If any task is 'running' or 'started', then we have an active execution
+    has_active = any(row['status'] in ['running', 'started', 'processing'] for row in rows)
+    return {"success": True, "hasActiveExecution": has_active}
 
 @router.post("/pillar-state")
 def pillar_state(req: PillarStateRequest):

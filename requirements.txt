@@ -11,6 +11,7 @@ ddgs
 groq
 openai
 google-genai
+google-generativeai
 langgraph
 langgraph-checkpoint-sqlite
 chromadb
@@ -23,3 +24,4 @@ pytrends
 gnews
 email-validator
 phonenumbers
+stripe

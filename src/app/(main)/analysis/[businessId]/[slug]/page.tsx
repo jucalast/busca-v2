@@ -16,7 +16,7 @@ async function AnalysisContentLoader({ businessId, slug, session }: { businessId
         const result = await runOrchestrator('get-business-action-plan', {
             aiModel: 'auto',
             business_id: businessId,
-        }, 30000);
+        }, 15000);
 
         if (result && result.success && result.business) {
             businessData = result.business;

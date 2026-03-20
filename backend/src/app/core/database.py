@@ -16,6 +16,7 @@ import psycopg2.extras
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +33,78 @@ JWT_SECRET = os.environ.get("NEXTAUTH_SECRET") or os.environ.get("JWT_SECRET") o
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
+# Simple connection pool to reduce connection overhead
+class SimpleConnectionPool:
+    def __init__(self, max_connections=5):
+        self.max_connections = max_connections
+        self.pool = []
+        self.lock = Lock()
+        self.created_connections = 0
+    
+    def get_connection(self):
+        with self.lock:
+            if self.pool:
+                conn = self.pool.pop()
+                try:
+                    # Test if connection is still alive
+                    conn.cursor().execute('SELECT 1')
+                    return conn
+                except:
+                    # Connection is dead, create a new one
+                    try:
+                        conn.close()
+                    except:
+                        pass
+            
+            # Create new connection if under limit
+            if self.created_connections < self.max_connections:
+                conn = self._create_connection()
+                self.created_connections += 1
+                return conn
+            
+            # Pool is full and no available connections, create a temporary one
+            return self._create_connection()
+    
+    def return_connection(self, conn):
+        with self.lock:
+            if len(self.pool) < self.max_connections:
+                try:
+                    # Test if connection is still alive before returning to pool
+                    conn.cursor().execute('SELECT 1')
+                    self.pool.append(conn)
+                    return
+                except:
+                    pass
+            # Close connection if not returning to pool
+            try:
+                conn.close()
+                self.created_connections = max(0, self.created_connections - 1)
+            except:
+                pass
+    
+    def _create_connection(self):
+        db_url = os.environ.get("DATABASE_URL")
+        if not db_url:
+            raise RuntimeError("DATABASE_URL is not set. A valid PostgreSQL connection string is required.")
+        
+        return psycopg2.connect(
+            db_url,
+            connect_timeout=10,
+            sslmode='require',
+            application_name='growth_platform'
+        )
+
+# Global connection pool
+_connection_pool = SimpleConnectionPool(max_connections=3)
+
 
 def get_connection():
-    """Get native PostgreSQL database connection."""
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        raise RuntimeError("DATABASE_URL is not set. A valid PostgreSQL connection string is required.")
-    
-    # Try multiple times to establish connection initially if it fails
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            conn = psycopg2.connect(db_url)
-            return conn
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            if attempt == max_retries - 1:
-                raise e
-            logger.warning(f"Erro ao conectar ao banco (tentativa {attempt + 1}/{max_retries}): {e}")
-            time.sleep(1)
+    """Get native PostgreSQL database connection from pool."""
+    return _connection_pool.get_connection()
+
+def return_connection(conn):
+    """Return connection to pool."""
+    _connection_pool.return_connection(conn)
 
 def with_db_retry(max_retries=3, delay=1.0):
     """Decorator to retry database operations on connection errors."""
@@ -802,24 +857,27 @@ def get_business_summary(business_id: str) -> Optional[Dict]:
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cursor.execute('SELECT id, user_id, name, segment, model, location, status, created_at, updated_at FROM businesses WHERE id = %s', (business_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-    
-    return {
-        "id": row["id"],
-        "user_id": row["user_id"],
-        "name": row["name"],
-        "segment": row["segment"],
-        "model": row["model"],
-        "location": row["location"],
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"]
-    }
+    try:
+        cursor.execute('SELECT id, user_id, name, segment, model, location, status, created_at, updated_at FROM businesses WHERE id = %s', (business_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "name": row["name"],
+            "segment": row["segment"],
+            "model": row["model"],
+            "location": row["location"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"]
+        }
+    finally:
+        cursor.close()
+        return_connection(conn)
 
 def get_business(business_id: str) -> Optional[Dict]:
     """Get business by ID (Full profile data)."""
@@ -855,84 +913,57 @@ def list_user_businesses(user_id: str, status: str = "active") -> List[Dict]:
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Using a CTE or Lateral Join for maximum efficiency in Postgres
-    # This fetches only 1 analysis per business (the latest)
-    query = '''
-        WITH latest_analyses AS (
-            SELECT DISTINCT ON (business_id) 
-                id, business_id, score_geral, classificacao, created_at
-            FROM analyses
-            ORDER BY business_id, created_at DESC
-        )
-        SELECT 
-            b.id, b.user_id, b.name, b.segment, b.model, b.location, b.status, b.created_at, b.updated_at,
-            la.id as analysis_id, la.score_geral, la.classificacao, la.created_at as analysis_date
-        FROM businesses b
-        LEFT JOIN latest_analyses la ON b.id = la.business_id
-        WHERE b.user_id = %s AND b.status = %s
-        ORDER BY b.updated_at DESC
-    '''
-    
-    cursor.execute(query, (user_id, status))
-    rows = cursor.fetchall()
-    conn.close()
-    
-    businesses = []
-    for row in rows:
-        biz_data = {
-            "id": row["id"],
-            "user_id": row["user_id"],
-            "name": row["name"],
-            "segment": row["segment"],
-            "model": row["model"],
-            "location": row["location"],
-            "status": row["status"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"]
-        }
+    try:
+        # Using a CTE or Lateral Join for maximum efficiency in Postgres
+        # This fetches only 1 analysis per business (the latest)
+        query = '''
+            WITH latest_analyses AS (
+                SELECT DISTINCT ON (business_id) 
+                    id, business_id, score_geral, classificacao, created_at
+                FROM analyses
+                ORDER BY business_id, created_at DESC
+            )
+            SELECT 
+                b.id, b.user_id, b.name, b.segment, b.model, b.location, b.status, b.created_at, b.updated_at,
+                la.id as analysis_id, la.score_geral, la.classificacao, la.created_at as analysis_date
+            FROM businesses b
+            LEFT JOIN latest_analyses la ON b.id = la.business_id
+            WHERE b.user_id = %s AND b.status = %s
+            ORDER BY b.updated_at DESC
+        '''
         
-        # Add summary analysis info if present
-        if row["analysis_id"]:
-            biz_data["latest_analysis"] = {
-                "id": row["analysis_id"],
-                "score_geral": row["score_geral"],
-                "classificacao": row["classificacao"],
-                "created_at": row["analysis_date"]
+        cursor.execute(query, (user_id, status))
+        rows = cursor.fetchall()
+        
+        businesses = []
+        for row in rows:
+            biz_data = {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "name": row["name"],
+                "segment": row["segment"],
+                "model": row["model"],
+                "location": row["location"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"]
             }
-        else:
-            biz_data["latest_analysis"] = None
             
-        businesses.append(biz_data)
-    
-    return businesses
-
-
-@with_db_retry()
-def update_business(business_id: str, profile_data: Dict) -> bool:
-    """Update business profile data."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    # Extract updated key fields
-    perfil = profile_data.get("perfil", {})
-    segment = perfil.get("segmento", "")
-    model = perfil.get("modelo_negocio", perfil.get("modelo", ""))
-    location = perfil.get("localizacao", "")
-    name = perfil.get("nome", perfil.get("nome_negocio", ""))
-    
-    cursor.execute('''
-        UPDATE businesses 
-        SET name = %s, segment = %s, model = %s, location = %s, profile_data = %s, updated_at = %s
-        WHERE id = %s
-    ''', (name, segment, model, location, json.dumps(profile_data, ensure_ascii=False), now, business_id))
-    
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    
-    return success
+            # Add summary analysis info if present
+            if row["analysis_id"]:
+                biz_data["latest_analysis"] = {
+                    "id": row["analysis_id"],
+                    "score_geral": row["score_geral"],
+                    "classificacao": row["classificacao"],
+                    "created_at": row["analysis_date"]
+                }
+            
+            businesses.append(biz_data)
+        
+        return businesses
+    finally:
+        cursor.close()
+        return_connection(conn)
 
 
 @with_db_retry()

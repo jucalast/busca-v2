@@ -26,18 +26,25 @@ async function refreshAccessToken(token: any) {
 
         const refreshed = await response.json();
 
-        if (!response.ok) throw refreshed;
+        if (!response.ok) {
+            console.error("Google Token Refresh Error Response:", refreshed);
+            throw refreshed;
+        }
 
         return {
             ...token,
             accessToken: refreshed.access_token,
-            accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
+            accessTokenExpires: Date.now() + (refreshed.expires_in || 0) * 1000,
             // Keep old refresh token if a new one isn't returned
             refreshToken: refreshed.refresh_token ?? token.refreshToken,
             error: undefined,
         };
-    } catch (error) {
-        console.error("Error refreshing access token", error);
+    } catch (error: any) {
+        console.error("Error refreshing access token:", {
+            error,
+            hasRefreshToken: !!token.refreshToken,
+            tokenType: typeof token,
+        });
         return { ...token, error: "RefreshAccessTokenError" };
     }
 }

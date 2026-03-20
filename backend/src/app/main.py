@@ -42,12 +42,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.routers import growth, search, billing_router
+# from app.api.routers import billing_router  # Temporarily disabled - requires stripe
 
 app.include_router(growth.router, prefix="/api/v1/growth", tags=["Growth"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
-app.include_router(billing_router.router, prefix="/api/v1/billing", tags=["Billing"])
+# app.include_router(billing_router.router, prefix="/api/v1/billing", tags=["Billing"])
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

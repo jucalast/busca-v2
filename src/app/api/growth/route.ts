@@ -113,7 +113,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('list-businesses', {
                 aiModel,
                 user_id: user_id || 'default_user',
-            }, 30000, jwtToken);
+            }, 10000, jwtToken);
 
             return NextResponse.json(result);
         }
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-business-summary', {
                 aiModel,
                 business_id,
-            }, 30000, jwtToken);
+            }, 15000, jwtToken);
             return NextResponse.json(result);
         }
 
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('get-business-action-plan', {
                 aiModel,
                 business_id,
-            }, 30000, jwtToken);
+            }, 15000, jwtToken);
             return NextResponse.json(result);
         }
 
@@ -672,7 +672,7 @@ export async function POST(request: Request) {
 
         // ━━━ Action: Poll Background Status ━━━
         if (action === 'poll-background-status') {
-            const { analysis_id, task_id } = body;
+            const { analysis_id, task_id, pillar_key } = body;
             if (!analysis_id || !task_id) {
                 return NextResponse.json({ error: 'analysis_id and task_id are required' }, { status: 400 });
             }
@@ -680,7 +680,24 @@ export async function POST(request: Request) {
             const result = await runOrchestrator('poll-background-status', {
                 analysis_id,
                 task_id,
+                pillar_key,
             }, 5000, jwtToken);
+
+            return NextResponse.json(result);
+        }
+
+        // ━━━ Action: Clear Task Status ━━━
+        if (action === 'clear-task-status') {
+            const { analysis_id, task_id, pillar_key } = body;
+            if (!analysis_id || !task_id) {
+                return NextResponse.json({ error: 'analysis_id and task_id are required' }, { status: 400 });
+            }
+
+            const result = await runOrchestrator('clear-task-status', {
+                analysis_id,
+                task_id,
+                pillar_key,
+            }, 10000);
 
             return NextResponse.json(result);
         }
@@ -688,10 +705,10 @@ export async function POST(request: Request) {
         // ━━━ Action: Check Execution Status ━━━
         if (action === 'check-execution-status') {
             const { analysisId } = body;
-            
-            // Simple check: return false since we don't have persistent backend tracking
-            // In a real implementation, this would check Redis/database for active Celery tasks
-            return NextResponse.json({ hasActiveExecution: false });
+            const result = await runOrchestrator('check-execution-status', {
+                analysis_id: analysisId
+            }, 5000, jwtToken);
+            return NextResponse.json(result);
         }
 
         // ━━━ Action: AI Try User Task (Streaming) ━━━
