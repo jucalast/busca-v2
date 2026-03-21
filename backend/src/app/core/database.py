@@ -2145,7 +2145,7 @@ def delete_specialist_execution(analysis_id: str, pillar_key: str, task_id: str)
         # Delete from specialist_executions table
         cursor.execute('''
             DELETE FROM specialist_executions
-            WHERE analysis_id = %s AND pillar_key = %s AND id = %s
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
         ''', (analysis_id, pillar_key, task_id))
         
         conn.commit()
@@ -2178,9 +2178,10 @@ def delete_specialist_subtasks(analysis_id: str, pillar_key: str, task_id: str) 
     
     try:
         # Delete subtask executions (they have IDs like taskId_st1, taskId_st2, etc.)
+        # CRÍTICO: Usar task_id em vez de id (que é um UUID)
         cursor.execute('''
             DELETE FROM specialist_executions
-            WHERE analysis_id = %s AND pillar_key = %s AND id LIKE %s
+            WHERE analysis_id = %s AND pillar_key = %s AND task_id LIKE %s
         ''', (analysis_id, pillar_key, f"{task_id}_st%"))
         
         # Delete the main subtasks array entry
@@ -2201,10 +2202,17 @@ def delete_specialist_executions(analysis_id: str, pillar_key: str, task_id: str
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # Executions are stored with task_id + "_st1", "_st2" etc, so we delete by LIKE
+    # Usamos f"{task_id}_st%" para garantir que não deletamos a tarefa pai inadvertidamente se os nomes forem similares
     cursor.execute('''
         DELETE FROM specialist_executions
         WHERE analysis_id = %s AND pillar_key = %s AND task_id LIKE %s
-    ''', (analysis_id, pillar_key, f"{task_id}%"))
+    ''', (analysis_id, pillar_key, f"{task_id}_st%"))
+    
+    # Também tenta deletar o registro da tarefa em si se for uma execução única
+    cursor.execute('''
+        DELETE FROM specialist_executions
+        WHERE analysis_id = %s AND pillar_key = %s AND task_id = %s
+    ''', (analysis_id, pillar_key, task_id))
     
     conn.commit()
     conn.close()

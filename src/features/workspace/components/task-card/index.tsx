@@ -167,11 +167,10 @@ export default function TaskCard({
       {currentSubtask && (
         <div className="mt-2 pl-11">
           <div
-            className={`relative overflow-hidden transition-all duration-300 rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card border ${
-              isDark 
-                ? 'bg-zinc-900/40 border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.3)]' 
-                : 'bg-white/60 border-black/5 shadow-[0_2px_8px_rgba(0,0,0,0.05)]'
-            }`}
+            className={`relative overflow-hidden transition-all duration-300 rounded-[10px] flex items-center gap-3 px-3 py-2 w-full glass-card ${isDark
+                ? 'shadow-[0_4px_12px_rgba(0,0,0,0.3)]'
+                : 'border border-black/5 shadow-[0_2px_8px_rgba(0,0,0,0.05)]'
+              }`}
           >
             <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative z-10">
               {currentSubtask.status === 'waiting' && <Circle size={12} style={{ color: 'var(--color-text-muted)' }} />}
@@ -192,7 +191,7 @@ export default function TaskCard({
 
             {currentSubtask.status === 'running' && (
               <div className="flex items-center gap-2 relative z-10">
-                <span className="text-[9px] font-semibold tracking-wider uppercase opacity-40 px-2" style={{ color: 'var(--color-accent)' }}>Processando</span>
+
                 {onStopExecution && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onStopExecution(); }}

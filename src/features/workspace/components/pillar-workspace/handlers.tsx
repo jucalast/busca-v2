@@ -25,6 +25,7 @@ export const useTaskHandlers = (
     setExpandingTask: React.Dispatch<React.SetStateAction<string | null>>,
     abortControllersRef: React.RefObject<Record<string, AbortController>>,
     pollingIntervalsRef: React.RefObject<Record<string, NodeJS.Timeout>>,
+    eventSourcesRef: React.RefObject<Record<string, EventSource>>,
     selectedPillar: string | null = null
 ) => {
 
@@ -42,7 +43,8 @@ export const useTaskHandlers = (
         try {
             const clearResult = await apiCall('clear-task-status', {
                 analysis_id: analysisId,
-                task_id: task.id
+                task_id: task.id,
+                pillar_key: pillarKey
             }, { skipCache: true });
             console.log(`🧹 [Expand] Cleared task status: ${clearResult.success}`);
         } catch (clearErr) {
@@ -180,7 +182,91 @@ export const useTaskHandlers = (
                 console.log(`🔄 Resuming polling only for ${tid} (skipping trigger)`);
             }
 
-            // Step 3: Polling Loop
+            // Step 2.5: Conectar ao Streaming de Eventos (SSE) para feedback em tempo real
+            if (eventSourcesRef.current) {
+                if (eventSourcesRef.current[tid]) {
+                    eventSourcesRef.current[tid].close();
+                }
+
+                // O backend publica no canal task_updates:task_id
+                const sseUrl = `/api/v1/growth/task-events/${task.id}`;
+                console.log(`📡 [SSE] Conectando ao stream: ${sseUrl}`);
+                const eventSource = new EventSource(sseUrl);
+                eventSourcesRef.current[tid] = eventSource;
+
+                eventSource.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload.type === 'thought' || payload.type === 'tool' || payload.type === 'source') {
+                            const subtaskId = payload.task_id;
+                            const match = subtaskId.match(/_st(\d+)$/);
+                            let index = -1;
+                            
+                            // Determina qual índice de subtarefa deve ser atualizado
+                            if (match) {
+                                index = parseInt(match[1]) - 1;
+                            } else if (subtaskId.endsWith('_summary_final') || subtaskId.endsWith('_finalization')) {
+                                index = subtasks ? subtasks.length : -1;
+                            } else if (subtaskId === task.id) {
+                                index = 0;
+                            }
+
+                            if (index !== -1) {
+                                setAutoExecResults(prev => {
+                                    const currentResults = prev[tid] || {};
+                                    const res = currentResults[index] || {};
+                                    
+                                    const nextRes = { ...res };
+                                    if (payload.type === 'thought') {
+                                        nextRes.opiniao = payload.data.text;
+                                    } else if (payload.type === 'tool') {
+                                        const tools = nextRes.intelligence_tools_used ? [...nextRes.intelligence_tools_used] : [];
+                                        const incoming = payload.data;
+                                        const existingIdx = tools.findIndex((t: any) => t.tool === incoming.tool);
+                                        if (existingIdx !== -1) {
+                                            tools[existingIdx] = { ...tools[existingIdx], ...incoming };
+                                        } else {
+                                            tools.push(incoming);
+                                        }
+                                        nextRes.intelligence_tools_used = tools;
+                                    } else if (payload.type === 'source') {
+                                        const sources = nextRes.sources ? [...nextRes.sources] : [];
+                                        const incomingSource = payload.data.source;
+                                        if (!sources.find((s: any) => s.url === incomingSource.url)) {
+                                            sources.push(incomingSource);
+                                        }
+                                        nextRes.sources = sources;
+                                    }
+                                    
+                                    return {
+                                        ...prev,
+                                        [tid]: { ...currentResults, [index]: nextRes }
+                                    };
+                                });
+
+                                // Também atualiza o status para 'running' se recebermos um pensamento/extração
+                                setAutoExecStatuses(prev => {
+                                    const current = prev[tid] || {};
+                                    if (current[index] !== 'done' && current[index] !== 'error') {
+                                        return { ...prev, [tid]: { ...current, [index]: 'running' } };
+                                    }
+                                    return prev;
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error('❌ [SSE] Erro ao processar evento:', e);
+                    }
+                };
+
+                eventSource.onerror = (err) => {
+                    console.warn('⚠️ [SSE] Conexão encerrada ou erro:', err);
+                    eventSource.close();
+                    if (eventSourcesRef.current?.[tid]) delete eventSourcesRef.current[tid];
+                };
+            }
+
+            // Step 3: Polling Loop (Backup de sincronização)
             const poll = async () => {
                 try {
                     const statusRes = await apiCall('poll-background-status', {
@@ -193,23 +279,18 @@ export const useTaskHandlers = (
 
                         console.log('🔍 Polling status:', { status, current_step, total_steps, taskId: task.id, tid, hasResultData: !!result_data });
 
-                        // Status finais possíveis
                         const finalStatuses = ['done', 'completed', 'finalization', 'finalized', 'success'];
 
-                        // Only update step if actually running ou finalizado
                         if (status === 'running' || status === 'started' || status === 'processing' || finalStatuses.includes(status) || status === 'error') {
-                            // Backend may send 0 while starting, default to 1 for the UI
                             const step = current_step > 0 ? (current_step > total_steps && total_steps > 0 ? total_steps : current_step) : 1;
                             setAutoExecStep(step);
                             setAutoExecTotal(total_steps || (subtasks?.length ? subtasks.length + 1 : 0));
                         }
 
-                        // Atualiza status das subtarefas
                         if (subtasks) {
                             const newStatuses: Record<number, any> = {};
                             for (let i = 0; i < subtasks.length; i++) {
                                 if (finalStatuses.includes(status)) {
-                                    // Status final: todas as subtarefas estão completas
                                     newStatuses[i] = 'done';
                                 } else if (i + 1 < current_step) {
                                     newStatuses[i] = 'done';
@@ -221,27 +302,38 @@ export const useTaskHandlers = (
                                     newStatuses[i] = 'waiting';
                                 }
                             }
-                            
-                            // Se status final, também marca a subtarefa de finalização (se existir)
-                            if (finalStatuses.includes(status) && total_steps > subtasks.length) {
-                                newStatuses[subtasks.length] = 'done'; // Finalization task
+
+                            if (subtask_results && Array.isArray(subtask_results)) {
+                                subtask_results.forEach((res: any) => {
+                                    const match = res.task_id.match(/_st(\d+)$/);
+                                    if (match) {
+                                        const idx = parseInt(match[1]) - 1;
+                                        if (res.status === 'ai_executing') newStatuses[idx] = 'running';
+                                        else if (res.status === 'ai_executed' || res.status === 'done') newStatuses[idx] = 'done';
+                                        else if (res.status === 'error') newStatuses[idx] = 'error';
+                                    } else if (res.task_id.endsWith('_finalization')) {
+                                        const idx = subtasks.length;
+                                        if (res.status === 'ai_executing') newStatuses[idx] = 'running';
+                                        else if (res.status === 'ai_executed' || res.status === 'done') newStatuses[idx] = 'done';
+                                    }
+                                });
                             }
                             
-                            console.log('🔄 Updating subtask statuses:', { tid, newStatuses, totalSteps: total_steps, subtaskCount: subtasks.length });
+                            if (finalStatuses.includes(status)) {
+                                Object.keys(newStatuses).forEach(k => newStatuses[Number(k)] = 'done');
+                                if (total_steps > subtasks.length) newStatuses[subtasks.length] = 'done';
+                            }
                             setAutoExecStatuses(prev => ({ ...prev, [tid]: newStatuses }));
                         }
 
-                        // Atualiza resultados intermediários
                         if (subtask_results) {
                             const resultsMap: Record<number, any> = {};
                             subtask_results.forEach((res: any) => {
-                                // Match _st1, _st2, etc. OR _finalization
                                 const match = res.task_id.match(/_st(\d+)$/);
                                 if (match) {
                                     const index = parseInt(match[1]) - 1;
                                     resultsMap[index] = res.result_data;
                                 } else if (res.task_id.endsWith('_finalization')) {
-                                    // Finalization task is always at the end
                                     const index = subtasks ? subtasks.length : total_steps - 1;
                                     resultsMap[index] = res.result_data;
                                 }
@@ -250,80 +342,68 @@ export const useTaskHandlers = (
                         }
 
                         if (finalStatuses.includes(status)) {
-                            console.log('✅ Final status detected:', { status, hasResultData: !!result_data, taskId: task.id, resultDataLength: result_data ? Object.keys(result_data).length : 0 });
-                            
-                            // Garante que o progresso mostre 100% completado
                             setAutoExecStep(total_steps);
                             setAutoExecTotal(total_steps);
                             
                             if (result_data) {
-                                console.log('💾 Saving deliverable to state:', { tid, resultDataKeys: Object.keys(result_data) });
                                 setTaskDeliverables(prev => ({ ...prev, [tid]: result_data }));
                                 setCompletedTasks(prev => {
                                     const s = new Set(prev[pillarKey] || []);
                                     s.add(task.id);
                                     s.add(tid);
-                                    console.log('✅ Task marked as completed:', { taskId: task.id, tid, totalCompleted: s.size });
                                     return { ...prev, [pillarKey]: s };
                                 });
-                                setAutoExecuting(null);
-                                return true; // Stop polling
-                            } else {
-                                console.log('⚠️ Final status but no result_data:', { status, taskId: task.id });
-                                // Additional safety check: continue polling if we have final status but no deliverable yet
-                                const currentDeliverable = taskDeliverables?.[tid];
-                                if (!currentDeliverable) {
-                                    console.log('⚠️ Final status detected but no deliverable yet, continuing polling...', { tid, status });
-                                    return false; // Continue polling
+
+                                // Fechar SSE ao finalizar com sucesso
+                                if (eventSourcesRef.current?.[tid]) {
+                                    eventSourcesRef.current[tid].close();
+                                    delete eventSourcesRef.current[tid];
                                 }
+
                                 setAutoExecuting(null);
-                                return true; // Stop polling
+                                return true; 
+                            } else {
+                                const currentDeliverable = taskDeliverables?.[tid];
+                                if (!currentDeliverable) return false; 
+                                
+                                setAutoExecuting(null);
+                                return true; 
                             }
                         } else if (status === 'error' || status === 'cancelled') {
-                            console.log('❌ Error/cancelled status:', { status, error_message, taskId: task.id });
                             if (status === 'error') setError(error_message || 'Erro na execução');
                             
-                            // Cleanup interval
                             if (pollingIntervalsRef.current?.[tid]) {
                                 clearInterval(pollingIntervalsRef.current[tid]);
                                 delete pollingIntervalsRef.current[tid];
                             }
+
+                            // Fechar SSE em erro
+                            if (eventSourcesRef.current?.[tid]) {
+                                eventSourcesRef.current[tid].close();
+                                delete eventSourcesRef.current[tid];
+                            }
                             
                             setAutoExecuting(null);
-                            return true; // Stop polling
+                            return true; 
                         }
                     } else if (statusRes && statusRes.success === false) {
-                        console.log('❌ Polling failed:', statusRes);
-                        // If task is not found (deleted) or similar explicit failure
                         setAutoExecuting(null);
                         return true;
-                    } else {
-                        console.log('⏳ No status yet, continuing polling:', { taskId: task.id, tid, statusRes });
                     }
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
 
-                // If it was stopped, abort controllers will be undefined
-                if (!abortControllersRef.current[tid]) {
-                    console.log('🛑 Polling stopped: abort controller cleared', { tid });
-                    return true;
-                }
-
-                console.log('🔄 Continuing polling...', { tid });
+                if (!abortControllersRef.current[tid]) return true;
                 return false;
             };
 
-            // Start first poll and then interval
-            console.log('🚀 Starting polling for task:', { taskId: task.id, tid });
+            console.log('🚀 Starting polling fallback for task:', tid);
             const finished = await poll();
-            console.log('📊 First poll result:', { finished, tid });
             if (!finished) {
-                console.log('⏰ Setting up interval polling...');
                 const interval = setInterval(async () => {
                     const done = await poll();
                     if (done) {
-                        console.log('✅ Polling interval cleared');
                         if (pollingIntervalsRef.current?.[tid]) delete pollingIntervalsRef.current[tid];
                         clearInterval(interval);
                     }
@@ -332,25 +412,23 @@ export const useTaskHandlers = (
                 if (pollingIntervalsRef.current) {
                     pollingIntervalsRef.current[tid] = interval;
                 }
-            } else {
-                console.log('✅ Polling finished after first check');
             }
 
         } catch (err: any) {
             if (err.message && (err.message.includes('Task cancelled by user') || err.message.includes('Task was cancelled'))) {
-                // Handle the specific cancellation error gracefully
-                console.log(`⚠️ [AutoExec] Task cancelled during execution, handling gracefully`);
+                console.log(`⚠️ [AutoExec] Task cancelled gracefully`);
                 setError('');
                 setAutoExecuting(null);
                 setAutoExecStep(0);
                 setAutoExecTotal(0);
-                return;
             } else {
                 setError(err.message || 'Erro na execução automática');
                 setAutoExecuting(null);
             }
+        } finally {
+             // Cleanup if needed
         }
-    }, [analysisId, profile, apiCall, taskSubtasks, taskDeliverables, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setError]);
+    }, [analysisId, profile, apiCall, taskSubtasks, taskDeliverables, setTaskSubtasks, setSubtasksUpdateKey, setAutoExecuting, setAutoExecSubtasks, setAutoExecResults, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setError, eventSourcesRef]);
 
     // ─── Redo Task Handler ───
     const handleRedoTask = useCallback(async (pillarKey: string, tid: string, task: TaskItem) => {
@@ -494,6 +572,13 @@ export const useTaskHandlers = (
             console.log(`🛑 Stopping polling interval for ${tid}`);
             clearInterval(pollingIntervalsRef.current[tid]);
             delete pollingIntervalsRef.current[tid];
+        }
+
+        // NOVO: Parar conexão SSE (Fluxo em Tempo Real)
+        if (eventSourcesRef.current?.[tid]) {
+            console.log(`🛑 Stopping SSE connection for ${tid}`);
+            eventSourcesRef.current[tid].close();
+            delete eventSourcesRef.current[tid];
         }
 
         // Notify backend to cancel the task loop

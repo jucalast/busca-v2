@@ -11,6 +11,7 @@ import { useSession } from 'next-auth/react';
 import { useSidebar } from '@/contexts/SidebarContext';
 
 import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
+import LoadingDots from '@/features/shared/components/LoadingDots';
 
 /**
  * If a string looks like raw JSON (starts with { or [), format it into readable markdown.
@@ -101,13 +102,13 @@ function SubtaskList({ subtasks, safeRender, isLoading = false, isDone = false, 
                             )}
                             {/* Done badge — per subtask or whole task done */}
                             {(isDone || status === 'done')
-                                ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 relative z-10" style={{ color: 'var(--color-success)' }} />
+                                ? <CheckCircle2 size={18} className="shrink-0 relative z-10" style={{ color: 'var(--color-success)' }} />
                                 : status === 'running' || (isLoading && i === activeIndex)
-                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
-                                    : <Circle className="w-3.5 h-3.5 shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
+                                    ? <Loader2 size={18} className="animate-spin shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
+                                    : <Circle size={18} className="shrink-0 relative z-10" style={{ color: 'var(--color-text-muted)' }} />
                             }
                             <span
-                                className="text-[12px] font-medium truncate flex-1 relative z-10"
+                                className="text-[13px] font-medium truncate flex-1 relative z-10"
                                 style={{
                                     color: status === 'done' || isDone ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
                                     textDecoration: status === 'done' || isDone ? 'line-through' : 'none',
@@ -144,6 +145,7 @@ function ContentAccordion({
     exportFormats,
     loadingDocId,
     onExport,
+    technicalInfo,
 }: {
     content: string;
     executionMode?: string;
@@ -151,74 +153,89 @@ function ContentAccordion({
     exportFormats?: string[];
     loadingDocId: string | null;
     onExport: (fmt: string) => void;
+    technicalInfo?: React.ReactNode;
 }) {
+    const { isDark } = useSidebar();
     const [open, setOpen] = React.useState(false);
     const fmts = exportFormats || [];
 
     return (
         <div className="mt-3">
             {/* Header row: toggle + export buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center justify-between gap-2 flex-wrap min-h-[22px]">
                 <button
                     onClick={() => setOpen(p => !p)}
-                    className="flex items-center gap-1.5 text-[11px] transition-colors"
-                    style={{ color: 'var(--color-text-muted)' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                    className={`flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+                        isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'
+                    }`}
                 >
                     <span>Ver pensamento da IA</span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
                 </button>
-                {fmts.length > 0 && (
-                    <>
-                        <span className="select-none" style={{ color: 'var(--color-text-ghost)' }}>·</span>
-                        {fmts.map((fmt) => {
-                            const isLoading = loadingDocId === fmt;
-                            return (
-                                <button
-                                    key={fmt}
-                                    disabled={!!isLoading}
-                                    onClick={() => onExport(fmt)}
-                                    className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer disabled:opacity-50"
-                                    style={{
-                                        backgroundColor: 'var(--color-surface-hover)',
-                                        color: 'var(--color-text-tertiary)'
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.backgroundColor = 'var(--color-surface-active)';
-                                        e.currentTarget.style.color = 'var(--color-text-secondary)';
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
-                                        e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                                    }}
-                                >
-                                    {isLoading ? '...' : (
-                                        <>
-                                            {fmt === 'google_docs' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain" />}
-                                            {fmt === 'google_forms' && <img src="/forms.svg" alt="" className="w-3 h-3 object-contain" />}
-                                            {(fmt === 'google_sheets' || fmt === 'csv') && <img src="/sheets.png" alt="" className={`w-3 h-3 object-contain ${fmt === 'csv' ? 'opacity-60' : ''}`} />}
-                                            {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
-                                            {fmt === 'google_docs' ? 'Google Docs' :
-                                                fmt === 'google_forms' ? 'Google Forms' :
-                                                    fmt === 'google_sheets' ? 'Google Sheets' :
-                                                        fmt === 'pdf' ? 'PDF' :
-                                                            fmt === 'csv' ? 'CSV' : fmt}
-                                        </>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </>
-                )}
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    {technicalInfo && (
+                        <div className="flex items-center">
+                            {technicalInfo}
+                        </div>
+                    )}
+                    {fmts.length > 0 && (
+                        <>
+                            <span className="select-none" style={{ color: 'var(--color-text-ghost)' }}>·</span>
+                            {fmts.map((fmt) => {
+                                const isLoading = loadingDocId === fmt;
+                                return (
+                                    <button
+                                        key={fmt}
+                                        disabled={!!isLoading}
+                                        onClick={() => onExport(fmt)}
+                                        className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer disabled:opacity-50"
+                                        style={{
+                                            backgroundColor: 'var(--color-surface-hover)',
+                                            color: 'var(--color-text-tertiary)'
+                                        }}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.backgroundColor = 'var(--color-surface-active)';
+                                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)';
+                                            e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                                        }}
+                                    >
+                                        {isLoading ? '...' : (
+                                            <>
+                                                {fmt === 'google_docs' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain" />}
+                                                {fmt === 'google_forms' && <img src="/forms.svg" alt="" className="w-3 h-3 object-contain" />}
+                                                {(fmt === 'google_sheets' || fmt === 'csv') && <img src="/sheets.png" alt="" className={`w-3 h-3 object-contain ${fmt === 'csv' ? 'opacity-60' : ''}`} />}
+                                                {fmt === 'pdf' && <img src="/docs.png" alt="" className="w-3 h-3 object-contain opacity-60" />}
+                                                {fmt === 'google_docs' ? 'Google Docs' :
+                                                    fmt === 'google_forms' ? 'Google Forms' :
+                                                        fmt === 'google_sheets' ? 'Google Sheets' :
+                                                            fmt === 'pdf' ? 'PDF' :
+                                                                fmt === 'csv' ? 'CSV' : fmt}
+                                            </>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Collapsible content */}
             {open && (
-                <div className="mt-3 text-[13px] font-light leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
-                    <MarkdownContent content={cleanMarkdown(safeRenderFn(
-                        executionMode === 'producao' ? content : formatJsonAsReadable(content)
-                    ))} />
+                <div 
+                    className="mt-2 text-[11px] font-normal italic leading-relaxed" 
+                    style={{ color: isDark ? '#71717a' : '#94a3b8' }}
+                >
+                    <MarkdownContent 
+                        variant="small"
+                        content={cleanMarkdown(safeRenderFn(
+                            executionMode === 'producao' ? content : formatJsonAsReadable(content)
+                        ))} 
+                    />
                 </div>
             )}
         </div>
@@ -275,7 +292,7 @@ export default function TaskSubtasksDisplay({
     // console.log('DEBUG: TaskSubtasksDisplay Render', { tid, displayMode, autoExecuting, isDone });
     const isExecuting = executingTask === tid;
     const isExpanding = expandingTask === tid;
-    const isAutoExec = autoExecuting === tid;
+    const isAutoExec = autoExecuting === tid || isExecuting;
     const deliverable = taskDeliverables?.[tid];
     const { data: session } = useSession();
     const { isDark } = useSidebar();
@@ -362,7 +379,7 @@ export default function TaskSubtasksDisplay({
         const items: { index: number; result: any; isStreaming: boolean }[] = [];
         const rawStep = autoExecStep || 0;
         const streamingIdx = isAutoExec ? Math.max(0, rawStep - 1) : -1;
-        
+
         // If executing, ensures we show at least the initial state even if subtasks list is empty
         const loopCount = Math.max(isAutoExec ? streamingIdx + 1 : 0, taskExecSubtasks.length);
 
@@ -380,11 +397,11 @@ export default function TaskSubtasksDisplay({
             // console.log('DEBUG: renderResult returns null', { itemsCount: items.length, isAutoExec, tid });
             return null;
         }
-        
+
         // console.log('DEBUG: renderResult rendering items', { itemsCount: items.length, isAutoExec, streamingIdx, tid });
 
         return (
-            <div className="w-full space-y-6 px-1 min-h-[100px]" style={{ border: isAutoExec ? '1px solid rgba(59, 130, 246, 0.1)' : 'none' }}>
+            <div className="w-full space-y-6 px-1 min-h-[100px]" style={{ border: isAutoExec ? 'none' : 'none' }}>
                 <style>{`
                     @keyframes result-block-fade-in {
                         from { opacity: 0; transform: translateY(10px); }
@@ -397,7 +414,7 @@ export default function TaskSubtasksDisplay({
                     // Use opinion/resumo for streaming, never use the full technical content (conteudo) in the feed
                     const streamingText = safeRender(result?.opiniao || result?.resumo || '');
                     const hasSources = result && (result.sources?.length > 0 || result.fontes_consultadas?.length > 0);
-                    
+
                     const st = taskExecSubtasks[index];
                     const subtaskTitle = safeRender(st?.titulo || st?.entregavel_ia || (isStreaming ? "Iniciando análise estratégica..." : `Etapa ${index + 1}`));
 
@@ -407,9 +424,8 @@ export default function TaskSubtasksDisplay({
                         }}>
                             {/* 🔄 STRATEGIC FEEDBACK LOOP INSIGHTS */}
                             {result?.strategic_insights && (
-                                <div className={`mb-4 p-4 rounded-xl border backdrop-blur-sm ${
-                                    isDark ? 'border-blue-500/30 bg-blue-500/10' : 'border-blue-500/20 bg-blue-500/5'
-                                }`}>
+                                <div className={`mb-4 p-4 rounded-xl border backdrop-blur-sm ${isDark ? 'border-blue-500/30 bg-blue-500/10' : 'border-blue-500/20 bg-blue-500/5'
+                                    }`}>
                                     <div className="flex items-center gap-2 mb-2 text-blue-600">
                                         <Zap className="w-4 h-4 fill-current" />
                                         <span className="text-[10px] font-bold uppercase tracking-widest">Descoberta Estratégica Realimentada</span>
@@ -417,11 +433,10 @@ export default function TaskSubtasksDisplay({
                                     <div className="space-y-3">
                                         {result.strategic_insights.score_adjustment && (
                                             <div className="flex items-center gap-2">
-                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
-                                                    result.strategic_insights.score_adjustment.delta > 0 
-                                                        ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-500/10 text-emerald-600')
-                                                        : (isDark ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-500/10 text-rose-600')
-                                                }`}>
+                                                <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${result.strategic_insights.score_adjustment.delta > 0
+                                                    ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-500/10 text-emerald-600')
+                                                    : (isDark ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-500/10 text-rose-600')
+                                                    }`}>
                                                     {result.strategic_insights.score_adjustment.delta > 0 ? '+' : ''}{result.strategic_insights.score_adjustment.delta} Score
                                                 </div>
                                                 <span className={`text-[11px] italic ${isDark ? 'text-zinc-400' : 'text-slate-600'}`}>"{result.strategic_insights.score_adjustment.motivo}"</span>
@@ -430,9 +445,8 @@ export default function TaskSubtasksDisplay({
                                         {result.strategic_insights.profile_updates && Object.keys(result.strategic_insights.profile_updates).length > 0 && (
                                             <div className="flex flex-wrap gap-2">
                                                 {Object.entries(result.strategic_insights.profile_updates).map(([k, v]) => (
-                                                    <div key={k} className={`text-[9px] px-2 py-1 rounded border ${
-                                                        isDark ? 'bg-zinc-800 border-white/10 text-zinc-300' : 'bg-slate-100 border-slate-200 text-slate-700'
-                                                    }`}>
+                                                    <div key={k} className={`text-[9px] px-2 py-1 rounded border ${isDark ? 'bg-zinc-800 border-white/10 text-zinc-300' : 'bg-slate-100 border-slate-200 text-slate-700'
+                                                        }`}>
                                                         <span className="font-bold uppercase opacity-80 mr-1">{k}:</span> {String(v)}
                                                     </div>
                                                 ))}
@@ -461,85 +475,34 @@ export default function TaskSubtasksDisplay({
 
                             {/* Subtask title */}
                             <div className="flex items-center justify-between gap-2 mb-2">
-                                <div className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
+                                <div className="text-[22px] font-medium tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
                                     {subtaskTitle}
                                 </div>
-                                {result !== undefined && (
-                                    <div className="flex items-center gap-2 opacity-60">
-                                        <span className={`text-[10px] font-bold tabular-nums whitespace-nowrap ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
-                                            1 req
-                                        </span>
-                                        <span className={`${isDark ? 'text-white/10' : 'text-slate-300'} mx-0.5`}>•</span>
-                                        {result._actual_provider && (
-                                            <div className={`flex items-center gap-1.5 mr-1 border-r pr-2 ${
-                                                isDark ? 'border-white/10' : 'border-slate-200'
-                                            }`}>
-                                                <img
-                                                    src={
-                                                        result._actual_provider === 'gemini' ? '/gemini.png' :
-                                                            result._actual_provider === 'groq' ? '/groq llama.svg' :
-                                                                result._actual_provider === 'sambanova' ? '/sambanova.png' :
-                                                                    result._actual_provider === 'deepseek' ? '/deepseek.png' :
-                                                                        result._actual_provider === 'cerebras' ? '/cerebras.png' :
-                                                                            result._actual_provider === 'openrouter' ? '/openrouter.png' :
-                                                                                '/groq llama.svg'
-                                                    }
-                                                    className="w-3.5 h-3.5 rounded-sm object-contain"
-                                                    alt={result._actual_provider}
-                                                    style={{ filter: result._actual_provider === 'groq' ? (isDark ? 'none' : 'invert(1)') : 'none' }}
-                                                />
-                                                <span className={`text-[10px] font-bold capitalize ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
-                                                    {result._actual_model || (result._actual_provider === 'groq' ? 'Groq' :
-                                                        result._actual_provider === 'gemini' ? 'Gemini' :
-                                                            result._actual_provider === 'sambanova' ? 'SambaNova' :
-                                                                result._actual_provider === 'cerebras' ? 'Cerebras' :
-                                                                    result._actual_provider === 'deepseek' ? 'DeepSeek' :
-                                                                        result._actual_provider)}
-                                                </span>
-                                            </div>
-                                        )}
-                                        {result._tokens > 0 && (
-                                            <>
-                                                <Zap className="w-3 h-3 text-amber-500" />
-                                                <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{result._tokens} tokens</span>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
                             </div>
 
                             {/* AI opinion / streaming */}
-                            {(opinionText || isStreaming) ? (
-                                isStreaming ? (
-                                    streamingText ? (
-                                        <StreamingText text={streamingText} speed={6} className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }} />
-                                    ) : (
-                                        <div className="flex items-center gap-0.5 py-2">
-                                            {[0, 1, 2].map(i => (
-                                                <span
-                                                    key={i}
-                                                    className="w-1.5 h-1.5 rounded-full"
-                                                    style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
-                                                />
-                                            ))}
+                            {(() => {
+                                if (opinionText || isStreaming) {
+                                    if (isStreaming) {
+                                        return streamingText ? (
+                                            <div className="flex gap-2 items-start">
+                                                <StreamingText text={streamingText} speed={6} className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }} />
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 py-0.5">
+                                                <LoadingDots className="flex items-center gap-1 px-0 py-1" />
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div className="space-y-2 flex gap-2 items-start">
+                                            <div>{renderOpinionParagraphs(opinionText)}</div>
                                         </div>
-                                    )
-                                ) : (
-                                    <div className="space-y-2">
-                                        {renderOpinionParagraphs(opinionText)}
-                                    </div>
-                                )
-                            ) : result?.conteudo && status === 'done' ? null : (
-                                <div className="flex items-center gap-0.5 py-2">
-                                    {[0, 1, 2].map(i => (
-                                        <span
-                                            key={i}
-                                            className="w-1.5 h-1.5 rounded-full"
-                                            style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
-                                        />
-                                    ))}
-                                </div>
-                            )}
+                                    );
+                                }
+                                if (result?.conteudo && status === 'done') return null;
+                                return <LoadingDots className="flex items-center gap-1 px-0 py-2" />;
+                            })()}
 
                             {/* PESQUISA: instructional "como fazer" content shown as AI opinion */}
                             {/* Content accordion — "Ver pensamento da IA" + export buttons */}
@@ -550,6 +513,48 @@ export default function TaskSubtasksDisplay({
                                     safeRenderFn={safeRender}
                                     exportFormats={result.export_formats}
                                     loadingDocId={loadingDoc}
+                                    technicalInfo={result !== undefined && (
+                                        <div className="flex items-center gap-2 opacity-60">
+                                            <span className="select-none text-zinc-600" style={{ fontSize: '10px' }}>·</span>
+                                            <span className={`text-[10px] font-medium tabular-nums whitespace-nowrap ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
+                                                1 req
+                                            </span>
+                                            <span className={`${isDark ? 'text-white/10' : 'text-slate-300'} mx-0.5`}>•</span>
+                                            {result._actual_provider && (
+                                                <div className={`flex items-center gap-1.5 mr-1 border-r pr-2 ${isDark ? 'border-white/10' : 'border-slate-200'
+                                                    }`}>
+                                                    <img
+                                                        src={
+                                                            result._actual_provider === 'gemini' ? '/gemini.png' :
+                                                                result._actual_provider === 'groq' ? '/groq llama.svg' :
+                                                                    result._actual_provider === 'sambanova' ? '/sambanova.png' :
+                                                                        result._actual_provider === 'deepseek' ? '/deepseek.png' :
+                                                                            result._actual_provider === 'cerebras' ? '/cerebras.png' :
+                                                                                result._actual_provider === 'openrouter' ? '/openrouter.png' :
+                                                                                    '/groq llama.svg'
+                                                        }
+                                                        className="w-3.5 h-3.5 rounded-sm object-contain"
+                                                        alt={result._actual_provider}
+                                                        style={{ filter: result._actual_provider === 'groq' ? (isDark ? 'none' : 'invert(1)') : 'none' }}
+                                                    />
+                                                    <span className={`text-[10px] font-medium capitalize ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
+                                                        {result._actual_model || (result._actual_provider === 'groq' ? 'Groq' :
+                                                            result._actual_provider === 'gemini' ? 'Gemini' :
+                                                                result._actual_provider === 'sambanova' ? 'SambaNova' :
+                                                                    result._actual_provider === 'cerebras' ? 'Cerebras' :
+                                                                        result._actual_provider === 'deepseek' ? 'DeepSeek' :
+                                                                            result._actual_provider)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {result._tokens > 0 && (
+                                                <div className="flex items-center gap-1">
+                                                    <Zap className="w-3 h-3 text-amber-500" />
+                                                    <span className={`text-[10px] font-mono font-medium ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>{result._tokens} tokens</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     onExport={(fmt) => {
                                         if (fmt === 'csv' && result.structured_data) {
                                             exportAsCSV(result.structured_data, safeRender(result.entregavel_titulo || 'dados'));
@@ -580,16 +585,13 @@ export default function TaskSubtasksDisplay({
                     );
                 })}
                 {items.length > 1 && (
-                    <div className={`flex justify-end pt-5 border-t mt-8 transition-colors duration-300 ${
-                        isDark ? 'border-white/5' : 'border-slate-100'
-                    }`}>
+                    <div className={`flex justify-end pt-5 border-t mt-8 transition-colors duration-300 ${isDark ? 'border-white/5' : 'border-slate-100'
+                        }`}>
                         <div className="flex items-center gap-2.5 group">
-                            <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors ${
-                                isDark ? 'text-zinc-600 group-hover:text-zinc-500' : 'text-slate-400 group-hover:text-slate-500'
-                            }`}>Total Tokens do Processo</span>
+                            <span className={`text-[10px] uppercase tracking-widest font-medium transition-colors ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>Total Tokens do Processo</span>
                             <div className="flex items-center gap-2">
                                 <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
-                                <span className={`text-[13px] font-mono font-bold ${isDark ? 'text-zinc-300' : 'text-slate-800'}`}>
+                                <span className={`text-[13px] font-mono font-medium ${isDark ? 'text-zinc-300' : 'text-slate-800'}`}>
                                     {items.reduce((sum, item) => sum + (item.result?._tokens || 0), 0)}
                                 </span>
                             </div>
@@ -652,12 +654,10 @@ export default function TaskSubtasksDisplay({
                                     const renderSubtaskOpinion = () => {
                                         if (!resultForSubtask || !subtaskOpinionText) return null;
                                         return (
-                                            <div className={`px-3 pb-3 pt-2 border-t transition-colors duration-300 ${
-                                                isDark ? 'border-white/5' : 'border-slate-200/40'
-                                            }`}>
-                                                <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${
-                                                    isDark ? 'text-zinc-600' : 'text-slate-400'
-                                                }`}>Opinião da IA</div>
+                                            <div className={`px-3 pb-3 pt-2 border-t transition-colors duration-300 ${isDark ? 'border-white/5' : 'border-slate-200/40'
+                                                }`}>
+                                                <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${isDark ? 'text-zinc-600' : 'text-slate-400'
+                                                    }`}>Opinião da IA</div>
                                                 <div className="space-y-1.5">
                                                     {renderOpinionParagraphs(subtaskOpinionText, 'compact')}
                                                 </div>
@@ -666,11 +666,10 @@ export default function TaskSubtasksDisplay({
                                     };
 
                                     return (
-                                        <div key={i} className={`transition-all duration-300 rounded-[10px] overflow-hidden flex flex-col border glass-card ${
-                                            status === 'running' 
-                                                ? (isDark ? 'bg-white/5 border-white/5 shadow-2xl' : 'bg-white/40 border-black/5 shadow-sm')
-                                                : 'border-transparent'
-                                        }`}
+                                        <div key={i} className={`transition-all duration-300 rounded-[10px] overflow-hidden flex flex-col border glass-card ${status === 'running'
+                                            ? (isDark ? 'shadow-2xl' : 'shadow-sm')
+                                            : 'border-transparent'
+                                            }`}
                                             style={{
                                                 backgroundColor: status === 'running' ? undefined : 'transparent',
                                                 borderColor: status === 'running' ? undefined : 'transparent',
@@ -725,9 +724,8 @@ export default function TaskSubtasksDisplay({
                                                 )}
 
                                                 {status === 'done' && resultForSubtask?._tokens > 0 && (
-                                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ml-auto transition-colors duration-300 ${
-                                                        isDark ? 'text-zinc-500 bg-white/5 border-white/10' : 'text-slate-500 bg-slate-100 border-slate-200'
-                                                    }`}>
+                                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ml-auto transition-colors duration-300 ${isDark ? 'text-zinc-500 bg-white/5 border-white/10' : 'text-slate-500 bg-slate-100 border-slate-200'
+                                                        }`}>
                                                         {resultForSubtask._tokens} unit
                                                     </span>
                                                 )}
@@ -770,18 +768,18 @@ export default function TaskSubtasksDisplay({
                                                             ? '🏭 Produzindo artefato...'
                                                             : 'Pesquisando fontes...'
                                                     )}
-                                                    
+
                                                     {/* Show streaming opinion/tools/sources during execution */}
                                                     {resultForSubtask && (
                                                         <div className="px-3 pb-2">
                                                             {/* Intelligence tools being used */}
                                                             {resultForSubtask.intelligence_tools_used && (
-                                                                <IntelligenceToolsBadges 
-                                                                    tools={resultForSubtask.intelligence_tools_used} 
+                                                                <IntelligenceToolsBadges
+                                                                    tools={resultForSubtask.intelligence_tools_used}
                                                                     isRunning={true}
                                                                 />
                                                             )}
-                                                            
+
                                                             {/* Sources being consulted */}
                                                             {resultForSubtask.sources && resultForSubtask.sources.length > 0 && (
                                                                 <div className="mt-2">
@@ -792,19 +790,17 @@ export default function TaskSubtasksDisplay({
                                                                     />
                                                                 </div>
                                                             )}
-                                                            
+
                                                             {/* Streaming opinion/thought */}
                                                             {resultForSubtask.opiniao && (
-                                                                <div className={`mt-2 px-2 py-1 rounded border transition-colors duration-300 ${
-                                                                    isDark ? 'border-white/10 bg-white/5' : 'border-slate-200/40 bg-slate-50/50'
-                                                                }`}>
-                                                                    <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${
-                                                                        isDark ? 'text-zinc-600' : 'text-slate-400'
-                                                                    }`}>Pensamento da IA</div>
+                                                                <div className={`mt-2 px-2 py-1 rounded border transition-colors duration-300 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200/40 bg-slate-50/50'
+                                                                    }`}>
+                                                                    <div className={`text-[9px] font-bold tracking-[0.2em] uppercase mb-1 ${isDark ? 'text-zinc-600' : 'text-slate-400'
+                                                                        }`}>Pensamento da IA</div>
                                                                     <div className="text-[11px] leading-relaxed">
-                                                                        <StreamingText 
-                                                                            text={resultForSubtask.opiniao} 
-                                                                            speed={8} 
+                                                                        <StreamingText
+                                                                            text={resultForSubtask.opiniao}
+                                                                            speed={8}
                                                                             style={{ color: 'var(--color-text-secondary)' }}
                                                                         />
                                                                     </div>
@@ -812,7 +808,7 @@ export default function TaskSubtasksDisplay({
                                                             )}
                                                         </div>
                                                     )}
-                                                    
+
                                                     {!resultForSubtask && (
                                                         <div className="px-3 pb-2">
                                                             <IntelligenceToolsBadges isRunning={true} />
@@ -838,9 +834,8 @@ export default function TaskSubtasksDisplay({
                         {/* Summary generation indicator */}
                         {(isAutoExec && (autoExecStep || 0) > (autoExecTotal || 0)) || (taskExecSubtasks.length > 0 && !deliverable && (autoExecTotal || 0) > 0 && (autoExecStep || 0) > (autoExecTotal || 0) && !isAutoExec) ? (
                             <div
-                                className={`flex items-center gap-3 px-3 py-2 rounded-xl mt-1 border glass-card ${
-                                    isDark ? 'bg-white/5 border-white/5 shadow-2xl' : 'bg-white/40 border-black/5 shadow-sm'
-                                }`}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-xl mt-1 border glass-card ${isDark ? 'bg-white/5 border-white/5 shadow-2xl' : 'bg-white/40 border-black/5 shadow-sm'
+                                    }`}
                             >
                                 <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative z-10">
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-accent)' }} />
@@ -868,15 +863,7 @@ export default function TaskSubtasksDisplay({
         if (!subtasks) {
             if (isExpanding || isAutoExec) {
                 return (
-                    <div className="flex items-center gap-0.5 px-3 py-2">
-                        {[0, 1, 2].map(i => (
-                            <span
-                                key={i}
-                                className="w-1.5 h-1.5 rounded-full"
-                                style={{ backgroundColor: 'var(--color-text-muted)', animation: 'dot-pulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
-                            />
-                        ))}
-                    </div>
+                    <LoadingDots />
                 );
             }
             return null;
@@ -893,11 +880,6 @@ export default function TaskSubtasksDisplay({
                 @keyframes subtask-shimmer {
                     0%   { transform: translateX(-100%); }
                     100% { transform: translateX(200%); }
-                }
-                @keyframes dot-pulse {
-                    0% { opacity: 0.3; transform: scale(0.8); }
-                    50% { opacity: 1; transform: scale(1.1); }
-                    100% { opacity: 0.3; transform: scale(0.8); }
                 }
             `}</style>
             {renderResult()}

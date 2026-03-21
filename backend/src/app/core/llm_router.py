@@ -8,20 +8,13 @@ import warnings
 from typing import Callable, Any, Optional, Dict, List, Union
 
 try:
-    import google.generativeai as google_generative_ai
-    HAS_GENATIVE_AI = True
-except (ImportError, Exception) as e_old:
-    google_generative_ai = None
-    HAS_GENATIVE_AI = False
-    print(f"  ⚠️ Old Gemini SDK (google-generativeai) not available: {e_old}", file=sys.stderr)
-
-try:
     from google import genai as google_genai_new
     HAS_NEW_GENAI = bool(google_genai_new)
 except (ImportError, Exception) as e_new:
     google_genai_new = None
     HAS_NEW_GENAI = False
-    print(f"  ⚠️ New Gemini SDK (google-genai) not available: {e_new}", file=sys.stderr)
+    print(f"  ⚠️ Gemini SDK (google-genai) not available: {e_new}", file=sys.stderr)
+
 
 class LLMResponse(str):
     """
@@ -363,10 +356,10 @@ def _call_groq_engine(api_key: str, prompt: str, temperature: float = 0.3, max_r
 
 def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: bool = True, messages: list = None, max_retries: int = 4, cancellation_check: Callable[[], None] = None):
     """Executes call via Google Gemini API with support for both old and new SDKs."""
-    if not HAS_GENATIVE_AI and not HAS_NEW_GENAI:
+    if not HAS_NEW_GENAI:
         # Diagnostic attempt to check environment
-        log_error("CRITICAL: Gemini libraries missing in current Python path!")
-        raise RuntimeError("As bibliotecas Google GenAI (google-generativeai ou google-genai) não estão acessíveis no ambiente atual. Verifique se o ambiente virtual (.venv) está configurado e se pacotes foram instalados.")
+        log_error("CRITICAL: Gemini library missing in current Python path!")
+        raise RuntimeError("A biblioteca Google GenAI (google-genai) não está acessível no ambiente atual. Verifique se o ambiente virtual (.venv) está configurado e se pacotes foram instalados.")
     
     import re as _re
     
@@ -424,106 +417,45 @@ def call_gemini(api_key: str, prompt: str, temperature: float = 0.3, json_mode: 
 def _call_gemini_once(api_key: str, prompt: str, temperature: float, json_mode: bool, messages: list, model_name: str, cancellation_check: Callable[[], None] = None):
     """Single Gemini call using whichever SDK is available (prefers new SDK)."""
     
-    # ── CASE 1: New SDK (google-genai) ──
+    # ── New SDK (google-genai) ──
     if HAS_NEW_GENAI and google_genai_new:
-        try:
-            client = google_genai_new.Client(api_key=api_key)
-            from google.genai import types as new_types
-            
-            # Prepare content
-            contents = []
-            if messages:
-                for m in messages:
-                    # Map role 'system' or 'user' -> 'user' (simplified for Gemini SDK)
-                    role = "user" if m["role"] == "user" else "model"
-                    contents.append(new_types.Content(role=role, parts=[new_types.Part(text=m["content"])]))
-            else:
-                contents = [prompt]
-            
-            # Prepare config
-            config = new_types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=12000,
-            )
-            if json_mode:
-                config.response_mime_type = "application/json"
-            
-            if cancellation_check: cancellation_check()
-            response = client.models.generate_content(model=model_name, contents=contents, config=config)
-            
-            result_text = response.text
-            if not result_text:
-                raise Exception("Gemini NEW SDK returned empty response")
-                
-            if json_mode:
-                try: 
-                    import json
-                    return json.loads(result_text), estimated_tokens(result_text) if 'estimated_tokens' in globals() else len(result_text)//4, model_name
-                except: 
-                    return {"raw_response": result_text}, len(result_text)//4, model_name
-            return result_text, len(result_text)//4, model_name
-        except Exception as e_new:
-            # If new SDK fails but old one is available, try fallback
-            if HAS_GENATIVE_AI:
-                print(f"  ⚠️ Gemini NEW SDK failed: {e_new}. Falling back to old SDK...", file=sys.stderr)
-            else:
-                raise e_new
-
-    # ── CASE 2: Old SDK (google-generativeai) ──
-    if HAS_GENATIVE_AI and google_generative_ai:
-        genai = google_generative_ai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
+        client = google_genai_new.Client(api_key=api_key)
+        from google.genai import types as new_types
         
-        # Build prompt
+        # Prepare content
+        contents = []
         if messages:
-            gemini_messages = []
-            for msg in messages:
-                if msg.get("role") == "system":
-                    gemini_messages.append({"text": f"System: {msg.get('content')}"})
-                else:
-                    gemini_messages.append({"text": msg.get("content")})
-            prompt_text = "\n".join([m["text"] for m in gemini_messages])
+            for m in messages:
+                # Map role 'system' or 'user' -> 'user' (simplified for Gemini SDK)
+                role = "user" if m["role"] == "user" else "model"
+                contents.append(new_types.Content(role=role, parts=[new_types.Part(text=m["content"])]))
         else:
-            prompt_text = prompt
+            contents = [prompt]
         
-        # Configure generation
-        generation_config = genai.types.GenerationConfig(
+        # Prepare config
+        config = new_types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=12000,
         )
         if json_mode:
-            generation_config.response_mime_type = "application/json"
+            config.response_mime_type = "application/json"
         
-        try:
-            if cancellation_check: cancellation_check()
+        if cancellation_check: cancellation_check()
+        response = client.models.generate_content(model=model_name, contents=contents, config=config)
+        
+        result_text = response.text
+        if not result_text:
+            raise Exception("Gemini SDK returned empty response")
             
-            # For long prompts, allow cancellation
-            if (len(prompt_text) if prompt_text else 0) > 10000 and cancellation_check:
-                # OLD SDK Streaming
-                response = model.generate_content(prompt_text, generation_config=generation_config, stream=True)
-                result_text = ""
-                for chunk in response:
-                    if cancellation_check: cancellation_check()
-                    result_text += chunk.text
-            else:
-                response = model.generate_content(prompt_text, generation_config=generation_config)
-                result_text = response.text
-                
-            if json_mode:
-                try: 
-                    import json
-                    return json.loads(result_text), len(result_text)//4, model_name
-                except: 
-                    return {"raw_response": result_text}, len(result_text)//4, model_name
-            return result_text, len(result_text)//4, model_name
-        except Exception as e:
-            error_msg = str(e)
-            if "quota" in error_msg.lower() or "rate limit" in error_msg.lower() or "429" in error_msg:
-                raise Exception(f"Rate limit: {error_msg}")
-            raise e
+        if json_mode:
+            try: 
+                import json
+                return json.loads(result_text), estimated_tokens(result_text) if 'estimated_tokens' in globals() else len(result_text)//4, model_name
+            except: 
+                return {"raw_response": result_text}, len(result_text)//4, model_name
+        return result_text, len(result_text)//4, model_name
 
-    raise RuntimeError("No working Gemini SDK found in current context (tried old and new)")
+    raise RuntimeError("No working Gemini SDK found in current context")
 
 
 def _call_sambanova_engine(api_key: str, prompt: str, temperature: float = 0.3, max_retries: int = 3, json_mode: bool = True, messages: List = None, model: str = None, cancellation_check: Callable[[], None] = None):
@@ -959,23 +891,34 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
 
 def _process_llm_response(res, tokens, used_model, provider_name, is_fallback, json_mode):
     """Processes raw LLM response into final format."""
-    if json_mode and isinstance(res, str):
-        try:
-            obj = json.loads(res)
-            obj.update({
+    if json_mode:
+        if isinstance(res, str):
+            try:
+                obj = json.loads(res)
+                obj.update({
+                    "_tokens": tokens,
+                    "_actual_model": used_model,
+                    "_actual_provider": provider_name,
+                    "_is_fallback": is_fallback
+                })
+                return obj
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": res, 
+                    "error": "Invalid JSON", 
+                    "_tokens": tokens, 
+                    "_actual_model": used_model, 
+                    "_actual_provider": provider_name, 
+                    "_is_fallback": is_fallback
+                }
+        elif isinstance(res, dict):
+            # Already a dict (e.g. from Gemini NEW SDK), just add metadata
+            res.update({
                 "_tokens": tokens,
                 "_actual_model": used_model,
                 "_actual_provider": provider_name,
                 "_is_fallback": is_fallback
             })
-            return obj
-        except json.JSONDecodeError:
-            return {
-                "raw_response": res, 
-                "error": "Invalid JSON", 
-                "_tokens": tokens, 
-                "_actual_model": used_model, 
-                "_actual_provider": provider_name, 
-                "_is_fallback": is_fallback
-            }
+            return res
+            
     return LLMResponse(res, tokens, used_model, provider=provider_name)

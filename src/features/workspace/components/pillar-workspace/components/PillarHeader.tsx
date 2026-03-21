@@ -3,11 +3,11 @@
 import React from 'react';
 import { ArrowLeft, RefreshCw, BadgeCheck, Link2, MapPin, Calendar, Share2, MoreHorizontal, FileText, Globe, Brain } from 'lucide-react';
 import { PILLAR_META } from '../constants';
-import { 
-    safeRender, 
-    openInGoogleDocs, 
-    openInGoogleSheets, 
-    openInGoogleForms, 
+import {
+    safeRender,
+    openInGoogleDocs,
+    openInGoogleSheets,
+    openInGoogleForms,
     exportAsCSV,
     savePendingDocAction
 } from '../utils';
@@ -94,14 +94,14 @@ export function PillarHeader({
     const [activeTab, setActiveTab] = React.useState<'arquivos' | 'feed'>('feed');
     const meta = PILLAR_META[selectedPillar];
     const specialist = specialists[selectedPillar] || {};
-    
+
     const score: number = plan.score ?? dims[selectedPillar]?.score ?? 0;
     const status: string = (plan.status ?? dims[selectedPillar]?.status ?? '').toLowerCase();
     const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.otimo;
 
     const cargo = specialist.cargo || meta.label;
     const bio = specialist.persona || safeRender(plan.diagnostico || plan.objetivo || '');
-    
+
     const totalTasks = visibleTasks.length;
     const doneCount = visibleTasks.filter(t => done.has(t.id)).length;
     const deliverables = plan.entregaveis || [];
@@ -145,97 +145,97 @@ export function PillarHeader({
     }, [session, setLoadingDoc]);
 
     return (
-        <div className={`w-[45%] flex flex-col pt-0 relative z-10 overflow-y-auto hide-scrollbar border-r transition-all duration-300 ${
-            isDark ? 'bg-[--color-bg]/90 backdrop-blur-3xl border-white/10' : 'bg-white border-gray-100'
-        }`}>
-            {/* ─── Social Profile Header ─── */}
-            <div className="relative shrink-0">
-                {/* 1. Cover Image */}
-                <div className={`h-32 w-full relative overflow-hidden ${
-                    isDark ? 'bg-gradient-to-br from-zinc-800 to-zinc-900' : 'bg-gradient-to-br from-slate-100 to-slate-200'
-                }`}>
-                    {/* Decorative pattern/blur for cover */}
-                    <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-                    
-                    {/* Pillar colored shadows/glows */}
-                    <div className="absolute -bottom-16 -right-16 w-64 h-64 blur-3xl rounded-full opacity-30" style={{ backgroundColor: meta.color }} />
-                    <div className="absolute -top-16 -left-16 w-48 h-48 blur-3xl rounded-full opacity-10" style={{ backgroundColor: meta.color }} />
+        <div className={`w-[45%] flex flex-col pt-0 relative z-10 overflow-y-auto hide-scrollbar border-r transition-all duration-300 ${isDark ? 'bg-zinc-900/50 backdrop-blur-3xl border-white/5' : 'bg-gray-50/50 border-gray-200'
+            }`}>
+            {/* ─── Profile SaaS Header ─── */}
+            <div className="relative shrink-0 border-b border-transparent">
+                {/* 1. Dashboard Banner (Replaces Cover) */}
+                <div className={`h-24 w-full relative overflow-hidden ${isDark ? 'bg-zinc-800/50' : 'bg-zinc-100'
+                    }`}>
+                    <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/5 to-transparent" />
                     
                     {/* Top Floating Buttons */}
                     <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-20">
-                        <button 
-                            onClick={onBack} 
-                            className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                        <button
+                            onClick={onBack}
+                            className={`p-2 rounded-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 border ${
+                                isDark ? 'bg-zinc-900/50 border-white/10 text-zinc-400 hover:text-white' : 'bg-white border-zinc-200 text-zinc-600'
+                            }`}
                         >
-                            <ArrowLeft size={18} />
+                            <ArrowLeft size={16} />
                         </button>
                         <div className="flex gap-2">
-                            <button 
+                             <button
                                 onClick={onVerPensamento}
                                 title="Ver pensamento da IA"
-                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 border ${isDark
+                                    ? 'bg-zinc-900/50 border-white/10 text-zinc-400 hover:text-white'
+                                    : 'bg-white border-zinc-200 text-zinc-600'
+                                    }`}
                             >
-                                <Brain size={16} />
+                                <Brain size={14} />
+                                <span className="text-[11px] font-bold uppercase tracking-wider">Lógica</span>
                             </button>
-                            <button 
-                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
+                            <button
+                                className={`p-2 rounded-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 border ${
+                                    isDark ? 'bg-zinc-900/50 border-white/10 text-zinc-400' : 'bg-white border-zinc-200 text-zinc-600'
+                                }`}
                             >
                                 <Share2 size={16} />
-                            </button>
-                            <button 
-                                className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 hover:scale-110 active:scale-95 transition-all"
-                            >
-                                <MoreHorizontal size={16} />
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* 2. Avatar & Action Button */}
+                {/* 2. Professional Identity Area */}
                 <div className="px-6 relative">
-                    <div className="flex justify-between items-end -mt-10 mb-4">
-                        <div className={`relative p-1 rounded-full ${isDark ? 'bg-[--color-bg]' : 'bg-white'}`}>
-                            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-transparent relative">
+                    <div className="flex justify-between items-end -mt-8 mb-4">
+                        <div className={`relative p-1 rounded-2xl ${isDark ? 'bg-zinc-900' : 'bg-white'} shadow-xl border ${isDark ? 'border-white/10' : 'border-zinc-200'}`}>
+                            <div className="w-20 h-20 rounded-xl overflow-hidden relative">
                                 <img src={getAvatarUrl(selectedPillar)} alt={cargo} className="w-full h-full object-cover" />
-                                <div className="absolute inset-0 ring-4 ring-inset ring-black/5" />
+                                <div className="absolute inset-0 ring-1 ring-inset ring-black/5" />
                             </div>
                         </div>
-                        <button 
+                        <button
                             onClick={() => handleRedoPillar(selectedPillar)}
-                            className={`px-5 py-2 rounded-full text-[13px] font-bold border transition-all active:scale-95 ${
-                                isDark 
-                                ? 'bg-white text-black border-white hover:bg-zinc-200' 
-                                : 'bg-black text-white border-black hover:bg-zinc-800'
-                            }`}
+                            className={`px-4 py-2 rounded-lg text-[12px] font-bold border transition-all active:scale-95 shadow-sm ${isDark
+                                ? 'bg-zinc-800 border-white/10 text-white hover:bg-zinc-700'
+                                : 'bg-white border-zinc-200 text-zinc-900 hover:bg-zinc-50'
+                                }`}
                         >
-                            Refazer Análise
+                            Nova Análise
                         </button>
                     </div>
 
-                    {/* 3. Identity Info */}
-                    <div className="space-y-1 mb-4">
-                        <div className="flex items-center gap-1.5">
-                            <h2 className={`text-2xl font-black italic tracking-tighter ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                    {/* 3. Typography & Info */}
+                    <div className="space-y-1 mb-5">
+                        <div className="flex items-center gap-2">
+                            <h2 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                                 {cargo}
                             </h2>
-                            <BadgeCheck size={20} className="fill-blue-500 text-white" />
+                            <BadgeCheck size={18} className="text-blue-500 fill-blue-500/10" />
                         </div>
-                        <p className="text-[14px] text-zinc-500 font-medium">@{selectedPillar}</p>
+                        <div className="flex items-center gap-2">
+                            <span className={`text-[11px] font-bold uppercase tracking-[0.1em] px-2 py-0.5 rounded ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'}`}>
+                                {selectedPillar.replace(/_/g, ' ')}
+                            </span>
+                        </div>
                     </div>
 
-                    {/* 4. Bio */}
-                    <div className={`text-[14px] leading-relaxed mb-4 line-clamp-3 ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                    {/* 4. Description / Bio */}
+                    <div className={`text-[13px] leading-relaxed mb-6 font-normal ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                         {bio}
                     </div>
 
                     {/* 5. Metadata Bar (Location, Joined, etc) */}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6 text-zinc-500 text-[13px] font-medium">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-zinc-500 text-[13px] font-medium">
                         <div className="flex items-center gap-1">
                             <MapPin size={14} />
                             <span>Mercado Real-time</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-4">
-                            <button 
+                            <button
                                 onClick={() => setShowAllSources(!showAllSources)}
                                 className="flex items-center gap-1 transition-colors text-blue-500 hover:text-blue-400 active:scale-95"
                             >
@@ -249,7 +249,7 @@ export function PillarHeader({
                                 const hostname = getHostname(src);
                                 const favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
                                 return (
-                                    <a 
+                                    <a
                                         key={idx}
                                         href={src}
                                         target="_blank"
@@ -264,143 +264,84 @@ export function PillarHeader({
                         </div>
                         <div className="flex items-center gap-1">
                             <Calendar size={14} />
-                            <span>Entrou em Março de 2026</span>
-                        </div>
-                    </div>
-
-                    {/* 6. Social Stats */}
-                    <div className={`flex gap-6 py-4 border-y ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
-                        <div className="flex gap-1.5 items-center">
-                            <span className={`text-[15px] font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>{score}</span>
-                            <span className="text-[13px] text-zinc-500 font-medium">Pontos</span>
-                        </div>
-                        <div className="flex gap-1.5 items-center">
-                            <span className={`text-[15px] font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>{doneCount}</span>
-                            <span className="text-[13px] text-zinc-500 font-medium">Tasks</span>
-                        </div>
-                        <div className="flex gap-1.5 items-center">
-                            <span className={`text-[15px] font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>{deliverables.length}</span>
-                            <span className="text-[13px] text-zinc-500 font-medium">Destaques</span>
+                            <span>Cálculo Março 2026</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* ─── Highlights (Destaques) Section ─── */}
-            <div className="p-6 shrink-0">
-                <p className={`text-[11px] font-black uppercase tracking-widest mb-4 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                    Destaques da Estratégia
-                </p>
-                <div className="flex gap-5 overflow-x-auto pb-4 hide-scrollbar">
-                    {/* Dummy "Novo" Highlight */}
-                    <div className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer" onClick={onVerPensamento}>
-                        <div className={`w-16 h-16 rounded-full border-2 border-dashed flex items-center justify-center transition-all ${
-                            isDark ? 'border-zinc-800 text-zinc-600 group-hover:border-zinc-600' : 'border-zinc-200 text-zinc-400 group-hover:border-zinc-400'
-                        }`}>
-                            <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500">Scan</span>
-                    </div>
+            <div className="px-6 py-6 shrink-0">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                        Entregáveis Estratégicos
+                    </h3>
+                </div>
+                <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+                    {(() => {
+                        // 1. Get all finished unique titles
+                        const finishedMap = new Map<string, DocItem>();
+                        docsForDropdown.forEach(d => {
+                            const normalized = d.title.trim();
+                            if (!finishedMap.has(normalized)) finishedMap.set(normalized, d);
+                        });
 
-                    {/* Deliverables (Finished) */}
-                    {[...docsForDropdown].reverse().map((doc, i) => (
-                        <div 
-                            key={`${doc.tid}_${doc.idx}`} 
-                            onClick={() => setActiveTab('feed')}
-                            className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer scale-100 hover:scale-105 transition-transform"
-                        >
-                            <div className="w-16 h-16 rounded-full p-[2px] transition-all bg-gradient-to-tr from-yellow-400 via-fuchsia-600 to-purple-600 group-hover:scale-110">
-                                <div className={`w-full h-full rounded-full p-[2px] ${isDark ? 'bg-black' : 'bg-white'}`}>
-                                    <div className={`w-full h-full rounded-full flex items-center justify-center ${
-                                        isDark ? 'bg-zinc-900 border border-white/5' : 'bg-zinc-50 border border-black/5'
-                                    }`}>
-                                        <img src={ferramentaIcon(doc.result?.ferramenta || 'documento')} alt="" className="w-6 h-6 object-contain opacity-70" />
-                                    </div>
-                                </div>
-                            </div>
-                            <span className={`text-[10px] font-bold text-center w-16 line-clamp-1 ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-                                {doc.title}
-                            </span>
-                        </div>
-                    ))}
-
-                    {/* Planned Fallback (Upcoming) */}
-                    {deliverables.map((e: any, i: number) => {
-                        // Avoid showing if it's already in finished (by title matching)
-                        const isDone = docsForDropdown.some(d => d.title === safeRender(e.titulo));
-                        if (isDone) return null;
+                        // 2. Resolve all items (Finished or Planned)
+                        const allStories: Array<{ title: string; isDone: boolean; icon: string; doc?: DocItem }> = [];
                         
-                        return (
-                            <div key={`pl-${i}`} className="flex flex-col items-center gap-2 shrink-0 group cursor-pointer scale-100 hover:scale-105 transition-transform">
-                                <div className={`w-16 h-16 rounded-full border-2 p-1 transition-all ${
-                                    isDark ? 'border-zinc-800' : 'border-zinc-100'
-                                }`}>
-                                    <div className={`w-full h-full rounded-full flex items-center justify-center ${
-                                        isDark ? 'bg-zinc-900 border border-white/10' : 'bg-zinc-50 border border-black/10'
-                                    }`}>
-                                        <img src={ferramentaIcon(e.ferramenta)} alt="" className="w-6 h-6 object-contain opacity-70" />
-                                    </div>
+                        // Add finished ones
+                        finishedMap.forEach((doc, title) => {
+                            allStories.push({
+                                title,
+                                isDone: true,
+                                icon: ferramentaIcon(doc.result?.ferramenta || 'documento'),
+                                doc
+                            });
+                        });
+
+                        // Add remaining planned ones
+                        deliverables.forEach((e: any) => {
+                            const title = safeRender(e.titulo).trim();
+                            if (!finishedMap.has(title)) {
+                                allStories.push({
+                                    title,
+                                    isDone: false,
+                                    icon: ferramentaIcon(e.ferramenta),
+                                });
+                            }
+                        });
+
+                        return allStories.map((story, i) => (
+                            <div
+                                key={`${story.title}_${i}`}
+                                onClick={() => setActiveTab('feed')}
+                                className="flex flex-col items-center gap-2 shrink-0 transition-all cursor-pointer hover:scale-105 active:scale-95 group"
+                            >
+                                <div className="w-14 h-14 flex items-center justify-center transition-all">
+                                    <img 
+                                        src={story.icon} 
+                                        alt="" 
+                                        className={`w-8 h-8 object-contain transition-all ${
+                                            story.isDone ? 'grayscale-0 opacity-100' : 'grayscale opacity-25'
+                                        }`} 
+                                    />
                                 </div>
-                                <span className={`text-[10px] font-bold text-center w-16 line-clamp-1 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                    {safeRender(e.titulo)}
+                                <span className={`text-[10px] text-center w-20 line-clamp-1 tracking-tight ${
+                                    story.isDone 
+                                        ? (isDark ? 'text-zinc-200' : 'text-zinc-800')
+                                        : (isDark ? 'text-zinc-500' : 'text-zinc-400')
+                                }`}>
+                                    {story.title}
                                 </span>
                             </div>
-                        );
-                    })}
+                        ));
+                    })()}
                 </div>
             </div>
 
-            {/* ─── Content Feed / Documents ─── */}
+            {/* ─── Content Area / Files (Directory View) ─── */}
             <div className="flex-1 flex flex-col min-h-0">
-                <div className={`flex border-b transition-all duration-300 overflow-x-auto hide-scrollbar shrink-0 ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
-                    <button 
-                        onClick={() => setActiveTab('feed')}
-                        className={`px-8 py-4 text-[12px] font-black uppercase tracking-widest border-b-2 transition-all shrink-0 ${
-                            activeTab === 'feed'
-                            ? (isDark ? 'text-white border-white' : 'text-zinc-900 border-black')
-                            : 'text-zinc-500 border-transparent hover:text-zinc-400'
-                        }`}
-                    >
-                        Feed
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('arquivos')}
-                        className={`px-8 py-4 text-[12px] font-black uppercase tracking-widest border-b-2 transition-all shrink-0 ${
-                            activeTab === 'arquivos'
-                            ? (isDark ? 'text-white border-white' : 'text-zinc-900 border-black')
-                            : 'text-zinc-500 border-transparent hover:text-zinc-400'
-                        }`}
-                    >
-                        Arquivos
-                    </button>
-                    <button className="px-8 py-4 text-[12px] font-black uppercase tracking-widest text-zinc-500 opacity-30 cursor-not-allowed shrink-0">
-                        Insights
-                    </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto pt-6 pb-20 hide-scrollbar">
-                    {activeTab === 'feed' ? (
-                        hasDocs ? (
-                            <DocumentsGrid 
-                                docs={[...docsForDropdown].reverse()}
-                                isDark={isDark}
-                                getAvatarUrl={getAvatarUrl}
-                                selectedPillar={selectedPillar}
-                                cargo={cargo}
-                                onOpen={(doc) => {
-                                    const formats = doc.result?.export_formats || (doc.result?.conteudo ? ['google_docs'] : []);
-                                    handleDocOpen(doc, formats[0] || 'google_docs');
-                                }}
-                            />
-                        ) : (
-                            <div className="flex flex-col items-center justify-center py-20 opacity-50">
-                                <FileText size={48} className="mb-4 text-zinc-600" />
-                                <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
-                                    Nenhum entregável disponível
-                                </p>
-                            </div>
-                        )
-                    ) : hasDocs ? (
+                <div className="flex-1 overflow-y-auto pt-4 pb-20 hide-scrollbar px-2">
+                    {hasDocs ? (
                         <DocumentsTab
                             docsForDropdown={docsForDropdown}
                             visibleTasks={visibleTasks}
@@ -416,7 +357,7 @@ export function PillarHeader({
                         <div className="flex flex-col items-center justify-center py-20 opacity-50">
                             <FileText size={48} className="mb-4 text-zinc-600" />
                             <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
-                                Nenhum entregável disponível
+                                Nenhum arquivo disponível
                             </p>
                         </div>
                     )}

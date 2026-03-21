@@ -123,10 +123,20 @@ export default function PillarPlan({
             <div className="max-w-3xl mx-auto px-6 py-8">
 
                 {/* Back */}
-                <button onClick={onBack}
-                    className="flex items-center gap-2 text-zinc-500 hover:text-zinc-700 transition-colors text-sm mb-6">
-                    <ArrowLeft className="w-4 h-4" /> Voltar aos especialistas
-                </button>
+                {/* Back */}
+                <div className="mb-6">
+                    <button
+                        onClick={onBack}
+                        className="p-2 rounded-lg transition-all hover:scale-105 active:scale-95 border"
+                        style={{ 
+                            backgroundColor: 'var(--color-surface-1)', 
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-secondary)'
+                        }}
+                    >
+                        <ArrowLeft size={16} />
+                    </button>
+                </div>
 
                 {/* Header */}
                 <div className="flex items-start gap-3 mb-6">

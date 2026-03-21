@@ -85,10 +85,10 @@
     --color-surface-hover: rgba(255, 255, 255, 0.10);
     --color-surface-active: rgba(255, 255, 255, 0.15);
 
-    --color-border: rgba(255, 255, 255, 0.1);
-    --color-border-strong: rgba(255, 255, 255, 0.15);
-    --color-border-subtle: rgba(255, 255, 255, 0.05);
-    --color-border-glass: rgba(255, 255, 255, 0.1);
+    --color-border: rgba(255, 255, 255, 0.05);
+    --color-border-strong: rgba(255, 255, 255, 0.1);
+    --color-border-subtle: rgba(255, 255, 255, 0.03);
+    --color-border-glass: rgba(255, 255, 255, 0.05);
 
     --color-text-primary: #ffffff;
     --color-text-secondary: #f1f5f9;
@@ -146,7 +146,7 @@
   }
 
   .glass-card {
-    @apply bg-white/90 border border-[--color-border] shadow-sm transition-all duration-300;
+    @apply bg-[--color-surface-2] backdrop-blur-md shadow-sm transition-all duration-300;
   }
 
   .glass-sidebar {

@@ -32,6 +32,7 @@ from app.services.common import (
     CommonConfig,    # Config
     get_timestamp, format_duration, safe_get, retry_with_delay  # Utils
 )
+from app.core.event_bus import event_bus
 
 # ═══════════════════════════════════════════════════════════════════
 # SPECIALIST PERSONAS — imported from pillar_config.py
@@ -58,8 +59,11 @@ from app.services.agents.engine.market_researcher import (
 
 
 # ═══════════════════════════════════════════════════════════════════
-
-from typing import Dict, List, Any, Optional
+import sys
+import os
+import time
+import math
+from typing import List, Dict, Any, Optional, Union, Callable
 from app.core.prompt_loader import get_engine_prompt
 import copy, concurrent.futures
 
@@ -113,6 +117,51 @@ def _format_previous_results(previous_results: list = None, max_chars_per_item: 
         text += "═══════════════════════════════════════════════════\n\n"
     
     return text
+
+
+def save_and_notify(
+    analysis_id: str,
+    pillar_key: str,
+    task_id: str,
+    task_title: str,
+    status: str,
+    outcome: str,
+    result_data: dict = None,
+    business_impact: str = "",
+    monitor_task_id: str = None
+):
+    """
+    Função global para salvar resultados de execução no banco de dados 
+    e notificar o frontend em tempo real via Redis Pub/Sub.
+    """
+    try:
+        # 1. Persistência no Banco de Dados (para Polling)
+        db.save_execution_result(
+            analysis_id, pillar_key, task_id, task_title,
+            status=status, outcome=outcome, result_data=result_data,
+            business_impact=business_impact
+        )
+        # 2. Notificação em Tempo Real via Redis (para SSE)
+        # Usamos o monitor_task_id (ID pai) se disponível, senão o task_id
+        pub_id = monitor_task_id or task_id
+        if result_data:
+            if "opiniao" in result_data:
+                event_bus.publish_thought(pub_id, result_data["opiniao"], source_task_id=task_id)
+            if "intelligence_tools_used" in result_data:
+                tools = result_data["intelligence_tools_used"]
+                # Se for lista, publica cada uma
+                if isinstance(tools, list):
+                    for tool in tools:
+                        event_bus.publish_tool(pub_id, tool.get("tool", "unknown"), tool.get("status", "running"), tool.get("detail", ""), source_task_id=task_id)
+                elif isinstance(tools, dict):
+                    event_bus.publish_tool(pub_id, tools.get("tool", "unknown"), tools.get("status", "running"), tools.get("detail", ""), source_task_id=task_id)
+            if "sources" in result_data:
+                sources_list = result_data["sources"]
+                if isinstance(sources_list, list):
+                    for src in sources_list:
+                        event_bus.publish_source(pub_id, src, source_task_id=task_id)
+    except Exception as e:
+        print(f"  ⚠️ Error in save_and_notify: {e}", file=sys.stderr)
 
 
 def agent_execute_task(
@@ -170,6 +219,20 @@ def agent_execute_task(
     # Create watchdog for continuous monitoring with Redis support
     watchdog = CancellationWatchdog(check_cancelled, interval=0.1, task_id=monitor_task_id or task_id)
     
+    # Wrapper local para facilitar chamadas com contexto pré-preenchido
+    def _notify(status, outcome, result_data=None, business_impact=""):
+        save_and_notify(
+            analysis_id=analysis_id,
+            pillar_key=pillar_key,
+            task_id=task_id,
+            task_title=task_data.get("titulo", ""),
+            status=status,
+            outcome=outcome,
+            result_data=result_data,
+            business_impact=business_impact,
+            monitor_task_id=monitor_task_id
+        )
+
     # Check at the very beginning
     if check_cancelled():
         print(f"  🛑 Task {task_id} was cancelled before execution started.", file=sys.stderr)
@@ -225,19 +288,15 @@ def agent_execute_task(
         print(f"  🤖 Agent executing: {task_title[:60]}...", file=sys.stderr)
         
         # ── INITIAL SAVE (BEFORE RESEARCH): Show 'Searching...' in UI ──
-        try:
-            db.save_execution_result(
-                analysis_id, pillar_key, task_id, task_title,
-                status="ai_executing", outcome="Iniciando pesquisa...",
-                result_data={
-                    "task_id": task_id,
-                    "opiniao": f"Iniciando pesquisa estratégica para {task_title}...",
-                    "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados do mercado..."}],
-                    "streaming": True
-                }
-            )
-        except Exception as e:
-            print(f"  ⚠️ Failed to save pre-research execution state: {e}", file=sys.stderr)
+        _notify(
+            status="ai_executing", outcome="Iniciando pesquisa...",
+            result_data={
+                "task_id": task_id,
+                "opiniao": f"Iniciando pesquisa estratégica {('no setor ' + segmento) if segmento else ''} para {task_title}...",
+                "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados do mercado..."}],
+                "streaming": True
+            }
+        )
 
         # Check for cancellation before search
         check_cancelled_ultra()
@@ -268,20 +327,16 @@ def agent_execute_task(
                 intelligence_tools_used.insert(1, {"tool": "web_extractor", "status": "success", "detail": f"{len(research)} chars extraídos"})
             
             # ── SECOND SAVE (AFTER RESEARCH): Update sources in UI during execution ──
-            try:
-                db.save_execution_result(
-                    analysis_id, pillar_key, task_id, task_title,
-                    status="ai_executing", outcome="Pesquisa concluída",
-                    result_data={
-                        "task_id": task_id,
-                        "opiniao": f"Pesquisa concluída. Encontrei {len(task_sources)} fontes relevantes. Iniciando análise e redação...",
-                        "sources": task_sources,
-                        "intelligence_tools_used": intelligence_tools_used,
-                        "streaming": True
-                    }
-                )
-            except Exception as e:
-                print(f"  ⚠️ Failed to save post-research execution state: {e}", file=sys.stderr)
+            _notify(
+                status="ai_executing", outcome="Pesquisa concluída",
+                result_data={
+                    "task_id": task_id,
+                    "opiniao": f"Pesquisa concluída. Encontrei {len(task_sources)} fontes relevantes. Iniciando análise e redação...",
+                    "sources": task_sources,
+                    "intelligence_tools_used": intelligence_tools_used,
+                    "streaming": True
+                }
+            )
 
             print(f"  📦 Task execute via unified_research: {len(task_sources)} sources | tools: {[t['tool'] for t in intelligence_tools_used]}", file=sys.stderr)
         except Exception as e:
@@ -403,9 +458,8 @@ def agent_execute_task(
                         # Propagate research data so finalization can use it
                         result["_research_context"] = all_research
                         
-                        # Save to DB
-                        db.save_execution_result(
-                            analysis_id, pillar_key, task_id, task_title,
+                        # Save to DB and Notify
+                        _notify(
                             status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                             business_impact=result.get("impacto_estimado", ""),
                             result_data=result
@@ -441,8 +495,7 @@ def agent_execute_task(
 
         # Update status before LLM call to show generic progress
         try:
-            db.save_execution_result(
-                analysis_id, pillar_key, task_id, task_title,
+            _notify(
                 status="ai_executing", outcome="Gerando conteúdo...",
                 result_data={
                     "task_id": task_id,
@@ -601,8 +654,7 @@ Retorne APENAS o JSON."""
             
             # Progress update: content received, but checking quality
             try:
-                db.save_execution_result(
-                    analysis_id, pillar_key, task_id, task_title,
+                _notify(
                     status="ai_executing", outcome="Validando conteúdo...",
                     result_data={
                         "task_id": task_id,
@@ -705,8 +757,7 @@ Retorne APENAS o JSON."""
             result["_research_context"] = all_research
 
             # Auto-record as executed (pending user confirmation)
-            db.save_execution_result(
-                analysis_id, pillar_key, task_id, task_title,
+            _notify(
                 status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                 business_impact=result.get("impacto_estimado", ""),
                 result_data=result
@@ -759,8 +810,7 @@ Retorne APENAS o JSON."""
                 )
                 result["task_id"] = task_id
                 result["sources"] = sources
-                db.save_execution_result(
-                    analysis_id, pillar_key, task_id, task_title,
+                _notify(
                     status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
                     business_impact=result.get("impacto_estimado", ""),
                     result_data=result
@@ -1048,6 +1098,8 @@ Se o tema já foi coberto → NÃO CRIE. Foque no que FALTA ser feito.
         return {"success": False, "error": f"Erro ao expandir subtarefas: {str(e)[:200]}"}
 
 
+from typing import Optional, Callable
+
 def ai_try_user_task(
     analysis_id: str,
     pillar_key: str,
@@ -1084,6 +1136,19 @@ def ai_try_user_task(
             print(f"  🛑 ULTRA CANCELLATION DETECTED for task {task_id}", file=sys.stderr)
             raise Exception("Task cancelled by user")
 
+    # Wrapper local para facilitar chamadas com contexto pré-preenchido
+    def _notify(status, outcome, result_data=None, business_impact=""):
+        save_and_notify(
+            analysis_id=analysis_id,
+            pillar_key=pillar_key,
+            task_id=task_id,
+            task_title=task_data.get("titulo", ""),
+            status=status,
+            outcome=outcome,
+            result_data=result_data,
+            business_impact=business_impact
+        )
+
     spec = SPECIALISTS.get(pillar_key)
     if not spec:
         return {"success": False, "error": f"Unknown pillar: {pillar_key}"}
@@ -1111,18 +1176,15 @@ def ai_try_user_task(
         sources = list(dict.fromkeys(sources))
 
     # ── INITIAL SAVE (BEFORE RESEARCH): Show 'Searching...' in UI ──
-    try:
-        db.save_execution_result(
-            analysis_id, pillar_key, task_id, task_title,
-            status="ai_executing", outcome="Iniciando pesquisa...",
-            result_data={
-                "task_id": task_id,
-                "opiniao": f"Iniciando pesquisa estratégica e análise de contexto para {task_title}...",
-                "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados específicos..."}],
-                "streaming": True
-            }
-        )
-    except Exception: pass
+    _notify(
+        status="ai_executing", outcome="Iniciando pesquisa...",
+        result_data={
+            "task_id": task_id,
+            "opiniao": f"Iniciando pesquisa estratégica e análise de contexto para {task_title}...",
+            "intelligence_tools_used": [{"tool": "web_search", "status": "running", "detail": "Buscando dados específicos..."}],
+            "streaming": True
+        }
+    )
 
     # Smart task-specific RAG search via unified_research
     dna = brief.get("dna", {})
@@ -1150,19 +1212,16 @@ def ai_try_user_task(
         intelligence_tools_used = research_data.get("intelligence_tools_used", [])
         
         # ── SECOND SAVE (AFTER RESEARCH): Update tools/sources in UI ──
-        try:
-            db.save_execution_result(
-                analysis_id, pillar_key, task_id, task_title,
-                status="ai_executing", outcome="Analisando dados...",
-                result_data={
-                    "task_id": task_id,
-                    "opiniao": f"Pesquisa concluída ({len(research_data.get('sources', []))} fontes). Iniciando geração da proposta...",
-                    "intelligence_tools_used": intelligence_tools_used,
-                    "sources": research_data.get("sources", []),
-                    "streaming": True
-                }
-            )
-        except Exception: pass
+        _notify(
+            status="ai_executing", outcome="Analisando dados...",
+            result_data={
+                "task_id": task_id,
+                "opiniao": f"Pesquisa concluída ({len(research_data.get('sources', []))} fontes). Iniciando geração da proposta...",
+                "intelligence_tools_used": intelligence_tools_used,
+                "sources": research_data.get("sources", []),
+                "streaming": True
+            }
+        )
 
         print(f"  📦 AI user task via unified_research: {len(research_data.get('sources', []))} sources", file=sys.stderr)
     except Exception as e:
@@ -1231,16 +1290,8 @@ def ai_try_user_task(
             content_str = str(content) if content is not None else ""
             print(f"  ⚠️ AI Try Content seems short! Preview: {content_str[:200]}", file=sys.stderr)
 
-        db.save_execution_result(
-            analysis_id, pillar_key, task_id, task_title,
-            status="ai_partial", outcome=result.get("entregavel_titulo", task_title),
-            business_impact=result.get("impacto_estimado", ""),
-            result_data=result
-        )
-
-        db.save_execution_result(
-            analysis_id, pillar_key, task_id, task_title,
-            status="ai_partial", outcome=result.get("entregavel_titulo", task_title),
+        _notify(
+            status="ai_executed", outcome=result.get("entregavel_titulo", task_title),
             business_impact=result.get("impacto_estimado", ""),
             result_data=result
         )

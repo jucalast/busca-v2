@@ -16,6 +16,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { StreamingText } from './StreamingText';
 import { IntelligenceToolsBadges } from '@/features/shared/components/intelligence-tools';
 import { AutoScrollContainer } from './AutoScrollContainer';
+import LoadingDots from './LoadingDots';
 import { useSidebar } from '@/contexts/SidebarContext';
 
 interface SearchSource {
@@ -409,23 +410,25 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
                                         </div>
                                     )}
                                 </div>
-
                                 {!isStreaming && i === messages.length - 1 && hasPendingResearch && !sending && (
-                                    <div className="flex flex-wrap items-center gap-3 mt-6">
+                                    <div className="flex flex-wrap items-center gap-2.5 mt-6">
                                         <button
                                             onClick={handleConfirmResearch}
-                                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 shadow-sm bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+                                            className={`flex items-center gap-1.5 h-7 px-4 rounded-lg text-[11px] font-bold transition-all duration-150 active:scale-95 shadow-sm ${
+                                                isDark ? 'bg-white text-black hover:bg-zinc-200' : 'bg-black text-white hover:bg-zinc-800'
+                                            }`}
                                         >
-                                            <Check className="w-4 h-4" />Concordo, pesquisar
+                                            <Check className="w-3.5 h-3.5" />Concordar, pesquisar
                                         </button>
                                         <button
                                             onClick={handleRejectResearch}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-150 active:scale-95 border ${isDark
-                                                ? 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
-                                                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                                                }`}
+                                            className={`flex items-center gap-1.5 h-7 px-3 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95 border ${
+                                                isDark
+                                                ? 'bg-zinc-800/50 border-white/5 text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-black'
+                                            }`}
                                         >
-                                            <X className="w-4 h-4" />Definir eu mesmo
+                                            <X className="w-3.5 h-3.5" />Definir eu mesmo
                                         </button>
                                     </div>
                                 )}
@@ -441,12 +444,14 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
             {/* Bottom Floating Input Area - Fixed at bottom */}
             <div className={`${hasInteracted ? 'pb-6 pt-2 bg-transparent' : 'relative'} w-full max-w-3xl mx-auto z-[100] px-4 transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1)`}>
                 <div
-                    className={`flex flex-col gap-0 backdrop-blur-3xl rounded-[28px] overflow-hidden border transition-all duration-300 focus-within:border-white/20 ${isDark ? 'border-zinc-800/80 bg-black/20' : 'bg-white/90 border-gray-300 focus-within:border-gray-400'
-                        }`}
+                    className={`flex flex-col gap-0 backdrop-blur-3xl rounded-[24px] overflow-hidden border transition-all duration-300 ${
+                        isDark ? 'bg-zinc-900/90 border-white/10 shadow-2xl' : 'bg-gray-200/98 border-gray-300 shadow-xl'
+                    }`}
                 >
                     {/* Input Header Section (Matches FocusedTaskView sub header style) */}
-                    <div className={`w-full backdrop-blur-md px-5 py-2 flex items-center justify-between relative border-b ${isDark ? 'bg-white/5 border-white/5' : 'bg-gray-50/50 border-gray-100'
-                        }`}>
+                    <div className={`w-full px-5 py-2 flex items-center justify-between relative border-b ${
+                        isDark ? 'bg-white/5 border-white/5' : 'bg-white/20 border-black/5'
+                    }`}>
                         {/* Integrated Progress Bar at the very top of the bar */}
                         <div className={`absolute top-0 left-0 right-0 h-[2px] overflow-hidden ${isDark ? 'bg-white/5' : 'bg-black/5'
                             }`}>
@@ -530,11 +535,11 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
                                         }}
                                     >
                                         {sending ? (
-                                            <div className="flex items-center gap-1">
-                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                                <span className="w-1 h-1 bg-white rounded-full animate-bounce" />
-                                            </div>
+                                            <LoadingDots
+                                                color="white"
+                                                dotClassName="w-1 h-1"
+                                                className="flex items-center gap-1"
+                                            />
                                         ) : (
                                             <ArrowUp size={22} strokeWidth={3} className="transition-transform" />
                                         )}

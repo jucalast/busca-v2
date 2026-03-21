@@ -129,34 +129,30 @@ export function useLocalStoragePersistence({
                     if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
                     if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
                     
-                    // Only restore execution state if backend confirms it's active
+                    // Always restore these because they hold the history of finished tasks
+                    if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
+                    if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
+                    if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
+
+                    // Only restore active execution tracking if backend confirms it's active
                     if (hasActiveExecution) {
-                        if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
-                        if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
-                        if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
                         if (data.autoExecuting) setAutoExecuting(data.autoExecuting);
                     } else {
-                        // Clear execution state if no active backend execution
+                        // Clear execution tracking state if no active backend execution
                         setAutoExecuting(null);
                         setAutoExecStep(0);
                         setAutoExecTotal(0);
                         setAutoExecLog([]);
-                        setAutoExecSubtasks({});
-                        setAutoExecResults({});
-                        setAutoExecStatuses({});
                         
-                        // Also clean localStorage to prevent phantom state
+                        // Also clean tracking state from localStorage to prevent phantom state
                         const cleanedData = { ...data };
                         delete cleanedData.autoExecuting;
                         delete cleanedData.autoExecStep;
                         delete cleanedData.autoExecTotal;
                         delete cleanedData.autoExecLog;
-                        delete cleanedData.autoExecSubtasks;
-                        delete cleanedData.autoExecResults;
-                        delete cleanedData.autoExecStatuses;
                         
                         localStorage.setItem(`pillar_workspace_${analysisId}`, JSON.stringify(cleanedData));
-                        console.log('🧹 Cleared phantom execution state from localStorage');
+                        console.log('🧹 Cleared phantom execution tracking state from localStorage');
                     }
                     
                     if (data.pillarStates) setPillarStates(data.pillarStates);

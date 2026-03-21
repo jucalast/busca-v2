@@ -130,7 +130,7 @@ export function usePillarNavigation({
 
                     if (stMatch) {
                         const rawParentTaskId = taskId.replace(/_st\d+$/, '');
-                        const parentTid = `${key}_${rawParentTaskId}`;
+                        const parentTid = rawParentTaskId.startsWith(`${key}_`) ? rawParentTaskId : `${key}_${rawParentTaskId}`;
                         const idx = parseInt(stMatch[1], 10) - 1;
 
                         setAutoExecResults(prev => ({
@@ -142,7 +142,7 @@ export function usePillarNavigation({
                             [parentTid]: { ...(prev[parentTid] || {}), [idx]: 'done' as const }
                         }));
                     } else if (!taskId.endsWith('_finalization')) {
-                        const tid = `${key}_${taskId}`;
+                        const tid = taskId.startsWith(`${key}_`) ? taskId : `${key}_${taskId}`;
                         setTaskDeliverables(prev => ({ ...prev, [tid]: result }));
                         setCompletedTasks(prev => {
                             const s = new Set(prev[key] || []);
@@ -680,9 +680,9 @@ export function usePillarNavigation({
         const checkRunningTasks = async () => {
             console.log(`🔍 [Recovery] Checking tasks for pillar ${selectedPillar}`);
             
-            // Early safety check: if any execution state exists, don't remount anything
-            if (autoExecuting || Object.keys(autoExecResults).length > 0 || Object.keys(autoExecSubtasks).length > 0) {
-                console.log(`⚠️ [Recovery] Execution state already exists, skipping recovery check`);
+            // Early safety check: if autoExecuting is set, the UI is already actively managing a task!
+            if (autoExecuting) {
+                console.log(`⚠️ [Recovery] Task is actively executing locally (autoExecuting is set), skipping recovery check`);
                 return;
             }
             
@@ -695,11 +695,9 @@ export function usePillarNavigation({
                         continue;
                     }
 
-                    // Additional safety check: if we have any execution state for this task, don't remount
-                    if (autoExecResults[tid] || autoExecSubtasks[tid] || autoExecStatuses[tid]) {
-                        console.log(`⚠️ [Recovery] Task ${task.id} has existing execution state, skipping remount`);
-                        continue;
-                    }
+                    // We want to verify the background status and resume polling if it's still running,
+                    // even if we just restored executing state from local storage.
+
 
                     console.log(`🔍 [Recovery] Checking status for task ${task.id}...`);
                     try {
@@ -713,9 +711,11 @@ export function usePillarNavigation({
                             const status = pollResult.progress.status;
                             console.log(`📊 [Recovery] Task ${task.id} status: ${status}`);
                             
-                            // Só remonta se for "running", ignora "cancelled" e "error"
-                            if (status === 'running') {
-                                console.log(`🔄 [Recovery] Re-mounting background task polling for: ${task.id}`);
+                            const activeOrDoneStatuses = ['running', 'started', 'processing', 'done', 'completed', 'finalization', 'finalized', 'success'];
+
+                            // Remonta se estiver rodando ou concluída (para gerar entregável se pendente no frontend)
+                            if (activeOrDoneStatuses.includes(status)) {
+                                console.log(`🔄 [Recovery] Re-mounting background task polling for: ${task.id} (status: ${status})`);
                                 handleAutoExecute(selectedPillar, task, true);
                                 break;
                             } else if (status === 'cancelled' || status === 'error') {

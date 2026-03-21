@@ -54,52 +54,143 @@ export function usePillarExecution({
     const handleAIExecute = useCallback(async (pillarKey: string, task: TaskItem) => {
         const tid = `${pillarKey}_${task.id}`;
         setExecutingTask(tid);
+        // Also set autoExecuting so the UI shows the intermediate display panel
+        setAutoExecuting(tid);
         setExpandedTaskIds(prev => new Set(prev).add(tid));
         setError('');
 
         const controller = new AbortController();
         abortControllersRef.current[tid] = controller;
 
+        // Reset/init intermediate state
+        setAutoExecStep(1);
+        setAutoExecTotal(1);
+        setAutoExecSubtasks(prev => ({ ...prev, [tid]: [task] }));
+        setAutoExecStatuses(prev => ({ ...prev, [tid]: { 0: 'running' as const } }));
+
         try {
-            const result = await apiCall('specialist-execute', {
-                analysis_id: analysisId, pillar_key: pillarKey,
-                task_id: task.id, task_data: task,
-                business_id: businessId, profile: profile?.profile || profile,
-            }, { signal: controller.signal });
-            if (result.success && result.execution) {
-                const executionData = { ...result.execution, id: result.execution.id || task.id };
-                if (!executionData.conteudo_completo && executionData.conteudo) {
-                    executionData.conteudo_completo = executionData.conteudo;
+            // Use streaming API for real-time updates for single tasks too
+            const response = await fetch('/api/growth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'ai-try-user-task-stream', // We can use the same streaming engine
+                    analysis_id: analysisId,
+                    pillar_key: pillarKey,
+                    task_id: task.id,
+                    task_data: task,
+                    profile: profile?.profile || profile,
+                    business_id: businessId
+                }),
+                signal: controller.signal
+            });
+
+            if (!response.ok || !response.body) {
+                // FALLBACK to old non-streaming API if streaming fails or is not available
+                const result = await apiCall('specialist-execute', {
+                    analysis_id: analysisId, pillar_key: pillarKey,
+                    task_id: task.id, task_data: task,
+                    business_id: businessId, profile: profile?.profile || profile,
+                }, { signal: controller.signal });
+                
+                if (result.success && result.execution) {
+                    const executionData = { ...result.execution, id: result.execution.id || task.id };
+                    if (!executionData.conteudo_completo && executionData.conteudo) {
+                        executionData.conteudo_completo = executionData.conteudo;
+                    }
+                    setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
+                    setCompletedTasks(prev => {
+                        const s = new Set(prev[pillarKey] || []);
+                        s.add(task.id);
+                        s.add(tid);
+                        return { ...prev, [pillarKey]: s };
+                    });
+                } else { setError(result.error || 'Erro na execução'); }
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() ?? '';
+
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith('data: ')) continue;
+                    
+                    try {
+                        const event = JSON.parse(line.slice(6));
+
+                        if (event.type === 'thought') {
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [tid]: { ...prev?.[tid], 0: { ...(prev?.[tid]?.[0] || {}), opiniao: event.text, streaming: true } }
+                            }));
+                        } else if (event.type === 'tool') {
+                            setAutoExecResults(prev => ({
+                                ...prev,
+                                [tid]: {
+                                    ...prev?.[tid],
+                                    0: {
+                                        ...(prev?.[tid]?.[0] || {}),
+                                        intelligence_tools_used: [
+                                            ...(prev?.[tid]?.[0]?.intelligence_tools_used || []),
+                                            event
+                                        ]
+                                    }
+                                }
+                            }));
+                        } else if (event.type === 'result') {
+                            const execResult = event.data;
+                            if (execResult) {
+                                const executionData = { ...execResult, id: execResult.id || task.id };
+                                if (!executionData.conteudo_completo && executionData.conteudo) {
+                                    executionData.conteudo_completo = executionData.conteudo;
+                                }
+                                
+                                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
+                                setAutoExecResults(prev => ({
+                                    ...prev,
+                                    [tid]: { ...prev?.[tid], 0: { ...executionData, streaming: false } }
+                                }));
+                                setAutoExecStatuses(prev => ({
+                                    ...prev,
+                                    [tid]: { ...prev?.[tid], 0: 'done' as const }
+                                }));
+                                setCompletedTasks(prev => {
+                                    const s = new Set(prev[pillarKey] || []);
+                                    s.add(task.id);
+                                    s.add(tid);
+                                    return { ...prev, [pillarKey]: s };
+                                });
+                            }
+                        } else if (event.type === 'error') {
+                            throw new Error(event.message || 'Erro na execução');
+                        }
+                    } catch (parseErr) {
+                        // Silent parse errors for partial chunks
+                    }
                 }
-                setTaskDeliverables(prev => ({ ...prev, [tid]: executionData }));
-                setCompletedTasks(prev => {
-                    const s = new Set(prev[pillarKey] || []);
-                    s.add(task.id);
-                    s.add(tid);
-                    return { ...prev, [pillarKey]: s };
-                });
-            } else { setError(result.error || 'Erro na execução'); }
+            }
         } catch (err: any) {
             if (err.name === 'AbortError') {
                 setError('Execução cancelada pelo usuário.');
             } else {
-                const errorMessage = err.message || '';
-                if (errorMessage.includes('rate limit') ||
-                    errorMessage.includes('TPD esgotado') ||
-                    errorMessage.includes('429') ||
-                    errorMessage.includes('limit exceeded')) {
-                    setRateLimitError(errorMessage);
-                    setShowRateLimitWarning(true);
-                    setError('Limite de uso do modelo atingido. Tente outro modelo.');
-                } else {
-                    setError(err.message || 'Erro ao executar tarefa');
-                }
+                setError(err.message || 'Erro ao executar tarefa');
             }
         } finally {
             if (abortControllersRef.current[tid]) delete abortControllersRef.current[tid];
             setExecutingTask(null);
+            setTimeout(() => setAutoExecuting(null), 500);
         }
-    }, [analysisId, businessId, profile, apiCall]);
+    }, [analysisId, businessId, profile, apiCall, setExecutingTask, setAutoExecuting, setExpandedTaskIds, setError, setAutoExecStep, setAutoExecTotal, setAutoExecSubtasks, setAutoExecStatuses, setTaskDeliverables, setCompletedTasks, setAutoExecResults, setRateLimitError, setShowRateLimitWarning]);
 
     // ─── AI tries user task with streaming ───
     const handleAITryUserTask = useCallback(async (pillarKey: string, task: TaskItem) => {

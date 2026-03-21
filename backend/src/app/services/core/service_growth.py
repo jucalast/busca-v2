@@ -253,6 +253,65 @@ def do_specialist_execute(data: dict) -> dict:
         model_provider="auto"
     )
 
+def do_specialist_execute_stream(data: dict, is_user_task: bool = False):
+    """Execute a single task with streaming updates (SSE)."""
+    import json
+    import asyncio
+    
+    analysis_id = data.get("analysis_id")
+    pillar_key = data.get("pillar_key")
+    task_id = data.get("task_id")
+    task_data = data.get("task_data", {})
+    brief = data.get("profile", {})
+    model_provider = "auto"
+
+    async def event_generator():
+        try:
+            queue = asyncio.Queue()
+            def on_thought(event):
+                asyncio.run_coroutine_threadsafe(queue.put(event), loop)
+
+            loop = asyncio.get_event_loop()
+            from app.services.agents.engine.task_executor import agent_execute_task, ai_try_user_task
+            
+            target_fun = ai_try_user_task if is_user_task else agent_execute_task
+            
+            # Tarefa em background para rodar a engine
+            execution_task = loop.run_in_executor(
+                None, 
+                lambda: target_fun(
+                    analysis_id=analysis_id,
+                    pillar_key=pillar_key,
+                    task_id=task_id,
+                    task_data=task_data,
+                    brief=brief,
+                    model_provider=model_provider,
+                    on_thought=on_thought
+                )
+            )
+
+            # Enquanto a execução roda, pega eventos da fila e faz yield
+            while not execution_task.done() or not queue.empty():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    yield f"data: {json.dumps(event)}\n\n"
+                    queue.task_done()
+                except asyncio.TimeoutError:
+                    continue
+            
+            final_res = await execution_task
+            if final_res.get("success"):
+                yield f"data: {json.dumps({'type': 'result', 'data': final_res.get('execution')})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'message': final_res.get('error')})}\n\n"
+                
+        except Exception as e:
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return event_generator()
+
 def do_expand_subtasks(data: dict) -> dict:
     from app.core import database as db
 
@@ -379,7 +438,8 @@ def run_subtasks_background(analysis_id, pillar_key, task_id, task_data, profile
             # Check for cancellation again before executing the subtask
             check_cancelled_aggressive()
             
-            log_info(f"Executando subtarefa {i+1}/{len(subtasks_list)}: {st.get('titulo', 'Sem título')[:50]}...")
+            st_titulo = st.get('titulo', 'Sem título')
+            log_info(f"Executando subtarefa {i+1}/{len(subtasks_list)}: {st_titulo[:50]}...")
             
             exec_res = agent_execute_task(
                 analysis_id=analysis_id,

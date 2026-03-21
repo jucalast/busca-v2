@@ -108,16 +108,19 @@ export default function TaskDetail({
             <div className="max-w-5xl mx-auto px-6 py-8 relative">
 
                 {/* Back */}
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-2 transition-colors text-sm mb-6"
-                    style={{ color: 'var(--color-text-secondary)' }}
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Voltar ao plano
-                </button>
+                <div className="mb-6">
+                    <button
+                        onClick={onBack}
+                        className="p-2 rounded-lg transition-all hover:scale-105 active:scale-95 border"
+                        style={{ 
+                            backgroundColor: 'var(--color-surface-1)', 
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-secondary)'
+                        }}
+                    >
+                        <ArrowLeft size={16} />
+                    </button>
+                </div>
 
                 {/* Header */}
                 <div className="mb-6">

@@ -19,7 +19,7 @@ from app.schemas.requests import (
 from app.services.core.service_growth import (
     do_profile, do_analyze, do_assist, do_chat, do_dimension_chat,
     do_list_businesses, do_get_business, do_specialist_plan,
-    do_specialist_execute, do_expand_subtasks, do_ai_try_user_task,
+    do_specialist_execute, do_specialist_execute_stream, do_expand_subtasks, do_ai_try_user_task,
     do_execute_all_subtasks, do_get_background_status,
     do_redo_subtasks, do_redo_task, do_redo_pillar, do_cancel_task, do_clear_task_status,
     do_pillar_state, do_get_analysis_tasks, do_specialist_tasks, do_specialist_tasks_stream, do_delete_business,
@@ -140,6 +140,20 @@ def specialist_plan(req: ActionSpecialistPlanRequest):
 def specialist_execute(req: ActionSpecialistExecuteRequest):
     return do_specialist_execute(req.model_dump())
 
+@router.post("/specialist-execute-stream")
+def specialist_execute_stream(req: ActionSpecialistExecuteRequest):
+    """Execute a single specialist task with streaming updates."""
+    return StreamingResponse(
+        do_specialist_execute_stream(req.model_dump()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
 @router.post("/expand-subtasks")
 def expand_subtasks(req: ActionExpandSubtasksRequest):
     return do_expand_subtasks(req.model_dump())
@@ -147,6 +161,20 @@ def expand_subtasks(req: ActionExpandSubtasksRequest):
 @router.post("/ai-try-user-task")
 def ai_try_user_task(req: ActionAITryUserTaskRequest):
     return do_ai_try_user_task(req.model_dump())
+
+@router.post("/ai-try-user-task-stream")
+def ai_try_user_task_stream(req: ActionAITryUserTaskRequest):
+    """Try a custom user task with streaming updates."""
+    return StreamingResponse(
+        do_specialist_execute_stream(req.model_dump(), is_user_task=True),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 @router.post("/execute-all-subtasks")
 def execute_all_subtasks(req: ActionExecuteAllSubtasksRequest):
@@ -159,6 +187,61 @@ def poll_background_status(req: ActionPollBackgroundStatusRequest):
 @router.post("/clear-task-status")
 def clear_task_status(req: ActionPollBackgroundStatusRequest):
     return do_clear_task_status(req.model_dump())
+
+@router.get("/task-events/{task_id}")
+async def task_events_stream(task_id: str):
+    """
+    Subscreve-se aos eventos de uma tarefa no Redis e os envia via SSE para o Frontend.
+    Canal: task_updates:{task_id}
+    """
+    import asyncio
+    import redis.asyncio as async_redis
+    
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    channel = f"task_updates:{task_id}"
+    
+    async def event_generator():
+        # Conexão assíncrona com Redis para não bloquear o loop de eventos
+        client = async_redis.from_url(redis_url)
+        pubsub = client.pubsub()
+        await pubsub.subscribe(channel)
+        
+        try:
+            # Evento inicial para confirmar conexão
+            yield f"data: {json.dumps({'type': 'connected', 'task_id': task_id})}\n\n"
+            
+            while True:
+                # Espera por mensagens do canal
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=30.0)
+                if message is not None:
+                    data = message['data']
+                    if isinstance(data, bytes):
+                        data = data.decode('utf-8')
+                    yield f"data: {data}\n\n"
+                
+                # Heartbeat opcional ou apenas sleep curto
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            print(f"  ⚠️ SSE Task Stream Error ({task_id}): {e}", file=sys.stderr)
+        finally:
+            # Cleanup rigoroso
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.close()
+                await client.close()
+            except:
+                pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
 
 @router.post("/check-execution-status")
 def check_execution_status(req: ActionCheckExecutionStatusRequest):

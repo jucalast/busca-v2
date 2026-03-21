@@ -87,6 +87,7 @@ export default function PillarWorkspace({
     const [generationStatuses, setGenerationStatuses] = useState<Record<string, Record<number, 'waiting' | 'running' | 'done' | 'error'>>>({});
     const abortControllersRef = useRef<Record<string, AbortController>>({});
     const pollingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
+    const eventSourcesRef = useRef<Record<string, EventSource>>({});
 
     // ─── UI Preferences ───
     const [selectedTaskAiModel, setSelectedTaskAiModel] = useState<string>(currentAiModel);
@@ -174,6 +175,7 @@ export default function PillarWorkspace({
         setExpandingTask,
         abortControllersRef,
         pollingIntervalsRef,
+        eventSourcesRef,
         selectedPillar
     );
 
@@ -324,6 +326,7 @@ export default function PillarWorkspace({
         const visibleTasks = tarefas.filter(t => t.executavel_por_ia);
         const totalTasks = visibleTasks.length;
         const completedCount = visibleTasks.filter(t => done.has(t.id)).length;
+        const progressPercentage = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
         const planSources = planData?.context_sources || planData?.sources || [];
         const planEntregaveis = planData?.entregaveis || [];
 
@@ -342,7 +345,8 @@ export default function PillarWorkspace({
                 const r = res as any;
                 if (r?.execution_mode === 'producao' && (r.conteudo || r.export_formats?.length > 0)) {
                     const st = subtasks[idx];
-                    const title = safeRender(r.entregavel_titulo || st?.titulo || st?.entregavel_ia || `Documento ${idx + 1}`);
+                    // Prioritize the subtask title (planned) to keep consistency with the system's request
+                    const title = safeRender(st?.titulo || r.entregavel_titulo || st?.entregavel_ia || `Documento ${idx + 1}`);
                     docsForDropdown.push({ tid, idx, result: r, title });
                 }
             }
@@ -377,6 +381,12 @@ export default function PillarWorkspace({
                 <div className={`flex-1 min-w-0 flex flex-col pt-0 relative z-10 transition-colors duration-300 ${
                     isDark ? 'bg-[--color-bg]' : 'bg-white'
                 }`}>
+                    <div className="w-full h-[2px] shrink-0" style={{ backgroundColor: 'var(--color-border)' }}>
+                        <div 
+                            className="h-full transition-all duration-700 ease-out" 
+                            style={{ width: `${progressPercentage}%`, backgroundColor: 'var(--color-accent)' }} 
+                        />
+                    </div>
                     {/* Replay of thought history */}
                     {showHistoricalThoughts && (
                         <div className="absolute inset-0 z-[200]">
@@ -416,24 +426,26 @@ export default function PillarWorkspace({
                             />
                         </div>
                     )}
-                    {/* Progress Bar Header */}
-                    <div className={`border-b z-[120] px-8 py-2 transition-colors duration-300 ${
-                        isDark ? 'bg-[--color-bg] border-white/5' : 'bg-white border-gray-100'
-                    }`}>
-                        <TaskProgressBar
-                            totalTasks={totalTasks}
-                            completedCount={completedCount}
-                            activeRightTab={activeRightTab}
-                            setActiveRightTab={setActiveRightTab}
-                            focusedTaskId={focusedTaskId}
-                            setFocusedTaskId={setFocusedTaskId}
-                            docsCount={0}
-                        />
+
+                    {/* Floating Back Button & Tabs */}
+                    <div className="absolute top-4 left-4 right-4 z-[120] flex items-center justify-between pointer-events-none">
+                        <div className="pointer-events-auto w-full">
+                            <TaskProgressBar
+                                totalTasks={totalTasks}
+                                completedCount={completedCount}
+                                activeRightTab={activeRightTab}
+                                setActiveRightTab={setActiveRightTab}
+                                focusedTaskId={focusedTaskId}
+                                setFocusedTaskId={setFocusedTaskId}
+                                docsCount={0}
+                            />
+                        </div>
                     </div>
+
 
                     {/* Content Scroll Area */}
                     <div className="flex-1 flex flex-col overflow-hidden relative">
-                        <div className="flex-1 overflow-y-auto px-12 py-8 pb-32 custom-scrollbar">
+                        <div className={`flex-1 flex flex-col px-12 ${focusedTaskId ? "pt-0 pb-32 overflow-hidden" : "py-8 pb-32 overflow-y-auto custom-scrollbar"}`}>
                             {/* Banners & Errors */}
                             {(deps.blockers?.length > 0 || deps.warnings?.length > 0) && (
                                 <div className={`mb-8 p-5 rounded-xl border transition-colors duration-300 ${

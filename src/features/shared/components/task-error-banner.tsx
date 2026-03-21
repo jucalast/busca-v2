@@ -36,17 +36,14 @@ export default function TaskErrorBanner({ error, onClose, modelName }: TaskError
     return (
         <div
             className="w-full flex items-center justify-between px-3 py-1.5 transition-all duration-200"
-            style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            }}
         >
             <div className="flex items-center gap-2 overflow-hidden">
                 <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: 'var(--color-destructive)' }} />
                 <span className="text-[11px] font-medium whitespace-nowrap" style={{ color: 'var(--color-destructive)' }}>
-                    {modelName || 'Modelo'} falhou:
+                    Aviso:
                 </span>
-                <span className="text-[11px] opacity-80 truncate" style={{ color: 'var(--color-destructive)' }}>
-                    {reason}
+                <span className="text-[11px] opacity-80" style={{ color: 'var(--color-destructive)' }}>
+                    {error}
                 </span>
             </div>
 

@@ -4,56 +4,54 @@ import React from 'react';
 import { Search, Globe, Newspaper, TrendingUp, Zap, Building2, ChevronDown } from 'lucide-react';
 import { useSidebar } from '@/contexts/SidebarContext';
 
-export const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; style: React.CSSProperties }> = {
-    web_search: { icon: Search, label: 'Web Search', style: { color: 'var(--color-accent)' } },
-    web_extractor: { icon: Globe, label: 'Web Extractor', style: { color: 'var(--color-accent)' } },
-    news_extractor: { icon: Newspaper, label: 'News Intel', style: { color: 'var(--color-warning)' } },
-    trend_analyzer: { icon: TrendingUp, label: 'Google Trends', style: { color: 'var(--color-success)' } },
-    trend_analyzer_rising: { icon: Zap, label: 'Termos em Alta', style: { color: 'var(--color-warning)' } },
-    sales_triggers: { icon: Zap, label: 'Sales Triggers', style: { color: 'var(--color-destructive)' } },
-    cnpj_lookup: { icon: Building2, label: 'CNPJ Lookup', style: { color: 'var(--color-accent)' } },
+export const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string }> = {
+    web_search: { icon: Search, label: 'Web Search' },
+    web_extractor: { icon: Globe, label: 'Web Extractor' },
+    news_extractor: { icon: Newspaper, label: 'News Intel' },
+    trend_analyzer: { icon: TrendingUp, label: 'Google Trends' },
+    trend_analyzer_rising: { icon: Zap, label: 'Termos em Alta' },
+    sales_triggers: { icon: Zap, label: 'Sales Triggers' },
+    cnpj_lookup: { icon: Building2, label: 'CNPJ Lookup' },
 };
 
 export function IntelToolRow({ tool }: { tool: any }) {
     const [isDetailVisible, setIsDetailVisible] = React.useState(false);
     const { isDark } = useSidebar();
-    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool, style: { color: 'var(--color-text-secondary)' } };
+    const config = TOOL_CONFIG[tool.tool] || { icon: Globe, label: tool.tool };
     const Icon = config.icon;
     const detail = tool.detail as string | undefined;
     const isRunning = tool.status === 'running';
+
+    const colorClasses = isDark 
+        ? 'text-zinc-500 group-hover:text-white' 
+        : 'text-zinc-400 group-hover:text-zinc-900';
 
     return (
         <div className="flex flex-col animate-in fade-in slide-in-from-left-2 duration-300">
             <button
                 onClick={() => detail && !isRunning && setIsDetailVisible(p => !p)}
-                className={`group flex items-center gap-2 px-2 py-1 rounded-lg transition-all ${
-                    detail && !isRunning 
-                        ? (isDark ? 'hover:bg-white/5 cursor-pointer' : 'hover:bg-gray-50 cursor-pointer') 
-                        : 'cursor-default'
+                className={`group flex items-center gap-1.5 py-1.5 transition-all ${
+                    detail && !isRunning ? 'cursor-pointer' : 'cursor-default'
                 }`}
             >
-                <div className={`relative flex items-center justify-center w-5 h-5 rounded-md transition-colors duration-300 ${
+                <div className={`flex items-center justify-center h-4 w-4 relative transition-colors duration-300 ${
                     isRunning ? 'animate-pulse' : ''
-                } ${
-                    isDark ? 'bg-zinc-900' : 'bg-gray-100'
                 }`}>
-                    <Icon className="w-3 h-3 shrink-0 transition-colors" style={config.style} />
+                    <Icon className={`w-[15px] h-[15px] shrink-0 transition-colors duration-150 ${colorClasses}`} />
                     {isRunning && (
-                        <div className="absolute inset-0 rounded-md bg-current opacity-10 animate-ping" style={config.style} />
+                        <div className={`absolute inset-0 rounded-full opacity-10 animate-ping ${isDark ? 'bg-white' : 'bg-black'}`} />
                     )}
                 </div>
-                <span className="text-[11px] font-semibold tracking-tight" style={{ color: 'var(--color-text-primary)', opacity: isRunning ? 0.7 : 1 }}>
+                <span className={`text-[11px] font-normal tracking-tight leading-none transition-colors duration-150 ${colorClasses}`} style={{ opacity: isRunning ? 0.7 : 1 }}>
                     {config.label} {isRunning ? 'em andamento...' : ''}
                 </span>
                 {detail && !isRunning && (
-                    <ChevronDown className={`w-3.5 h-3.5 transition-all duration-300 ${isDetailVisible ? 'rotate-180' : ''}`} style={{ color: 'var(--color-text-muted)' }} />
+                    <ChevronDown className={`w-3 h-3 transition-all duration-300 ${isDetailVisible ? 'rotate-180' : ''} ${colorClasses}`} />
                 )}
             </button>
             {isDetailVisible && detail && !isRunning && (
-                <div className={`mt-1 ml-7 mr-4 p-2.5 rounded-xl border animate-in zoom-in-95 duration-200 transition-colors ${
-                    isDark ? 'bg-white/5 border-white/5' : 'bg-gray-50/80 border-gray-100/50'
-                }`}>
-                    <p className={`text-[11px] leading-relaxed font-medium italic ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>{detail}</p>
+                <div className={`mt-0.5 ml-7 mr-4 animate-in slide-in-from-top-1 duration-200 transition-colors`}>
+                    <p className={`text-[11px] leading-relaxed font-normal italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>{detail}</p>
                 </div>
             )}
         </div>
