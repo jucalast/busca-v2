@@ -4,17 +4,40 @@ Provides common validation and structure patterns.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
 
 
-class BasePillarSchema(BaseModel):
-    """Base class for all pillar output schemas."""
+from pydantic import BaseModel, Field, model_validator
+
+class BasePillarOutput(BaseModel):
+    """Base class for all pillar output schemas with automatic NUL character cleaning."""
     
     model_config = {
-        "extra": "forbid",  # Prevents additional fields
+        "extra": "ignore", # Allow extra fields for flexibility but validate core
         "validate_assignment": True
     }
+
+    @model_validator(mode='after')
+    def clean_nul_strings(self) -> 'BasePillarOutput':
+        from app.services.common import clean_nul_chars
+        # Use __dict__ directly to avoid triggering validate_assignment recursion
+        for field_name in list(self.__dict__.keys()):
+            if not field_name.startswith('_'):
+                self.__dict__[field_name] = clean_nul_chars(self.__dict__[field_name])
+        return self
+
+class PillarDiagnosticSchema(BasePillarOutput):
+    """Schema for the Scorer (Auditor) diagnostic output."""
+    score: int = Field(..., ge=0, le=100)
+    status: str = Field(..., pattern="^(critico|atencao|forte)$")
+    nivel_profissionalismo: int = Field(default=5)
+    veracidade_confirmada: bool = Field(default=False)
+    justificativa: str = Field(...)
+    dado_chave: Optional[str] = None
+    meta_pilar: Optional[str] = None
+
+BasePillarSchema = BasePillarOutput
 
 
 class BaseSegmentoSchema(BaseModel):

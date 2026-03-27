@@ -49,7 +49,14 @@ def search_duckduckgo(query: str, max_results: int = 8, region: str = 'br-pt', c
         return []
     
     # Clean query
+    from app.services.common import clean_nul_chars
     query = query.strip()
+    
+    # Remove NUL and other control characters that break search URLs
+    query = clean_nul_chars(query)
+    # Filter printable characters only + common spaces/tabs
+    query = "".join(c for c in query if c.isprintable() or c in (" ", "\t"))
+    
     if query == "+" or query == " " * len(query):
         print(f"Erro na busca DuckDuckGo: invalid query", file=sys.stderr)
         return []
@@ -153,14 +160,21 @@ def _perform_scrape(url: str, timeout: int) -> str:
             except Exception: return ""
         return ""
 
-    # Tentar trafilatura primeiro
+    # Ensure we use the correct encoding
+    if response.encoding == 'ISO-8859-1' and not 'charset=ISO-8859-1' in response.headers.get('Content-Type', '').lower():
+        response.encoding = response.apparent_encoding or 'utf-8'
+    
+    html_text = response.text
+    
+    # Tentar trafilatura primeiro (preferencial para extração limpa)
     traf = _get_trafilatura()
     if traf:
-        text = traf.extract(response.text, include_comments=False, include_tables=True, favor_recall=True, deduplicate=True)
+        # Trafilatura extract best from response text or bytes
+        text = traf.extract(html_text, include_comments=False, include_tables=True, favor_recall=True, deduplicate=True)
         if text: return text[:5000]
     
     # Fallback BS4
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(html_text, 'html.parser')
     for script in soup(["script", "style", "nav", "footer", "header"]):
         script.decompose()
     text = soup.get_text()

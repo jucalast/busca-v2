@@ -97,6 +97,20 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
 
     useEffect(() => {
         onProfileUpdate?.(extractedProfile);
+        
+        // 🛠️ DEBUG LOG (Requested by User)
+        if (Object.keys(extractedProfile).length > 0) {
+            console.group("📊 DNA ESTRATÉGICO ATUALIZADO");
+            console.log("Dados Brutos:", extractedProfile);
+            
+            const profileData = extractedProfile.perfil || extractedProfile;
+            const filledFields = Object.entries(profileData)
+                .filter(([k, v]) => v && v !== "" && !k.startsWith('_'))
+                .reduce((obj, [k, v]) => ({ ...obj, [k]: v }), {});
+                
+            console.log("Campos Coletados:", filledFields);
+            console.groupEnd();
+        }
     }, [extractedProfile, onProfileUpdate]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -172,63 +186,69 @@ const GrowthChat: React.FC<GrowthChatProps> = ({ onProfileReady, onProfileUpdate
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedContent = '';
-
+            let buffer = '';
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
 
-                for (const line of lines) {
-                    const trimmedLine = line.trim();
-                    if (trimmedLine.startsWith('data: ')) {
-                        try {
-                            const event = JSON.parse(trimmedLine.slice(6));
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith('data: ')) continue;
+                    
+                    try {
+                        const event = JSON.parse(line.slice(6));
 
-                            if (event.type === 'tool') {
-                                setMessages(prev => {
-                                    const next = [...prev];
-                                    const lastIdx = next.length - 1;
-                                    const lastMsg = next[lastIdx];
-                                    if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+                        if (event.type === 'tool') {
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const lastIdx = next.length - 1;
+                                const lastMsg = next[lastIdx];
+                                if (!lastMsg || lastMsg.role !== 'assistant') return prev;
 
-                                    const currentTools = lastMsg.intelligence_tools_used || [];
-                                    const existingIdx = currentTools.findIndex((t: any) => t.tool === event.tool);
+                                const currentTools = lastMsg.intelligence_tools_used || [];
+                                const existingIdx = currentTools.findIndex((t: any) => t.tool === event.tool);
 
-                                    const newTools = [...currentTools];
-                                    if (existingIdx >= 0) {
-                                        newTools[existingIdx] = event;
-                                    } else {
-                                        newTools.push(event);
-                                    }
+                                const newTools = [...currentTools];
+                                if (existingIdx >= 0) {
+                                    newTools[existingIdx] = event;
+                                } else {
+                                    newTools.push(event);
+                                }
 
-                                    next[lastIdx] = { ...lastMsg, intelligence_tools_used: newTools };
-                                    return next;
-                                });
-                            }
-                            else if (event.type === 'discovery') {
-                                setExtractedProfile(prev => ({ ...prev, [event.field]: event.value }));
-                            }
-                            else if (event.type === 'content') {
-                                accumulatedContent += event.text; // Accumulate content
-                                setMessages(prev => {
-                                    const next = [...prev];
-                                    const lastMsg = next[aiMsgIdx];
-                                    if (!lastMsg || lastMsg.role !== 'assistant') return prev;
-                                    next[aiMsgIdx] = { ...lastMsg, streamTarget: accumulatedContent };
-                                    return next;
-                                });
-                                setStreamingIdx(aiMsgIdx);
-                            }
-                            else if (event.type === 'result') {
-                                const data = event.data;
-                                if (data?.ready_for_analysis) setReadyForAnalysis(true);
-                                if (data?.extracted_profile) setExtractedProfile(prev => ({ ...prev, ...data.extracted_profile }));
-                            }
-                        } catch (e) {
-                            console.error('Error parsing SSE event', e);
+                                next[lastIdx] = { ...lastMsg, intelligence_tools_used: newTools };
+                                return next;
+                            });
                         }
+                        else if (event.type === 'discovery') {
+                            setExtractedProfile(prev => ({ ...prev, [event.field]: event.value }));
+                        }
+                        else if (event.type === 'content') {
+                            accumulatedContent += event.text; // Accumulate content
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const lastMsg = next[aiMsgIdx];
+                                if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+                                next[aiMsgIdx] = { ...lastMsg, streamTarget: accumulatedContent };
+                                return next;
+                            });
+                            setStreamingIdx(aiMsgIdx);
+                        }
+                        else if (event.type === 'result') {
+                            const data = event.data;
+                            if (data?.ready_for_analysis) setReadyForAnalysis(true);
+                            if (data?.extracted_profile) {
+                                setExtractedProfile(prev => {
+                                    const next = { ...prev, ...data.extracted_profile };
+                                    return next;
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE event', e);
                     }
                 }
             }

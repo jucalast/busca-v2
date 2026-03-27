@@ -43,6 +43,8 @@ export default function PillarWorkspace({
     userProfile,
     onRedo,
     onStateChange,
+    onShowHistory,
+    hasHistory,
     initialActivePillar,
     aiModel,
     reanalysisState
@@ -58,6 +60,7 @@ export default function PillarWorkspace({
     const [loadingDoc, setLoadingDoc] = useState<string | null>(null);
     const [loadingFullExport, setLoadingFullExport] = useState(false);
     const [selectedPillar, setSelectedPillar] = useState<string | null>(initialActivePillar || null);
+    const [showKnowledgeHub, setShowKnowledgeHub] = useState(false);
     const [pillarStates, setPillarStates] = useState<Record<string, any>>({});
     const [loadingPillar, setLoadingPillar] = useState<string | null>(null);
     const [generatingPillar, setGeneratingPillar] = useState<string | null>(null);
@@ -305,6 +308,9 @@ export default function PillarWorkspace({
             if (businessId) router.push(`/analysis/${businessId}/especialistas`);
         };
 
+        // Se o storage não carregou e não temos dados, não mostramos nada (evita o flash do Skeleton)
+        if (!isStorageLoaded && !planData) return null;
+
         if (!planData || (generatingPillar === selectedPillar)) {
             return (
                 <LoadingErrorState
@@ -313,8 +319,8 @@ export default function PillarWorkspace({
                     businessId={businessId}
                     handleSelectPillar={handleSelectPillar}
                     onBack={onBack}
-                    isGenerating={generatingPillar === selectedPillar}
-                    isExecuting={isPillarExecuting}
+                    isGenerating={generatingPillar === selectedPillar || isLoading}
+                    isExecuting={isPillarExecuting || isLoading}
                     results={generationResults[selectedPillar] || {}}
                     subtasks={generationSubtasks[selectedPillar] || []}
                     statuses={generationStatuses[selectedPillar] || {}}
@@ -554,32 +560,38 @@ export default function PillarWorkspace({
     // RENDER: Specialist Grid (Hub view)
     // ═══════════════════════════════════════════════════════
     return (
-        <SpecialistGrid
-            userProfile={userProfile}
-            scoreGeral={scoreGeral}
-            classificacao={classificacao}
-            resumo={resumo}
-            dims={dims}
-            specialists={specialists}
-            loadingPillar={loadingPillar}
-            pillarStates={pillarStates}
-            completedTasks={completedTasks}
-            marketData={marketData}
-            session={session}
-            profile={profile}
-            score={score}
-            analysisId={analysisId}
-            businessId={businessId}
-            loadingFullExport={loadingFullExport}
-            setLoadingFullExport={setLoadingFullExport}
-            loadingDoc={loadingDoc}
-            setLoadingDoc={setLoadingDoc}
-            onRedo={onRedo}
-            handleSelectPillar={handleSelectPillar}
-            error={error}
-            setError={setError}
-            generationResults={generationResults}
-            isReanalyzing={normalizedReanalysisState.isReanalyzing}
-        />
+        <div className="h-full w-full">
+            <SpecialistGrid
+                userProfile={userProfile}
+                scoreGeral={scoreGeral}
+                classificacao={classificacao}
+                resumo={resumo}
+                dims={dims}
+                specialists={specialists}
+                loadingPillar={loadingPillar}
+                pillarStates={pillarStates}
+                completedTasks={completedTasks}
+                marketData={marketData}
+                session={session}
+                profile={profile}
+                score={score}
+                analysisId={analysisId}
+                businessId={businessId}
+                loadingFullExport={loadingFullExport}
+                setLoadingFullExport={setLoadingFullExport}
+                loadingDoc={loadingDoc}
+                setLoadingDoc={setLoadingDoc}
+                onRedo={onRedo}
+                handleSelectPillar={handleSelectPillar}
+                error={error}
+                setError={setError}
+                showKnowledgeHub={showKnowledgeHub}
+                setShowKnowledgeHub={setShowKnowledgeHub}
+                generationResults={taskDeliverables}
+                isReanalyzing={normalizedReanalysisState.isReanalyzing}
+                onShowHistory={onShowHistory}
+                hasHistory={hasHistory}
+            />
+        </div>
     );
 }

@@ -15,6 +15,8 @@ export interface PillarWorkspaceProps {
         progress?: string;
         thoughts?: string[];
     };
+    onShowHistory?: () => void;
+    hasHistory?: boolean;
 }
 
 export interface TaskItem {

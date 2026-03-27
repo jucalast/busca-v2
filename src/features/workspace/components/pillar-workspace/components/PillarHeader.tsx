@@ -278,42 +278,31 @@ export function PillarHeader({
                 </div>
                 <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
                     {(() => {
-                        // 1. Get all finished unique titles
-                        const finishedMap = new Map<string, DocItem>();
-                        docsForDropdown.forEach(d => {
-                            const normalized = d.title.trim();
-                            if (!finishedMap.has(normalized)) finishedMap.set(normalized, d);
-                        });
-
-                        // 2. Resolve all items (Finished or Planned)
-                        const allStories: Array<{ title: string; isDone: boolean; icon: string; doc?: DocItem }> = [];
+                        // Resolve all items (Somente os planejados para não duplicar visualmente)
+                        const allStories: Array<{ title: string; isDone: boolean; icon: string }> = [];
                         
-                        // Add finished ones
-                        finishedMap.forEach((doc, title) => {
-                            allStories.push({
-                                title,
-                                isDone: true,
-                                icon: ferramentaIcon(doc.result?.ferramenta || 'documento'),
-                                doc
-                            });
-                        });
-
-                        // Add remaining planned ones
                         deliverables.forEach((e: any) => {
                             const title = safeRender(e.titulo).trim();
-                            if (!finishedMap.has(title)) {
-                                allStories.push({
-                                    title,
-                                    isDone: false,
-                                    icon: ferramentaIcon(e.ferramenta),
-                                });
-                            }
+                            
+                            // A tarefa está pronta se a tarefa_origem estiver no set de done
+                            // Consideramos variações possíveis de taskId (ex: task_1, publico_alvo_task_1)
+                            const originId = e.tarefa_origem || '';
+                            const isDone = done.has(originId) || 
+                                           done.has(`${selectedPillar}_${originId}`) ||
+                                           (originId && Array.from(done).some(d => d.endsWith(`_${originId.replace(/^task_/, '')}`)));
+
+                            allStories.push({
+                                title,
+                                isDone: isDone,
+                                icon: ferramentaIcon(e.ferramenta),
+                            });
                         });
 
                         return allStories.map((story, i) => (
                             <div
                                 key={`${story.title}_${i}`}
                                 onClick={() => setActiveTab('feed')}
+                                title={story.title}
                                 className="flex flex-col items-center gap-2 shrink-0 transition-all cursor-pointer hover:scale-105 active:scale-95 group"
                             >
                                 <div className="w-14 h-14 flex items-center justify-center transition-all">

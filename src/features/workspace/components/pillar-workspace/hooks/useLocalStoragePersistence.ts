@@ -102,23 +102,7 @@ export function useLocalStoragePersistence({
                 if (saved) {
                     const data = JSON.parse(saved);
                     
-                    // Check if there's an active execution in backend before restoring execution state
-                    let hasActiveExecution = false;
-                    if (data.autoExecuting || data.autoExecStatuses) {
-                        try {
-                            const response = await fetch('/api/growth', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'check-execution-status', analysisId })
-                            });
-                            const result = await response.json();
-                            hasActiveExecution = result.hasActiveExecution || false;
-                        } catch (e) {
-                            console.warn('Failed to check execution status:', e);
-                            hasActiveExecution = false;
-                        }
-                    }
-                    
+                    // --- MUDANÇA: Restaurar dados estruturais IMEDIATAMENTE (Cache-First) ---
                     if (data.completedTasks) {
                         const restored: Record<string, Set<string>> = {};
                         for (const [k, v] of Object.entries(data.completedTasks)) {
@@ -128,40 +112,46 @@ export function useLocalStoragePersistence({
                     }
                     if (data.taskDeliverables) setTaskDeliverables(data.taskDeliverables);
                     if (data.taskSubtasks) setTaskSubtasks(data.taskSubtasks);
-                    
-                    // Always restore these because they hold the history of finished tasks
                     if (data.autoExecSubtasks) setAutoExecSubtasks(data.autoExecSubtasks);
                     if (data.autoExecResults) setAutoExecResults(data.autoExecResults);
                     if (data.autoExecStatuses) setAutoExecStatuses(data.autoExecStatuses);
-
-                    // Only restore active execution tracking if backend confirms it's active
-                    if (hasActiveExecution) {
-                        if (data.autoExecuting) setAutoExecuting(data.autoExecuting);
-                    } else {
-                        // Clear execution tracking state if no active backend execution
-                        setAutoExecuting(null);
-                        setAutoExecStep(0);
-                        setAutoExecTotal(0);
-                        setAutoExecLog([]);
-                        
-                        // Also clean tracking state from localStorage to prevent phantom state
-                        const cleanedData = { ...data };
-                        delete cleanedData.autoExecuting;
-                        delete cleanedData.autoExecStep;
-                        delete cleanedData.autoExecTotal;
-                        delete cleanedData.autoExecLog;
-                        
-                        localStorage.setItem(`pillar_workspace_${analysisId}`, JSON.stringify(cleanedData));
-                        console.log('🧹 Cleared phantom execution tracking state from localStorage');
-                    }
-                    
                     if (data.pillarStates) setPillarStates(data.pillarStates);
                     if (data.selectedTaskAiModel) setSelectedTaskAiModel(data.selectedTaskAiModel);
+                    
+                    // Sinaliza que os dados base já estão prontos para renderizar (evita Skeleton)
+                    setIsStorageLoaded(true);
+
+                    // --- Validação em Background (Não bloqueante para a UI) ---
+                    if (data.autoExecuting || data.autoExecStatuses) {
+                        try {
+                            const response = await fetch('/api/growth', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'check-execution-status', analysisId })
+                            });
+                            const result = await response.json();
+                            const hasActiveExecution = result.hasActiveExecution || false;
+
+                            if (hasActiveExecution) {
+                                if (data.autoExecuting) setAutoExecuting(data.autoExecuting);
+                            } else {
+                                setAutoExecuting(null);
+                                setAutoExecStep(0);
+                                setAutoExecTotal(0);
+                                setAutoExecLog([]);
+                            }
+                        } catch (e) {
+                            console.warn('Background status check failed:', e);
+                        }
+                    }
+                } else {
+                    // Sem cache, apenas marca como pronto
+                    setIsStorageLoaded(true);
                 }
             } catch (e) {
                 console.warn('Failed to load persisted state:', e);
+                setIsStorageLoaded(true);
             }
-            setIsStorageLoaded(true);
         };
 
         loadState();

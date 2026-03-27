@@ -153,13 +153,60 @@ def do_profile(data: dict) -> dict:
     return result
 
 def do_chat(data: dict):
-    """Entry point for consultative chat that returns a generator for SSE."""
+    """
+    Entry point for consultative chat that returns a generator for SSE.
+    Synchronizes profile state with database and persists results.
+    """
+    business_id = data.get("business_id")
+    log_info(f"💬 Iniciando turno de chat. Business ID: {business_id}")
+    # --- PROFILE SYNC: Prefer DB state to avoid turn-to-turn amnesia ---
+    if business_id:
+        try:
+            from app.core import database as db
+            biz = db.get_business(business_id)
+            if biz and biz.get("profile_data"):
+                db_profile = biz["profile_data"].get("perfil", {})
+                input_profile = data.get("extracted_profile", {})
+                
+                # Merge: prioritiza o que já está no banco se o input estiver vazio/incompleto
+                merged = input_profile.copy()
+                for k, v in db_profile.items():
+                    # Se o banco tem um valor real e o input não tem, usa o do banco
+                    from app.services.agents.agent_conversation import _is_field_filled
+                    if _is_field_filled(v) and not _is_field_filled(merged.get(k)):
+                        merged[k] = v
+                
+                data["extracted_profile"] = merged
+                log_debug(f"🔄 Perfil sincronizado com o banco para o negócio {business_id}")
+        except Exception as e:
+            log_error(f"⚠️ Erro na sincronização de perfil: {e}")
+
     gen = run_chat(data)
     
     def chat_stream_generator():
+        final_profile = None
         for res in gen:
+            # Capture final result to save to DB
+            if res.get("type") == "result":
+                final_profile = res.get("data", {}).get("extracted_profile")
+            
             # yield formatted SSE data
             yield f"data: {json.dumps(res, ensure_ascii=False)}\n\n"
+        
+        # PERSISTENCE: Save to DB if we have a profile and ID
+        if final_profile and business_id:
+            try:
+                from app.core import database as db
+                # Ensure the profile is in the 'perfil' key if it looks flat
+                if "perfil" not in final_profile:
+                    persistence_profile = {"perfil": final_profile}
+                else:
+                    persistence_profile = final_profile
+                
+                db.update_business_profile(business_id, persistence_profile)
+                log_info(f"✅ Perfil do negócio {business_id} persistido automaticamente via Chat.")
+            except Exception as e:
+                log_error(f"❌ Erro ao persistir perfil via Chat: {e}")
             
     return chat_stream_generator()
 
@@ -882,13 +929,86 @@ def do_analyze(data: dict):
             model_provider = "auto"
             region = data.get("region", "br-pt")
             
+            # Helper to generate AI thoughts on-the-fly for the orchestrator
+            def _ai_thought(step_key, context_msg=""):
+                from app.core.llm_router import call_llm
+                nonlocal analysis_id
+                
+                biz_name = profile.get('_business_name', 'este negócio')
+                segmento = profile.get('segmento', 'setor industrial')
+                
+                prompts = {
+                    "start": (f"Iniciando: ", f"Pense como um Estrategista de IA. Você está iniciando a análise da empresa '{biz_name}' no setor '{segmento}'. Qual sua primeira impressão técnica e o que você vai priorizar nesta investigação de descoberta digital?"),
+                    "discovery_start": (f"Iniciando Business Discovery: ", f"Estamos mapeando a presença digital da empresa '{biz_name}'. O que você espera encontrar sobre a pegada digital deles em '{segmento}'?"),
+                    "discovery_found": (f"Investigando: ", f"Com base no que descobrimos até agora sobre a presença digital da '{biz_name}' ({context_msg}), o que você acha da autoridade digital comercial deles? Onde estão os gaps óbvios?"),
+                    "discovery_none": (f"Analisando: ", f"Não encontramos muitos dados públicos para '{biz_name}'. Como isso afeta sua estratégia de pesquisa de mercado agora? O que vamos 'caçar' para entender o posicionamento deles?"),
+                    "market_start": (f"Pesquisando Mercado: ", f"Iniciando pesquisa de mercado para '{biz_name}'. A IA vai vasculhar tendências de 2025 para {segmento}. O que especificamente você está buscando para validar o score de mercado deles?"),
+                    "market_done": (f"Analisando resultados: ", f"Pesquisa de mercado concluída ({context_msg}). Qual o insight mais valioso que cruzamos agora para a '{biz_name}'? Como isso molda o scoring de vendas?"),
+                    "scoring_start": (f"Calculando Scores: ", f"Hora da verdade: Auditoria de Maturidade nos 7 pilares para '{biz_name}'. Com tudo que coletamos, qual pilar você suspeita que será o maior desafio estratégico?"),
+                }
+                
+                prefix, prompt = prompts.get(step_key, ("", f"Pense sobre o passo {step_key} para o negócio {biz_name}."))
+                # DEEP STRATEGIC DEPTH
+                llm_instruction = "\n\nResponda como um Consultor Sênior de Estratégia B2B Industrial. Desenvolva um raciocínio denso e rico (5 a 8 linhas). Analise os impactos de faturamento, eficiência de canais e gargalos críticos. Use tom profissional e direto. NADA de listas, responda em texto corrido de alta densidade estratégica."
+                raw_response = call_llm("auto", prompt=prompt + llm_instruction, temperature=0.7, prefer_small=True)
+                
+                # Robustness: call_llm might return a dict with metadata, extract text
+                thought_text = ""
+                if isinstance(raw_response, dict):
+                    # If it's a rich structured thought, flatten it into a paragraph
+                    keys_to_show = ["primeira-impressao", "estrategia", "insight", "ponto_atencao", "text", "response"]
+                    parts = []
+                    for k in keys_to_show:
+                        val = raw_response.get(k)
+                        if val:
+                            if isinstance(val, list): val = ", ".join(str(i) for i in val)
+                            parts.append(str(val))
+                    
+                    if not parts:
+                        # Fallback: join any string values, formatting lists naturally
+                        for k, v in raw_response.items():
+                            if k.startswith("_"): continue
+                            if isinstance(v, list): v = ", ".join(str(i) for i in v)
+                            if isinstance(v, (str, int, float)):
+                                parts.append(str(v))
+                    
+                    thought_text = ". ".join(parts[:4]) # Take more contextual depth
+                else:
+                    thought_text = str(raw_response)
+                    
+                import re
+                
+                # Agressively clean up JSON/Dict artifacts in string
+                if thought_text.startswith("{") and "}" in thought_text:
+                    # Try to extract values inside quotes if it looks like a dumped dict
+                    matches = re.findall(r'":\s*"([^"]+)"', thought_text)
+                    if matches:
+                        thought_text = ". ".join(matches[:2])
+                
+                # Final safety: remove anything that looks like technical metadata or python dicts
+                thought_text = re.sub(r"\{\'_tokens\':.*?\}", "", thought_text).strip()
+                thought_text = re.sub(r'\{"_tokens":.*?\}', "", thought_text).strip()
+                thought_text = re.sub(r"\{\'_actual_model\':.*?\}", "", thought_text).strip()
+                thought_text = re.sub(r'\{"_actual_model":.*?\}', "", thought_text).strip()
+                thought_text = re.sub(r"\{\'_actual_provider\':.*?\}", "", thought_text).strip()
+                thought_text = re.sub(r'\{"_actual_provider":.*?\}', "", thought_text).strip()
+                
+                # If after cleaning it still looks like a dict string "{...}", it's garbage intelligence
+                if thought_text.startswith("{") and thought_text.endswith("}"):
+                    thought_text = "Processando padrões estratégicos de mercado..."
+
+                final_thought = f"{prefix}{thought_text}" if thought_text.strip() and len(thought_text) > 5 else f"{prefix}Processando inteligência..."
+                
+                if analysis_id and thought_text:
+                    from app.core import database as db
+                    db.save_analysis_thought(analysis_id, step_key, final_thought)
+                
+                return final_thought
+
             # Send initial thought
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando análise completa do negócio...'})}\n\n"
-            
-            # Send progress updates
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Pesquisando presença digital do negócio...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Analisando mercado e concorrência...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Calculando score dos 7 pilares de vendas...'})}\n\n"
+            initial_t = _ai_thought("start")
+            yield f"data: {json.dumps({'type': 'thought', 'text': str(initial_t)})}\n\n"
+            time.sleep(1) # Visual pacing
             
             # Import Growth Orchestrator functions directly
             from app.services.analysis.analyzer_business_profiler import run_profiler, identify_dynamic_categories
@@ -960,7 +1080,8 @@ def do_analyze(data: dict):
                     log_warning(f"Falha ao limpar dados antigos (não bloqueante): {e}")
 
             # Step 1: Business Discovery
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando Business Discovery: mapeando sua presença digital atual...'})}\n\n"
+            disc_t = _ai_thought("discovery_start")
+            yield f"data: {json.dumps({'type': 'thought', 'text': disc_t})}\n\n"
             yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'running', 'detail': 'Buscando site e redes sociais'})}\n\n"
             
             discovery_data = discover_business(profile, region, model_provider=model_provider)
@@ -1012,6 +1133,12 @@ def do_analyze(data: dict):
                 yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_extractor', 'status': 'success', 'detail': 'Dados da empresa sintetizados com sucesso'})}\n\n"
                 
                 resumo = discovery_data.get('resumo_executivo')
+                
+                # Pensamento pós-descoberta
+                found_msg = f"Detectamos {discovery_data.get('total_fontes', 0)} fontes. " + (resumo[:100] if resumo else "")
+                thought_after_discovery = _ai_thought("discovery_found", context_msg=found_msg)
+                yield f"data: {json.dumps({'type': 'thought', 'text': thought_after_discovery})}\n\n"
+                time.sleep(1) # Visual pacing
                 # Check for various forms of "insufficient data" messages from LLM
                 insuficiente_keywords = ["insuficiente", "limitado", "pouca informação", "não foi possível", "não encontrado"]
                 is_poor_summary = not resumo or any(kw in resumo.lower() for kw in insuficiente_keywords)
@@ -1023,6 +1150,9 @@ def do_analyze(data: dict):
                 yield f"data: {json.dumps({'type': 'step_result', 'step': 'discovery', 'title': 'Análise de Presença Digital', 'opiniao': resumo, 'sources': fontes})}\n\n"
             else:
                 yield f"data: {json.dumps({'type': 'tool', 'tool': 'web_search', 'status': 'warning', 'detail': 'Nenhum dado público detalhado encontrado'})}\n\n"
+                # Send thought about no discovery
+                yield f"data: {json.dumps({'type': 'thought', 'text': _ai_thought('discovery_none')})}\n\n"
+                time.sleep(1) # Visual pacing
 
             log_info(f"🌐 Discovery: {'found' if discovery_found else 'not found'}")
 
@@ -1037,8 +1167,9 @@ def do_analyze(data: dict):
                     profile["queries_sugeridas"] = existing_queries
             
             # Step 2: Market Intelligence
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Iniciando Pesquisa de Mercado e Concorrência...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'tool', 'tool': 'news_extractor', 'status': 'running', 'detail': 'Analisando tendências do setor'})}\n\n"
+            dif_context = str(profile.get('dificuldades', ''))[:50]
+            yield f"data: {json.dumps({'type': 'thought', 'text': _ai_thought('market_start', context_msg=f'Dificuldade detectada: {dif_context}...')})}\n\n"
+            time.sleep(1)
             
             # Ensure categories are identified before market search
             try: identify_dynamic_categories(profile)
@@ -1083,7 +1214,8 @@ def do_analyze(data: dict):
             enriched_profile = generate_business_brief(profile, discovery_data, market_data)
             
             # Step 4: Scoring (with micro-persistence)
-            yield f"data: {json.dumps({'type': 'thought', 'text': 'Calculando scores de maturidade comercial nos 7 pilares...'})}\n\n"
+            scoring_t = _ai_thought("scoring_start")
+            yield f"data: {json.dumps({'type': 'thought', 'text': scoring_t})}\n\n"
             yield f"data: {json.dumps({'type': 'tool', 'tool': 'sales_triggers', 'status': 'running', 'detail': 'Auditando cada pilar de vendas'})}\n\n"
             
             # Generate analysis_id before starting so we can save partial results
@@ -1091,10 +1223,12 @@ def do_analyze(data: dict):
                 # We need business_id. Let's ensure business is created/found first.
                 business_name = profile.get('_business_name', profile.get('nome_negocio', profile.get('nome', 'Negócio Sem Nome')))
                 try:
+                    # Build profile_data in the format create_business expects: {"perfil": {...}}
+                    perfil_for_db = profile.get("perfil", profile)
                     biz_rec = db.create_business(
                         user_id=user_id,
                         name=business_name,
-                        profile_data={"profile": profile, "discovery_data": discovery_data, "created_at": time.time()}
+                        profile_data={"perfil": perfil_for_db}
                     )
                     business_id = biz_rec.get('id')
                 except Exception as e:
@@ -1188,6 +1322,15 @@ def do_analyze(data: dict):
                 discovery_data=discovery_data
             )
             analysis_id = analysis_record.get("id", analysis_id)
+            
+            # CRITICAL: Update business profile_data with enriched profile
+            # This ensures the layout loads the correct data on page refresh
+            try:
+                perfil_for_biz = profile.get("perfil", profile)
+                db.update_business_profile(business_id, {"perfil": perfil_for_biz})
+                log_success(f"Business profile atualizado com dados enriquecidos")
+            except Exception as e:
+                log_warning(f"Falha ao atualizar business profile (não bloqueante): {e}")
             
             # Save pillar diagnostics
             if score_data and score_data.get("dimensoes"):

@@ -22,6 +22,9 @@ class LLMResponse(str):
     Used to avoid breaking existing code that expects a string.
     """
     def __new__(cls, content, tokens=0, model=None, provider=None):
+        if content and isinstance(content, str):
+             # Remove binary garbage globally from ALL LLM outputs
+             content = content.replace('\x00', '').replace('\u0000', '')
         return super().__new__(cls, content)
     
     def __init__(self, content, tokens=0, model=None, provider=None):
@@ -892,15 +895,30 @@ def _execute_llm_call(actual_provider, prompt, temperature, max_retries, json_mo
 def _process_llm_response(res, tokens, used_model, provider_name, is_fallback, json_mode):
     """Processes raw LLM response into final format."""
     if json_mode:
+        from app.services.common import clean_nul_chars
         if isinstance(res, str):
             try:
                 obj = json.loads(res)
-                obj.update({
-                    "_tokens": tokens,
-                    "_actual_model": used_model,
-                    "_actual_provider": provider_name,
-                    "_is_fallback": is_fallback
-                })
+                # Clean NUL characters from parsed object recursively
+                obj = clean_nul_chars(obj)
+                
+                if isinstance(obj, dict):
+                    obj.update({
+                        "_tokens": tokens,
+                        "_actual_model": used_model,
+                        "_actual_provider": provider_name,
+                        "_is_fallback": is_fallback
+                    })
+                    return obj
+                elif isinstance(obj, list):
+                    # If it's a list, wrap it in a dict to preserve metadata
+                    return {
+                        "items": obj,
+                        "_tokens": tokens,
+                        "_actual_model": used_model,
+                        "_actual_provider": provider_name,
+                        "_is_fallback": is_fallback
+                    }
                 return obj
             except json.JSONDecodeError:
                 return {

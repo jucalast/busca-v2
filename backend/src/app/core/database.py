@@ -20,6 +20,22 @@ from threading import Lock
 
 logger = logging.getLogger(__name__)
 
+def clean_nul_chars(data: Any) -> Any:
+    """Recursively remove NUL (0x00) characters from strings, dicts, and lists.
+    PostgreSQL does not allow NUL characters in text/jsonb columns.
+    """
+    if isinstance(data, str):
+        return data.replace('\x00', '').replace('\u0000', '')
+    elif isinstance(data, dict):
+        return {k: clean_nul_chars(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_nul_chars(i) for i in data]
+    return data
+
+def db_json_dumps(data: Any) -> str:
+    """Safe JSON dumps for DB with NUL cleaning."""
+    return json.dumps(clean_nul_chars(data), ensure_ascii=False, default=str)
+
 # Database location (deprecated for Postgres, but kept for context if needed)
 DB_DIR = Path(__file__).parent.parent.parent.parent.parent / 'data'
 DB_DIR.mkdir(exist_ok=True) # Keep mkdir for consistency, though DB_PATH is not used
@@ -421,8 +437,67 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     ''')
+    
+    # Analysis thoughts - stores orchestrator reasoning during main analysis
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS analysis_thoughts (
+            id SERIAL PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            step TEXT NOT NULL,
+            thought TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_analysis_thoughts_id ON analysis_thoughts (analysis_id)')
+    
     conn.commit()
     conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Analysis Thoughts Operations
+# ═══════════════════════════════════════════════════════════════════
+
+@with_db_retry()
+def save_analysis_thought(analysis_id: str, step: str, thought: str) -> bool:
+    """Save orchestrator reasoning during main analysis."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Robustness: ensure thought is string and clean
+    safe_thought = str(thought) if thought is not None else ""
+    safe_thought = clean_nul_chars(safe_thought)
+    
+    try:
+        cursor.execute('''
+            INSERT INTO analysis_thoughts (analysis_id, step, thought, created_at)
+            VALUES (%s, %s, %s, %s)
+        ''', (analysis_id, step, safe_thought, now))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar pensamento da análise {analysis_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_analysis_thoughts(analysis_id: str) -> List[Dict]:
+    """Get all thoughts for a specific analysis."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    try:
+        cursor.execute('''
+            SELECT step, thought, created_at 
+            FROM analysis_thoughts 
+            WHERE analysis_id = %s 
+            ORDER BY id ASC
+        ''', (analysis_id,))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -841,7 +916,7 @@ def update_business_profile(business_id: str, profile_data: Dict) -> bool:
             SET segment = %s, model = %s, location = %s, 
                 profile_data = %s, updated_at = %s
             WHERE id = %s
-        ''', (segment, model, location, json.dumps(profile_data, ensure_ascii=False), now, business_id))
+        ''', (segment, model, location, db_json_dumps(profile_data), now, business_id))
         
         conn.commit()
         return cursor.rowcount > 0
@@ -1183,11 +1258,11 @@ def create_analysis(business_id: str, score_data: Dict, task_data: Dict, market_
     ''', (
         analysis_id, 
         business_id, 
-        json.dumps(score_data, ensure_ascii=False),
-        json.dumps(task_data, ensure_ascii=False),
-        json.dumps(market_data, ensure_ascii=False),
-        json.dumps(profile_data, ensure_ascii=False) if profile_data else None,
-        json.dumps(discovery_data, ensure_ascii=False) if discovery_data else None,
+        db_json_dumps(score_data),
+        db_json_dumps(task_data),
+        db_json_dumps(market_data),
+        db_json_dumps(profile_data) if profile_data else None,
+        db_json_dumps(discovery_data) if discovery_data else None,
         score_geral,
         classificacao,
         now
@@ -1248,7 +1323,7 @@ def save_analysis_cache(business_id: str, analysis_id: str, ui_data: Dict) -> bo
             analysis_id = excluded.analysis_id,
             ui_data = excluded.ui_data,
             updated_at = excluded.updated_at
-    ''', (business_id, analysis_id, json.dumps(ui_data, ensure_ascii=False), now))
+    ''', (business_id, analysis_id, db_json_dumps(ui_data), now))
     
     conn.commit()
     conn.close()
@@ -1391,7 +1466,7 @@ def update_analysis_score_data(analysis_id: str, score_data: Dict) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     
-    score_json = json.dumps(score_data, ensure_ascii=False)
+    score_json = db_json_dumps(score_data)
     
     # Also update score_geral and classificacao if they are in score_data
     score_geral = score_data.get("score_geral", 50)
@@ -1418,7 +1493,7 @@ def update_analysis_profile(analysis_id: str, profile_data: Dict) -> bool:
             UPDATE analyses 
             SET profile_data = %s
             WHERE id = %s
-        ''', (json.dumps(profile_data, ensure_ascii=False), analysis_id))
+        ''', (db_json_dumps(profile_data), analysis_id))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -1435,7 +1510,7 @@ def update_pillar_diagnostic(analysis_id: str, pillar_key: str, diagnostic_data:
             UPDATE pillar_diagnostics 
             SET diagnostic_data = %s, updated_at = %s
             WHERE analysis_id = %s AND pillar_key = %s
-        ''', (json.dumps(diagnostic_data, ensure_ascii=False), now, analysis_id, pillar_key))
+        ''', (db_json_dumps(diagnostic_data), now, analysis_id, pillar_key))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -1492,14 +1567,14 @@ def save_dimension_chat(analysis_id: str, dimension: str, messages: List[Dict]) 
             UPDATE dimension_chats 
             SET messages = %s, updated_at = %s
             WHERE id = %s
-        ''', (json.dumps(messages, ensure_ascii=False), now, chat_id))
+        ''', (db_json_dumps(messages), now, chat_id))
     else:
         # Create new
         chat_id = str(uuid.uuid4())
         cursor.execute('''
             INSERT INTO dimension_chats (id, analysis_id, dimension, messages, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (chat_id, analysis_id, dimension, json.dumps(messages, ensure_ascii=False), now, now))
+        ''', (chat_id, analysis_id, dimension, db_json_dumps(messages), now, now))
     
     conn.commit()
     conn.close()
@@ -1551,8 +1626,8 @@ def save_pillar_data(business_id: str, pillar_key: str, structured_output: dict,
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    output_json = json.dumps(structured_output, ensure_ascii=False)
-    sources_json = json.dumps(sources or [], ensure_ascii=False)
+    output_json = db_json_dumps(structured_output)
+    sources_json = db_json_dumps(sources or [])
     
     cursor.execute('''
         INSERT INTO pillar_data (id, business_id, pillar_key, structured_output, sources, user_command, created_at, updated_at)
@@ -1632,7 +1707,7 @@ def save_business_brief(business_id: str, analysis_id: str, brief_data: Any) -> 
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    brief_json = json.dumps(brief_data, ensure_ascii=False) if not isinstance(brief_data, str) else brief_data
+    brief_json = db_json_dumps(brief_data) if not isinstance(brief_data, str) else brief_data
     
     cursor.execute('''
         INSERT INTO business_briefs (id, business_id, analysis_id, brief_data, created_at)
@@ -1720,7 +1795,7 @@ def save_pillar_diagnostic(analysis_id: str, pillar_key: str, score: float = 0, 
         for extra_key in ["full_thought_log", "full_thought_subtasks", "plan_data", "analysis_opinions"]:
             if extra_key in diagnostic_data:
                 full_diag[extra_key] = diagnostic_data[extra_key]
-    diag_json = json.dumps(full_diag, ensure_ascii=False)
+    diag_json = db_json_dumps(full_diag)
     
     cursor.execute('''
         INSERT INTO pillar_diagnostics (id, analysis_id, pillar_key, diagnostic_data, created_at, updated_at)
@@ -1817,7 +1892,7 @@ def save_pillar_plan(analysis_id: str, pillar_key: str, plan_data: Any, status: 
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    plan_json = json.dumps(plan_data, ensure_ascii=False) if not isinstance(plan_data, str) else plan_data
+    plan_json = db_json_dumps(plan_data) if not isinstance(plan_data, str) else clean_nul_chars(plan_data)
     
     cursor.execute('''
         INSERT INTO specialist_plans (id, analysis_id, pillar_key, plan_data, status, created_at, updated_at)
@@ -1885,7 +1960,7 @@ def save_execution_result(
     
     # Also save full execution content if provided
     if result_data is not None:
-        result_json = json.dumps(result_data, ensure_ascii=False) if not isinstance(result_data, str) else result_data
+        result_json = db_json_dumps(result_data) if not isinstance(result_data, str) else clean_nul_chars(result_data)
         cursor.execute('''
             INSERT INTO specialist_executions (id, analysis_id, pillar_key, task_id, result_data, status, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -1957,7 +2032,7 @@ def save_pillar_kpi(
         ON CONFLICT(analysis_id, pillar_key, kpi_name) DO UPDATE SET
             kpi_value = excluded.kpi_value,
             kpi_target = excluded.kpi_target
-    ''', (str(uuid.uuid4()), analysis_id, pillar_key, kpi_name, kpi_value, kpi_target, now))
+    ''', (str(uuid.uuid4()), analysis_id, pillar_key, kpi_name, clean_nul_chars(kpi_value), clean_nul_chars(kpi_target), now))
     
     conn.commit()
     conn.close()
@@ -2001,7 +2076,7 @@ def save_subtasks(analysis_id: str, pillar_key: str, task_id: str, subtasks_data
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     now = datetime.now(timezone.utc).isoformat()
-    data_json = json.dumps(subtasks_data, ensure_ascii=False) if not isinstance(subtasks_data, str) else subtasks_data
+    data_json = db_json_dumps(subtasks_data) if not isinstance(subtasks_data, str) else clean_nul_chars(subtasks_data)
     
     cursor.execute('''
         INSERT INTO specialist_subtasks (id, analysis_id, pillar_key, task_id, subtasks_data, created_at, updated_at)
@@ -2311,7 +2386,7 @@ def save_background_task_progress(
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     now = datetime.now(timezone.utc).isoformat()
     
-    res_json = json.dumps(result_data, ensure_ascii=False) if result_data else None
+    res_json = db_json_dumps(result_data) if result_data else None
     
     cursor.execute('''
         INSERT INTO background_tasks (
@@ -2334,7 +2409,7 @@ def save_background_task_progress(
             updated_at = excluded.updated_at
     ''', (
         f"{analysis_id}_{task_id}", analysis_id, pillar_key, task_id, status,
-        current_step, total_steps, res_json, error_message, now, now
+        current_step, total_steps, res_json, clean_nul_chars(error_message), now, now
     ))
     
     conn.commit()
@@ -2382,7 +2457,7 @@ def save_research_cache(cache_key: str, cache_entry: dict) -> bool:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         # Serializar dados
-        data_json = json.dumps(cache_entry, default=str)
+        data_json = db_json_dumps(cache_entry)
         cached_at_iso = cache_entry["cached_at"].isoformat()
         research_type = cache_entry.get("research_type", "unknown")
         

@@ -108,9 +108,22 @@ def safe_json_loads(data: str) -> Any:
     """JSON loads seguro."""
     return json.loads(data)
 
+def clean_nul_chars(data: Any) -> Any:
+    """Recursively remove NUL (0x00) characters from strings, dicts, and lists.
+    PostgreSQL does not allow NUL characters in text/jsonb columns.
+    """
+    if isinstance(data, str):
+        return data.replace('\x00', '').replace('\u0000', '')
+    elif isinstance(data, dict):
+        return {k: clean_nul_chars(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_nul_chars(i) for i in data]
+    return data
+
 def safe_serialize_for_db(data: Any) -> str:
-    """Serialização específica para banco de dados."""
-    return json.dumps(data, ensure_ascii=False, default=str)
+    """Serialização específica para banco de dados com limpeza de caracteres NUL."""
+    cleaned_data = clean_nul_chars(data)
+    return json.dumps(cleaned_data, ensure_ascii=False, default=str)
 
 def safe_deserialize_from_db(data: str) -> Any:
     """Desserialização segura do banco de dados."""

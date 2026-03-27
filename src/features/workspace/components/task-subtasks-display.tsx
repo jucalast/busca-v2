@@ -332,23 +332,77 @@ export default function TaskSubtasksDisplay({
         return cleanMarkdown(String(safeRender(base) || ''));
     };
 
+    const renderTextWithLinks = (text: string) => {
+        if (!text) return null;
+        
+        // Regex para capturar URLs
+        const urlRegex = /(https?:\/\/[^\s\)]+)/g;
+        const parts = text.split(urlRegex);
+        
+        return parts.map((part, i) => {
+            if (part.match(urlRegex)) {
+                try {
+                    const url = new URL(part);
+                    const hostname = url.hostname.replace(/^www\./i, '');
+                    const favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
+                    
+                    return (
+                        <a
+                            key={i}
+                            href={part}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-400/5 border border-zinc-400/10 font-normal transition-all cursor-pointer text-zinc-400 hover:text-white hover:bg-zinc-400/10 hover:border-zinc-400/20"
+                        >
+                            <img alt="" className="w-3 h-3 rounded-sm shrink-0 object-contain" src={favicon} />
+                            <span className="text-[11px] font-medium leading-none">{hostname}</span>
+                        </a>
+                    );
+                } catch (e) {
+                    return part;
+                }
+            }
+            return part;
+        });
+    };
+
     const renderOpinionParagraphs = (text: string, variant: 'full' | 'compact' = 'full') => {
         if (!text) return null;
         return text
             .split(/\n+/)
             .map(segment => segment.trim())
             .filter(Boolean)
-            .map((paragraph, idx) => (
-                <p
-                    key={`${variant}-${idx}`}
-                    className={variant === 'full'
-                        ? 'text-[14px] font-normal leading-relaxed'
-                        : 'text-[12px] leading-relaxed'}
-                    style={{ color: variant === 'full' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
-                >
-                    {paragraph}
-                </p>
-            ));
+            .map((paragraph, idx) => {
+                // Apply tech translation to paragraph text
+                const dictionary: Record<string, string> = {
+                    'trafego_organico': 'SEO & Autoridade Orgânica',
+                    'trafego_pago': 'Aquisição Paga (Ads)',
+                    'publico_alvo': 'Estratégia de Público',
+                    'canais_venda': 'Canais de Venda',
+                    'processo_vendas': 'Processo Comercial',
+                    'branding': 'Branding e Autoridade',
+                    'identidade_visual': 'Identidade Visual',
+                    'discovery': 'Fase de Descoberta',
+                    'market': 'Análise de Mercado'
+                };
+                let cleanParagraph = paragraph;
+                Object.keys(dictionary).forEach(key => {
+                    const regex = new RegExp(key, 'gi');
+                    cleanParagraph = cleanParagraph.replace(regex, dictionary[key]);
+                });
+
+                return (
+                    <p
+                        key={`${variant}-${idx}`}
+                        className={variant === 'full'
+                            ? 'text-[14px] font-normal leading-relaxed'
+                            : 'text-[12px] leading-relaxed'}
+                        style={{ color: variant === 'full' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
+                    >
+                        {renderTextWithLinks(cleanParagraph)}
+                    </p>
+                );
+            });
     };
 
     const renderResearchBubbles = (label = 'Pesquisando fontes...') => (
@@ -416,7 +470,36 @@ export default function TaskSubtasksDisplay({
                     const hasSources = result && (result.sources?.length > 0 || result.fontes_consultadas?.length > 0);
 
                     const st = taskExecSubtasks[index];
-                    const subtaskTitle = safeRender(st?.titulo || st?.entregavel_ia || (isStreaming ? "Iniciando análise estratégica..." : `Etapa ${index + 1}`));
+                    
+                    // Helper function for technical name mapping
+                    const translateTech = (text: string) => {
+                        if (!text || typeof text !== 'string') return text;
+                        const dictionary: Record<string, string> = {
+                            'trafego_organico': 'SEO & Autoridade Orgânica',
+                            'trafego_pago': 'Aquisição Paga (Ads)',
+                            'publico_alvo': 'Alinhamento de Público-Alvo',
+                            'canais_venda': 'Otimização de Canais de Venda',
+                            'processo_vendas': 'Eficiência do Funil Comercial',
+                            'branding': 'Posicionamento de Marca',
+                            'identidade_visual': 'Padrão Visual e Identidade',
+                            'discovery': 'Análise de Descoberta',
+                            'market': 'Inteligência de Mercado de 2025'
+                        };
+                        let translated = text;
+                        Object.keys(dictionary).forEach(key => {
+                            const regex = new RegExp(key, 'gi');
+                            if (typeof dictionary[key] === 'string') {
+                                translated = translated.replace(regex, dictionary[key]);
+                            }
+                        });
+                        return translated;
+                    };
+
+                    let rawTitle = st?.titulo || st?.entregavel_ia || (isStreaming ? "Iniciando análise estratégica..." : `Etapa ${index + 1}`);
+                    if (typeof rawTitle === 'object') {
+                        rawTitle = (rawTitle as any).text || (rawTitle as any).titulo || "Processando...";
+                    }
+                    const subtaskTitle = translateTech(safeRender(String(rawTitle)));
 
                     return (
                         <div key={index} className="w-full" style={{
@@ -486,7 +569,13 @@ export default function TaskSubtasksDisplay({
                                     if (isStreaming) {
                                         return streamingText ? (
                                             <div className="flex gap-2 items-start">
-                                                <StreamingText text={streamingText} speed={6} className="text-[14px] leading-relaxed" style={{ color: 'var(--color-text-primary)' }} />
+                                                <StreamingText 
+                                                    text={streamingText} 
+                                                    speed={6} 
+                                                    className="text-[14px] leading-relaxed" 
+                                                    style={{ color: 'var(--color-text-primary)' }} 
+                                                    formatter={renderTextWithLinks}
+                                                />
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-2 py-0.5">
@@ -802,6 +891,7 @@ export default function TaskSubtasksDisplay({
                                                                             text={resultForSubtask.opiniao}
                                                                             speed={8}
                                                                             style={{ color: 'var(--color-text-secondary)' }}
+                                                                            formatter={renderTextWithLinks}
                                                                         />
                                                                     </div>
                                                                 </div>

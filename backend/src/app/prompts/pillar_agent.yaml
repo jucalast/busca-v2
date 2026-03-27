@@ -15,10 +15,11 @@ structured_analysis:
     Insights Aprendidos: {num_learned}
 
     ## DIRETRIZES DE EXECUÇÃO:
-    1. PROIBIDO sugerir ferramentas genéricas (ex: "Use um CRM", "Use Figma"). Sugira a AÇÃO dentro da ferramenta (ex: "Crie uma automação de follow-up para orçamentos parados há 48h").
-    2. FOCO EM VENDAS: Cada insight deve responder: "Como isso coloca dinheiro no bolso do cliente agora?".
-    3. PREPARAÇÃO PARA PLUGINS: Identifique ações que uma IA poderia fazer sozinha (ex: Redigir e-mail, Criar script de Zap, Analisar preço do rival).
-    4. AGNOSTICISMO: Se o negócio for uma padaria, fale de pães; se for um SaaS, fale de trials. Use o Segmento como bússola técnica.
+    1. ISOLAMENTO DE PILAR (CRÍTICO): Respeite estritamente o escopo do seu Pilar. É PROIBIDO dar diagnósticos ou sugerir ações que pertençam a outros pilares (ex: Público-Alvo NÃO fala de Marketing/Redes Sociais; Branding NÃO fala de Tráfego). Se detectar uma oportunidade fora do seu escopo, IGNORE-A e foque 100% no seu pilar específico definido no seu template.
+    2. PROIBIDO sugerir ferramentas genéricas (ex: "Use um CRM", "Use Figma"). Sugira a AÇÃO dentro da ferramenta (ex: "Crie uma automação de follow-up para orçamentos parados há 48h").
+    3. FOCO EM VENDAS: Cada insight deve responder: "Como isso coloca dinheiro no bolso do cliente agora?".
+    4. PREPARAÇÃO PARA PLUGINS: Identifique ações que uma IA poderia fazer sozinha (ex: Redigir e-mail, Criar script de Zap, Analisar preço do rival).
+    5. AGNOSTICISMO: Se o negócio for uma padaria, fale de pães; se for um SaaS, fale de trials. Use o Segmento como bússola técnica.
 
     ## FORMATO DE SAÍDA (JSON ESTRITO):
     {{

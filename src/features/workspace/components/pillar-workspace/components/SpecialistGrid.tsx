@@ -2,7 +2,7 @@
 
 import React from 'react';
 import {
-    Loader2, ChevronRight, RefreshCw, Users, AlertCircle, RotateCcw
+    Loader2, ChevronRight, RefreshCw, Users, AlertCircle, RotateCcw, Brain
 } from 'lucide-react';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { ScoreRing } from './ScoreRing';
@@ -10,6 +10,7 @@ import { ScoreGauge } from './ScoreGauge';
 import { PILLAR_META, PILLAR_ORDER } from '../constants';
 import { safeRender, openInGoogleDocs, exportFullAnalysis } from '../utils';
 import { StackedSources } from './StackedSources';
+import { StrategicKnowledgeHub } from './StrategicKnowledgeHub';
 
 interface SpecialistGridProps {
     userProfile: { name: string; segment: string };
@@ -37,6 +38,10 @@ interface SpecialistGridProps {
     setError: (error: string) => void;
     generationResults?: Record<string, any>;
     isReanalyzing?: boolean;
+    showKnowledgeHub?: boolean;
+    setShowKnowledgeHub?: (show: boolean) => void;
+    onShowHistory?: () => void;
+    hasHistory?: boolean;
 }
 
 export function SpecialistGrid({
@@ -65,6 +70,10 @@ export function SpecialistGrid({
     setError,
     generationResults = {},
     isReanalyzing = false,
+    showKnowledgeHub = false,
+    setShowKnowledgeHub = () => {},
+    onShowHistory,
+    hasHistory,
 }: SpecialistGridProps) {
     const { isDark } = useSidebar();
     const [transform, setTransform] = React.useState<{ x: number; y: number; scale: number }>({ x: 80, y: 150, scale: 0.85 });
@@ -246,43 +255,105 @@ export function SpecialistGrid({
     };
 
     return (
-        <div className={`min-h-full relative z-20 overflow-hidden transition-colors duration-300 ${isDark ? 'bg-[--color-bg]' : 'bg-white'}`}>
-            <div className="flex flex-col">
-                {/* Score Gauge Header */}
-                <div className="relative z-[100]">
-                    <ScoreGauge
-                        score={scoreGeral}
-                        classificacao={safeRender(classificacao) as string}
-                        onExport={() => exportFullAnalysis(session, setLoadingFullExport, {
-                            profile, score, specialists, marketData, taskPlan: pillarStates
-                        }, userProfile.name)}
-                        onRedo={onRedo}
-                        loadingExport={loadingFullExport}
-                        hasSession={!!session?.accessToken}
-                    >
-                        {/* Map Controls */}
+        <div className={`h-full w-full relative z-20 transition-colors duration-300 ${isDark ? 'bg-[--color-bg]' : 'bg-white'}`}>
+            <div className="flex flex-col h-full">
+                {/* Score Gauge Header - Only shown in Hub/Canvas mode */}
+                {!showKnowledgeHub && (
+                    <div className="relative z-[100]">
+                        <ScoreGauge
+                            score={scoreGeral}
+                            classificacao={safeRender(classificacao) as string}
+                            onExport={() => exportFullAnalysis(session, setLoadingFullExport, {
+                                profile, score, specialists, marketData, taskPlan: pillarStates
+                            }, userProfile.name)}
+                            onRedo={onRedo}
+                            loadingExport={loadingFullExport}
+                            hasSession={!!session?.accessToken}
+                        >
+                            {/* Map Controls */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setShowKnowledgeHub(true)}
+                                    className={`h-9 px-6 rounded-xl border transition-all flex items-center gap-2 shadow-sm font-bold tracking-tight active:scale-95 ${
+                                        isDark 
+                                        ? 'bg-zinc-900 border-indigo-500/30 text-indigo-400 hover:border-indigo-500 hover:text-white' 
+                                        : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                                    }`}
+                                >
+                                    <Brain size={16} />
+                                    <span className="text-[11px]">Monitor de Inteligência</span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping ml-1" />
+                                </button>
+
+                                {hasHistory && (
+                                    <button
+                                        onClick={onShowHistory}
+                                        className={`h-9 px-6 rounded-xl border transition-all flex items-center gap-2 shadow-sm font-bold tracking-tight active:scale-95 ${
+                                            isDark 
+                                            ? 'bg-zinc-900 border-amber-500/30 text-amber-400 hover:border-amber-500 hover:text-white' 
+                                            : 'bg-white border-amber-200 text-amber-600 hover:bg-amber-50'
+                                        }`}
+                                    >
+                                        <Brain size={16} />
+                                        <span className="text-[11px]">Logs de Inteligência</span>
+                                    </button>
+                                )}
+
+                                <button
+                                    onClick={resetTransform}
+                                    className={`h-9 px-4 rounded-xl border transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
+                                        isDark 
+                                        ? 'bg-zinc-900 border-white/10 text-zinc-400 hover:text-white' 
+                                        : 'bg-white border-black/5 text-zinc-600 hover:text-zinc-900'
+                                    }`}
+                                >
+                                    <RotateCcw size={14} />
+                                    <span className="text-[11px] font-bold">Centralizar</span>
+                                </button>
+
+                                <div className={`h-9 px-4 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center ${
+                                    isDark 
+                                    ? 'bg-white/5 border-white/5 text-white/40' 
+                                    : 'bg-black/5 border-black/5 text-zinc-500'
+                                }`}>
+                                    Arraste p/ Mover
+                                </div>
+                            </div>
+                        </ScoreGauge>
+                    </div>
+                )}
+
+                {/* Compact Navigation for Strategic Knowledge Hub mode */}
+                {showKnowledgeHub && (
+                    <div className="w-full p-4 px-8 flex items-center justify-between border-b border-zinc-800/20 backdrop-blur-md sticky top-0 z-[100] bg-zinc-950/10">
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={resetTransform}
-                                className={`h-9 px-4 rounded-xl border transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
-                                    isDark 
-                                    ? 'bg-zinc-900 border-white/10 text-zinc-400 hover:text-white' 
-                                    : 'bg-white border-black/5 text-zinc-600 hover:text-zinc-900'
-                                }`}
+                                onClick={() => setShowKnowledgeHub(false)}
+                                className="h-9 px-6 rounded-xl border transition-all flex items-center gap-2 shadow-sm font-bold tracking-tight active:scale-95 bg-indigo-600 border-indigo-500 text-white shadow-indigo-500/20"
                             >
-                                <RotateCcw size={14} />
-                                <span className="text-[11px] font-bold">Centralizar Vista</span>
+                                <Brain size={16} className="animate-pulse" />
+                                <span className="text-[11px]">Voltar para HUB</span>
                             </button>
-                            <div className={`h-9 px-4 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center ${
-                                isDark 
-                                ? 'bg-white/5 border-white/5 text-white/40' 
-                                : 'bg-black/5 border-black/5 text-zinc-500'
-                            }`}>
-                                Arraste p/ Mover
+                            <div className="h-9 px-4 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center bg-white/5 border-zinc-800/50 text-zinc-500">
+                                Monitoramento Vivo
                             </div>
                         </div>
-                    </ScoreGauge>
-                </div>
+                        
+                        <div className="flex items-center gap-3">
+                            <button 
+                                onClick={() => exportFullAnalysis(session, setLoadingFullExport, { 
+                                    profile, score, specialists, marketData, taskPlan: pillarStates 
+                                }, userProfile.name)}
+                                className={`px-5 py-2.5 rounded-xl text-[12px] font-bold transition-all duration-200 border shadow-sm ${
+                                    isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-white border-zinc-200 text-zinc-600'
+                                } hover:-translate-y-0.5`}
+                            >
+                                Exportar Dados
+                            </button>
+                        </div>
+                    </div>
+                )}
+
 
                 {error && (
                     <div className="px-6 py-2">
@@ -300,23 +371,37 @@ export function SpecialistGrid({
                     </div>
                 )}
 
-                {/* Agent Pipeline Architecture - board Section with Dots */}
-                <div className="w-full -mt-[40px] relative z-0 overflow-hidden select-none">
-                    <div
-                        ref={boardRef}
-                        className="w-full relative min-h-[90vh] outline-none cursor-grab active:cursor-grabbing transition-colors duration-300"
-                        style={{
-                            backgroundColor: isDark ? 'var(--color-bg)' : '#f8fafc',
-                            backgroundImage: `radial-gradient(${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.15)'} 1.5px, transparent 0)`,
-                            backgroundSize: '32px 32px',
-                            backgroundPosition: `${transform.x}px ${transform.y}px`
-                        }}
-                        onWheel={handleWheel}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                    >
+                {/* Content View Rendering */}
+                <div className="flex-1 w-full overflow-y-auto custom-scrollbar">
+                    {showKnowledgeHub ? (
+                        <div className="max-w-6xl mx-auto py-10 px-6 pb-40">
+                            <StrategicKnowledgeHub
+                                profile={profile}
+                                score={score}
+                                taskDeliverables={generationResults}
+                                completedTasks={completedTasks}
+                                marketData={marketData}
+                                pillarPlan={pillarStates}
+                                specialists={specialists}
+                            />
+                        </div>
+                    ) : (
+                        /* Agent Pipeline Architecture - board Section with Dots */
+                        <div
+                            ref={boardRef}
+                            className="w-full relative min-h-[90vh] outline-none cursor-grab active:cursor-grabbing transition-colors duration-300"
+                            style={{
+                                backgroundColor: isDark ? 'var(--color-bg)' : '#f8fafc',
+                                backgroundImage: `radial-gradient(${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.15)'} 1.5px, transparent 0)`,
+                                backgroundSize: '32px 32px',
+                                backgroundPosition: `${transform.x}px ${transform.y}px`
+                            }}
+                            onWheel={handleWheel}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                        >
                         {/* Hierarchical Content with Transform */}
                         <div
                             className="absolute inset-0"
@@ -490,8 +575,9 @@ export function SpecialistGrid({
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
-    );
+    </div>
+);
 }

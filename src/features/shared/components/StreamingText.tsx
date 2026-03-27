@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-export function StreamingText({ text, speed = 8, className = '', style = {}, onDone }: {
+export function StreamingText({ text, speed = 8, className = '', style = {}, onDone, formatter }: {
     text: string;
     speed?: number;
     className?: string;
     style?: React.CSSProperties;
     onDone?: () => void;
+    formatter?: (text: string) => React.ReactNode;
 }) {
     const [displayed, setDisplayed] = useState('');
     const [done, setDone] = useState(false);
@@ -46,7 +47,7 @@ export function StreamingText({ text, speed = 8, className = '', style = {}, onD
 
     return (
         <span className={className} style={style}>
-            {displayed}
+            {formatter ? formatter(displayed) : displayed}
             {!done && <span className="inline-block w-1.5 h-3 bg-zinc-400 animate-pulse ml-0.5 align-middle rounded-sm" />}
         </span>
     );

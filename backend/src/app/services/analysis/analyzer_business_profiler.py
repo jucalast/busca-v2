@@ -60,6 +60,7 @@ REGRAS CRÍTICAS:
    - Exemplo ruim: "branding marketing digital PME" → genérico, não resolve nada
    - Exemplo bom: "como superar concorrentes preço baixo embalagens papelão proposta de valor diferenciação ganhar cliente" → específico ao problema
 5. Seja preciso e direto — não invente dados, apenas interprete os fornecidos.
+6. REGRA DE OURO B2B INDUSTRIAL: Se o negócio for B2B Industrial/Atacadista (como frigoríficos, embalagens, insumos), é PROIBIDO sugerir queries ou foco em "LinkedIn", "Instagram", "Facebook", "SEO" ou "Marketing Digital" genérico. O foco deve ser em Inteligência Comercial, Prospecção Ativa (Cold Call/Email), Homologação de Fornecedores, RFQs e Canais de Distribuição.
 
 ESTRUTURA DO JSON:
 {{
@@ -300,13 +301,13 @@ def identify_dynamic_categories(profile: dict) -> list:
     _dif_snippet = f"superar dificuldade {dificuldade}" if dificuldade else ""
     _loc_snippet = localizacao[:30] if localizacao else ""
     _QUERY_TEMPLATES = {
-        "publico_alvo": f"quem compra {segmento} perfil comprador ideal como conquistar clientes {_loc_snippet} {_dif_snippet}".strip(),
-        "branding": f"como se diferenciar concorrência {segmento} proposta de valor única ganhar credibilidade {_dif_snippet}".strip(),
-        "identidade_visual": f"como apresentação visual aumenta vendas {segmento} credibilidade profissional converter clientes online",
-        "canais_venda": f"melhores canais para vender {segmento} onde clientes compram {_loc_snippet} como aumentar vendas {_dif_snippet}".strip(),
-        "trafego_organico": f"como atrair clientes sem pagar anúncio {segmento} SEO local conteúdo que gera leads {_dif_snippet}".strip(),
-        "trafego_pago": f"anúncios que vendem para {segmento} Meta Ads Google Ads como reduzir custo por cliente {_dif_snippet}".strip(),
-        "processo_vendas": f"como vender mais {segmento} contornar objeções fechamento de vendas {_dif_snippet}".strip(),
+        "publico_alvo": f"quem compra {segmento} corporativo ICP perfil comprador ideal industrias frigoríficos atacadistas {_loc_snippet} {_dif_snippet}".strip(),
+        "branding": f"como se diferenciar concorrência {segmento} proposta de valor única autoridade industrial homologações {_dif_snippet}".strip(),
+        "identidade_visual": f"como apresentação visual técnica profissional aumenta vendas {segmento} catálogo produtos industrial",
+        "canais_venda": f"melhores canais de distribuição para vender {segmento} prospecção ativa direta indicação {_loc_snippet} {_dif_snippet}".strip(),
+        "trafego_organico": f"como atrair clientes industriais b2b {segmento} autoridade mercado termos técnicos {_dif_snippet}".strip(),
+        "trafego_pago": f"anúncios que geram leads b2b para {segmento} busca de termos técnicos prospecção comercial ferramentas b2b {_dif_snippet}".strip(),
+        "processo_vendas": f"como vender mais {segmento} b2b industrial prospecção corporativa negociação orçamentos {_dif_snippet}".strip(),
     }
 
     queries = profile["queries_sugeridas"]

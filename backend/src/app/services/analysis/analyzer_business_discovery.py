@@ -44,13 +44,19 @@ def _extract_search_hints(profile: dict) -> dict:
     chat_ctx = profile.get("_chat_context", {})
     
     def _get(*keys):
-        """Return first non-empty value from perfil or chat_ctx for any of the given keys."""
+        """Return first non-empty value from perfil or chat_ctx for any of the given keys.
+        Supports lists (converts to comma-separated string).
+        """
         for k in keys:
             v = perfil.get(k, "")
+            if not v: continue
+            if isinstance(v, list): v = ", ".join(str(i) for i in v)
             if v and str(v).strip() and str(v).strip() not in ("?", "null", "None"):
                 return str(v).strip()
         for k in keys:
             v = chat_ctx.get(k, "")
+            if not v: continue
+            if isinstance(v, list): v = ", ".join(str(i) for i in v)
             if v and str(v).strip() and str(v).strip() not in ("?", "null", "None"):
                 return str(v).strip()
         return ""
@@ -603,7 +609,7 @@ def format_discovery_for_scorer(discovery_data: dict, dim_key: str = None) -> st
     # ── Dimension-specific filtering ──
     # Each pillar only gets the discovery sections that matter to it
     DIM_SECTIONS = {
-        "publico_alvo": ["mercado", "concorrentes", "problemas"],
+        "publico_alvo": ["concorrentes", "problemas"],
         "branding": ["concorrentes", "mercado", "instagram", "site", "problemas"],
         "identidade_visual": ["instagram", "site", "concorrentes"],
         "canais_venda": ["site", "whatsapp", "outras", "instagram", "mercado"],

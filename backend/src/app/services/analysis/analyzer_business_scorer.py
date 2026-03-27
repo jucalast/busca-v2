@@ -28,6 +28,7 @@ import re
 import sys
 import time
 from app.core.llm_router import call_llm
+from app.schemas.base_schema import SchemaValidator
 from app.services.common import log_info, log_debug, log_warning, log_error, log_llm, log_success
 from dotenv import load_dotenv
 
@@ -413,6 +414,20 @@ def _compute_objective_score(dim_key: str, profile: dict) -> int:
     return min(int(score), 100)
 
 
+def _validate_pillar_output(dim_key: str, data: dict) -> dict:
+    """Validate pillar LLM output against its Pydantic schema."""
+    from app.schemas.base_schema import PillarDiagnosticSchema
+
+    try:
+        # We now use the unified diagnostic schema for ALL pillars during the scoring phase.
+        # This ensuring a valid core (score, status, justification) while allowing extra fields.
+        validated = PillarDiagnosticSchema(**data)
+        return validated.model_dump()
+    except Exception as e:
+        log_warning(f"Validation failed for {dim_key}: {e}. Keeping raw data with best effort.")
+        return data
+
+
 def _build_chain_context(dim_key: str, chain_summaries: dict) -> str:
     """Build compact context from upstream pillars for this dimension.
     Includes strategic alerts for low-score dependencies."""
@@ -496,11 +511,8 @@ def _score_dimension(dim_key: str, dim_cfg: dict, profile: dict,
 
     restriction_text = "\n".join(f"⚠️ {n}" for n in notes) if notes else ""
 
-    # Dedup block
+    # Dedup block (Removido pois não geramos mais tarefas aqui)
     dedup_block = ""
-    if previous_actions:
-        actions_text = "\n".join(f"- {a}" for a in previous_actions[-5:])
-        dedup_block = f"\n⛔ NÃO REPETIR: {actions_text}\nGere ações Únicas sobre {dim_cfg['label']}."
 
     # B2B Specific Context
     b2b_context = ""
@@ -587,9 +599,7 @@ DIRETRIZ DE PONTUAÇÃO:
 
 REGRAS DE RETORNO:
 1. Score 0-100 refletindo a maturidade para crescimento.
-2. 3-5 ações PRÁTICAS e ESPECÍFICAS para elevar o nível do pilar.
-3. CADA AÇÃO deve citar uma ferramenta útil (Ex: Google Trends, Meta Library, CRM, LinkedIn).
-4. JUSTIFIQUE: Diagnóstico equilibrado e encorajador, apontando os pontos fortes e o que falta para a excelência.
+2. JUSTIFIQUE: Diagnóstico equilibrado e encorajador, apontando os pontos fortes e o que falta para a excelência.
 
 JSON:
 {{
@@ -598,17 +608,6 @@ JSON:
     "nivel_profissionalismo": 1-10,
     "veracidade_confirmada": true/false,
     "justificativa": "Texto crítico...",
-    "acoes_imediatas": [
-        {{
-            "acao": "Título curto da ação", 
-            "ferramenta": "NOME DA FERRAMENTA (Ex: Google Trends)",
-            "como_fazer": "Instrução técnica de como usar a ferramenta para este caso",
-            "impacto": "alto/medio/baixo", 
-            "prazo": "1 semana", 
-            "custo": "R$ 0", 
-            "fonte": "motivo estratégico"
-        }}
-    ],
     "dado_chave": "Insight de veracidade",
     "meta_pilar": "Estado de excelência absoluta deste pilar"
 }}"""
@@ -618,11 +617,20 @@ JSON:
 
     try:
         result = call_llm("groq", prompt=prompt, json_mode=True, prefer_small=True)
+        
+        # [ROBUSTNESS] Validate and clean output against Pydantic schema
+        if isinstance(result, dict) and "_tokens" in result:
+            validated = _validate_pillar_output(dim_key, result)
+            # Preserve LLM metadata that starts with _
+            for k, v in result.items():
+                if k.startswith("_") and k not in validated:
+                    validated[k] = v
+            result = validated
+
         # Ensure expected fields
         result.setdefault("score", 50)
         result.setdefault("status", "atencao")
         result.setdefault("justificativa", "")
-        result.setdefault("acoes_imediatas", [])
         result.setdefault("dado_chave", "")
         result.setdefault("meta_pilar", f"Maximizar {dim_cfg['label']} para vender mais")
         
@@ -671,14 +679,6 @@ JSON:
             "score": obj_score, 
             "status": "forte" if obj_score >= 70 else "atencao" if obj_score >= 40 else "critico",
             "justificativa": justificativa,
-            "acoes_imediatas": [
-                {
-                    "acao": f"Otimizar {dim_cfg['label']} via Deep Search",
-                    "ferramenta": "Google Trends",
-                    "como_fazer": "Usar os dados do DNA para validar tendências de busca em tempo real.",
-                    "impacto": "alto", "prazo": "1 semana", "custo": "R$ 0", "fonte": "Dados Estruturados"
-                }
-            ],
             "peso": dim_cfg["peso"],
             "dado_chave": f"{fields_count} indicadores validados.",
             "_score_llm": 50,
@@ -770,20 +770,8 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
         if on_pillar_complete and analysis_id:
             on_pillar_complete(analysis_id, dim_key, result)
         
-        # Collect tasks...
-        for j, acao in enumerate(result.get("acoes_imediatas", [])):
-            titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
-            ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
-            como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
-            if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
-            all_tasks.append({
-                "id": f"task_{dim_key}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dim_key,
-                "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
-                "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
-                "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
-                "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
-            })
-            previous_action_titles.append(titulo)
+        # Tasks generation has been officially removed here and delegated to Lazy Loading
+        pass
 
     # Step 2: Parallel Traffic (Canais dependencies met)
     traffic_pillars = ["trafego_organico", "trafego_pago"]
@@ -819,19 +807,7 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
                 if on_pillar_complete and analysis_id:
                     on_pillar_complete(analysis_id, dk, res)
                     
-                for j, acao in enumerate(res.get("acoes_imediatas", [])):
-                    titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
-                    ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
-                    como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
-                    if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
-                    all_tasks.append({
-                        "id": f"task_{dk}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dk,
-                        "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
-                        "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
-                        "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
-                        "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
-                    })
-                    previous_action_titles.append(titulo)
+                # Tasks generation delegated to Lazy Loading
             except Exception as e:
                 log_error(f"Erro paralelo Scorer ({dk}): {e}")
 
@@ -857,20 +833,7 @@ def run_scorer(profile: dict, market_data: dict, discovery_data: dict = None, st
         if on_pillar_complete and analysis_id:
             on_pillar_complete(analysis_id, dim_key, result)
             
-        # Final tasks processing...
-        for j, acao in enumerate(result.get("acoes_imediatas", [])):
-            titulo = acao.get("acao", "") if isinstance(acao, dict) else str(acao)
-            ferramenta = acao.get("ferramenta", "") if isinstance(acao, dict) else ""
-            como_fazer = acao.get("como_fazer", "") if isinstance(acao, dict) else ""
-            if ferramenta and ferramenta.lower() not in titulo.lower(): titulo = f"{titulo} usando {ferramenta}"
-            all_tasks.append({
-                "id": f"task_{dim_key}_{j+1}", "titulo": titulo, "ferramenta": ferramenta, "categoria": dim_key,
-                "impacto": {"alto": 9, "medio": 6, "baixo": 3}.get(str(acao.get("impacto", "medio")).lower() if isinstance(acao, dict) else "medio", 6),
-                "prazo_sugerido": acao.get("prazo", "1 semana") if isinstance(acao, dict) else "1 semana",
-                "custo_estimado": acao.get("custo", "R$ 0") if isinstance(acao, dict) else "R$ 0",
-                "fonte_referencia": acao.get("fonte", "") if isinstance(acao, dict) else "", "descricao": como_fazer or titulo,
-            })
-            previous_action_titles.append(titulo)
+        # Tasks generation delegated to Lazy Loading
     
     all_tasks = _dedup_actions_cross_dimension(all_tasks)
 
